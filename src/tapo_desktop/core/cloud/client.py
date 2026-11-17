@@ -335,6 +335,14 @@ class TapoCloudClient:
                     self._iot_url = None  # resolve again with the new session
                     self._relogin(captcha=exc.code == ERR_TOKEN_EXPIRED)
 
+    def refresh_session(self) -> None:
+        """Silent re-login with the stored credentials (another API, e.g. the CIPC relay API, said the
+        token is invalid: -1102) [spec:remote.relay.cipc.request_relay_url error_handling]. Raises
+        CloudError / CloudAuthError / TapoConnectionError."""
+        with self._lock:
+            self._require_signed_in()
+            self._relogin(captcha=False)
+
     # ------------------------------------------------------------------ IoT app server (LAT)
     def _require_signed_in(self) -> None:
         if self.__token is None or self._region is None:

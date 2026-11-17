@@ -7,6 +7,8 @@ overlay headline for non-playing states. ``status_text()`` returns exactly the o
 * ``RECONNECTING`` -> ``"Reconnecting..."``
 * ``FAILED`` / ``STOPPED`` -> ``"Offline"``
 * ``PLAYING`` / ``IDLE`` -> ``""`` (overlay hidden; the frame is fully visible)
+* Phase 3: ``FAILED`` with reason ``"Remote - click to view"`` (remote stream waiting for a relay
+  slot) -> that text instead of ``"Offline"``.
 
 The reason string (if any) may be shown as a second line / tooltip, never inside ``status_text()``.
 Single click emits ``clicked(camera_id)``; double click emits ``double_clicked(camera_id)``.
@@ -17,6 +19,7 @@ from PyQt6.QtCore import QRect, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
+from tapo_desktop.services.remote import REMOTE_CLICK_TO_VIEW
 from tapo_desktop.ui import _theme
 
 OVERLAY_TEXT: dict[str, str] = {
@@ -27,6 +30,8 @@ OVERLAY_TEXT: dict[str, str] = {
     "STOPPED": "Offline",
     "FAILED": "Offline",
 }
+#: FAILED reasons that replace the "Offline" headline (Phase 3: remote tile waiting for a relay slot).
+REASON_HEADLINES: dict[str, str] = {REMOTE_CLICK_TO_VIEW: REMOTE_CLICK_TO_VIEW}
 
 _BACKGROUND = QColor(10, 11, 13)
 _OVERLAY = QColor(0, 0, 0, 150)
@@ -87,7 +92,13 @@ class VideoTile(QWidget):
         return self._state
 
     def status_text(self) -> str:
+        if self._state == "FAILED" and self._reason in REASON_HEADLINES:
+            return REASON_HEADLINES[self._reason]
         return OVERLAY_TEXT[self._state]
+
+    def waiting_for_click(self) -> bool:
+        """True while the tile is a remote stream waiting for a free relay slot (click to start it)."""
+        return self._state == "FAILED" and self._reason == REMOTE_CLICK_TO_VIEW
 
     def set_selected(self, selected: bool) -> None:
         if selected != self._selected:
@@ -144,7 +155,7 @@ class VideoTile(QWidget):
     def _paint_overlay(self, painter: QPainter, headline: str) -> None:
         painter.fillRect(self.rect(), _OVERLAY)
         self._paint_center(painter, headline, _TEXT, 14, bold=True)
-        if self._reason:
+        if self._reason and self._reason != headline:
             font = QFont(self.font())
             font.setPointSize(9)
             painter.setFont(font)

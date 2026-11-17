@@ -15,6 +15,11 @@ Persistence:
   cloud lists with a ``localAccessToken`` [spec:lat.source.thing_list] (fetched after sign-in,
   restore and refresh; removed when the cloud returns none; kept when the fetch fails).
 
+Phase 3 (remote live view): after sign-in a real cloud client is attached to one
+:class:`~tapo_desktop.services.remote.RelayProvider` (``relay_provider()``; limit from setting
+``max_remote_streams``, default 4) which is handed to the controller (``set_remote_provider``); sign-out
+detaches it. ``relay_factory(cloud_client) -> RelayClient`` replaces the default relay client (tests).
+
 The password is never logged and never written outside the DPAPI vault; the cloud token stays in
 the cloud client's memory.
 
@@ -163,13 +168,16 @@ class AccountManager(QObject):
     _invoke = pyqtSignal(object)              # private: run a callable on the GUI thread
 
     def __init__(self, controller, *, cloud_factory: Callable[[str], Any] | None = None,
-                 discover: Callable[[], list[LanDevice]] | None = None, parent: QObject | None = None):
+                 discover: Callable[[], list[LanDevice]] | None = None, parent: QObject | None = None,
+                 relay_factory: Callable[[Any], Any] | None = None):
         super().__init__(parent)
         self._ctrl = controller
         self._store = controller.config_store
         self._vault = controller.vault
         self._cloud_factory = cloud_factory or (lambda terminal_uuid: _default_cloud_factory(terminal_uuid))
         self._discover = discover or (lambda: _default_discover())
+        self._relay_factory = relay_factory
+        self._relay_provider: Any = None
         self._pool = WorkerPool(max_workers=2, name="tapo-account")
         self._strand = Strand(self._pool, "account")
         self._posts_lock = threading.Lock()
@@ -191,6 +199,12 @@ class AccountManager(QObject):
     def account(self) -> AccountInfo | None:
         """The signed-in account, or None."""
         return self._account
+
+    def relay_provider(self) -> Any:
+        """The :class:`~tapo_desktop.services.remote.RelayProvider` for remote live view of the signed-in
+        account (also handed to the controller), or None (signed out / the cloud client has no relay API)."""
+        provider = self._relay_provider
+        return provider if provider is not None and provider.available else None
 
     @property
     def config_store(self):
@@ -328,6 +342,7 @@ class AccountManager(QObject):
         self._gen += 1
         self._client = self._account = self._email = self._password = self._pending = None
         self._drop_cloud_cameras()
+        self._detach_relay()
         self._vault.delete(ACCOUNT_VAULT_ID)
         if self._store.get_setting(SETTING_ACCOUNT, None) is not None:
             self._store.set_setting(SETTING_ACCOUNT, None)
@@ -467,6 +482,7 @@ class AccountManager(QObject):
         if remember:
             self._vault.set(ACCOUNT_VAULT_ID, CredentialKind.CLOUD, Credentials(email, password))
             self._store.set_setting(SETTING_ACCOUNT, dataclasses.asdict(account))
+        self._attach_relay(client)
         self._apply_cameras(gen, devices, lan, password, notify=False, tokens=tokens)
         self.signed_in.emit(account)
         self._emit_counts()
@@ -482,6 +498,8 @@ class AccountManager(QObject):
             return
         cached = [c for c in self._ctrl.cameras() if c.source == "cloud"]
         prune = devices is not None
+        if devices is not None and self._relay_provider is not None:
+            self._relay_provider.update_devices(devices)  # device type / IoT-cloud flag for relay slots
         if devices is None:
             devices = [CloudDevice(device_id=c.device_id or c.id, mac=c.mac, model=c.model, alias=c.name,
                                    online=c.online) for c in cached]
@@ -527,6 +545,38 @@ class AccountManager(QObject):
         ids = [c.id for c in self._ctrl.cameras() if c.source == "cloud"]
         if ids:
             self._ctrl.remove_cameras(ids)
+
+    # ================================================================== remote live view (Phase 3)
+    @staticmethod
+    def _supports_relay(client: Any) -> bool:
+        """Only a real cloud client (signed-call ``getAppServiceUrl`` + silent re-login) can request relay
+        slots; stand-ins without that API get no remote live view."""
+        return callable(getattr(client, "get_service_urls", None)) and callable(getattr(client, "refresh_session", None))
+
+    def _attach_relay(self, client: Any) -> None:
+        """GUI thread: hand the signed-in client to the (single) RelayProvider and the controller."""
+        if not self._supports_relay(client):
+            self._detach_relay()
+            return
+        from tapo_desktop.services.remote import SETTING_MAX_REMOTE_STREAMS, RelayProvider, max_remote_streams
+
+        limit = max_remote_streams(self._store.get_setting(SETTING_MAX_REMOTE_STREAMS, None))
+        if self._relay_provider is None:
+            self._relay_provider = RelayProvider(terminal_uuid=self.terminal_uuid, max_streams=limit,
+                                                 relay_factory=self._relay_factory)
+        else:
+            self._relay_provider.gate.set_capacity(limit)
+        self._relay_provider.attach(client)
+        setter = getattr(self._ctrl, "set_remote_provider", None)
+        if callable(setter):
+            setter(self._relay_provider)
+
+    def _detach_relay(self) -> None:
+        if self._relay_provider is not None:
+            self._relay_provider.detach()
+        setter = getattr(self._ctrl, "set_remote_provider", None)
+        if callable(setter):
+            setter(None)
 
     def _cached_account(self, email: str) -> AccountInfo:
         raw = self._store.get_setting(SETTING_ACCOUNT, None)

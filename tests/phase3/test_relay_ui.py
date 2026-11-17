@@ -176,14 +176,15 @@ def test_fake_cloud_client_without_relay_api_gives_no_provider(tmp_path, qtbot):
     from tapo_desktop.services.account import AccountManager
     from tapo_desktop.services.config_store import ConfigStore
     from tapo_desktop.services.controller import AppController
-    from tests.phase2.app_fakes import FakeCloud, cloud_device
+    from tests.phase2.app_fakes import EMAIL, PASSWORD, FakeCloud, cloud_device
 
     controller = AppController(ConfigStore(tmp_path / "c.json"), FakeVault(), service_factory=FakeServiceFactory())
     accounts = AccountManager(controller, cloud_factory=FakeCloud(devices=[cloud_device(0)]), discover=lambda: [])
     with qtbot.waitSignal(accounts.signed_in, timeout=5000):
-        accounts.sign_in("a@b.c", "pw")
+        accounts.sign_in(EMAIL, PASSWORD)
     assert accounts.wait_idle(5000)
-    assert controller.remote_provider() is None
+    assert controller.remote_provider() is None and accounts.relay_provider() is None
+    controller.stop_all()
 
 
 def test_end_to_end_remote_stream_through_real_wiring(tmp_path, qtbot, relay_cloud, mock_relay, ffmpeg_path,

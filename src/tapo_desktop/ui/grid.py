@@ -9,6 +9,8 @@
 * Click on a tile selects it (``camera_selected`` emitted). Double click -> single-camera view:
   only that tile is visible and it is re-requested with ``config.fullscreen_quality``; double click
   again -> back to the grid with ``config.grid_quality``.
+* Phase 3: a tile showing "Remote - click to view" (remote stream limit reached) is started with
+  ``controller.view_remote_now(id)`` when it is clicked or selected.
 
 Decode sizes are fixed per quality (:func:`view_size`) rather than following the tile's pixel size,
 so resizing the window never restarts ffmpeg; tiles scale the frame aspect-fit.
@@ -84,14 +86,31 @@ class CameraGrid(QWidget):
         return self._selected
 
     def select_camera(self, camera_id: str | None) -> None:
-        """Programmatic selection (used to sync with ``cameraList``); emits ``camera_selected``."""
+        """Programmatic selection (used to sync with ``cameraList``); emits ``camera_selected``.
+        Selecting a remote tile that waits for a relay slot starts it (:meth:`_promote`)."""
         new = camera_id if camera_id in self._tiles else None
         if new == self._selected:
             return
         self._selected = new
         for cid, tile in self._tiles.items():
             tile.set_selected(cid == new)
+        if new is not None:
+            self._promote(new)
         self.camera_selected.emit(new or "")
+
+    def _on_tile_clicked(self, camera_id: str) -> None:
+        self._promote(camera_id)
+        self.select_camera(camera_id)
+
+    def _promote(self, camera_id: str) -> None:
+        """Start a remote tile showing "Remote - click to view" now (the controller hands it the relay
+        slot of the remote stream that has been running longest)."""
+        tile = self._tiles.get(camera_id)
+        promote = getattr(self._ctrl, "view_remote_now", None)
+        if tile is None or not tile.waiting_for_click() or camera_id not in self._requested or not callable(promote):
+            return
+        tile.set_stream_state("CONNECTING")
+        promote(camera_id)
 
     def toggle_fullscreen(self, camera_id: str) -> None:
         """Show ``camera_id`` alone in fullscreen quality, or return to the grid."""
@@ -126,7 +145,7 @@ class CameraGrid(QWidget):
             if tile is None:
                 tile = VideoTile(cfg.id, cfg.name, self)
                 tile.hide()
-                tile.clicked.connect(self.select_camera)
+                tile.clicked.connect(self._on_tile_clicked)
                 tile.double_clicked.connect(self._on_double_click)
             else:
                 tile.set_name(cfg.name)

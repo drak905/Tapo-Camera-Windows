@@ -47,6 +47,11 @@ single save and ``cameras_changed``; used by AccountManager for cloud cameras) a
 ``latest_image(id)`` (newest delivered frame, for snapshots). ``lan_found`` and ``live_transport``
 count as connection fields: changing them restarts the camera's service and visible stream.
 
+Phase 3 additions (remote live view through the TP-Link cloud relay): ``set_remote_provider(provider)``
+/ ``remote_provider()`` (the signed-in account's RelayProvider, set by AccountManager; the default
+service factory hands ``remote_provider`` to every TapoCameraService), ``remote_available(id)`` (the
+UI shows "Remote") and ``view_remote_now(id)`` (a waiting remote tile was clicked).
+
 Implementation notes (Wave 3):
 
 * Threading: a private :class:`~tapo_desktop.services._workers.WorkerPool` of daemon threads. Each
@@ -63,6 +68,7 @@ Implementation notes (Wave 3):
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import logging
 import pathlib
 import threading
@@ -110,6 +116,15 @@ def _message(exc: BaseException) -> str:
     """Non-empty, user-presentable text for ``exc`` (core errors never contain secrets)."""
     text = str(exc).strip()
     return text or type(exc).__name__
+
+
+def _accepts_keyword(fn: Callable[..., Any], name: str) -> bool:
+    """True if ``fn`` takes keyword ``name`` (services written before Phase 3 do not know ``preempt``)."""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 def frame_to_qimage(frame: Any) -> QImage | None:
@@ -174,6 +189,7 @@ class AppController(QObject):
         self._factory_lock = threading.Lock()
         self._limiter: Any = None
         self._pin_store: Any = None
+        self._remote: Any = None  # RelayProvider of the signed-in account (remote live view), or None
         self._pool = WorkerPool(name="tapo-ctrl")
         self._frame_lock = threading.Lock()
         self._cams: dict[str, _Camera] = {}
@@ -309,6 +325,54 @@ class AppController(QObject):
         """The newest frame delivered for ``camera_id`` (for snapshots), or None."""
         cam = self._cams.get(camera_id)
         return cam.last_image if cam is not None else None
+
+    # ---------------------------------------------------------- Phase 3: remote live view (relay)
+    def set_remote_provider(self, provider: Any) -> None:
+        """Set (signed in) or clear (signed out: ``None``) the account's
+        :class:`~tapo_desktop.services.remote.RelayProvider`. Remote cameras that are on screen are
+        started again so they pick it up. Does not emit ``cameras_changed`` (the account sync does)."""
+        changed = provider is not self._remote
+        self._remote = provider
+        if not changed or provider is None:
+            return
+        for cam in list(self._cams.values()):
+            if cam.view is not None and not (cam.config.lan_found and cam.config.host.strip()):
+                self._submit_start(cam, *cam.view)
+
+    def remote_provider(self) -> Any:
+        """The current RelayProvider, or None (also the getter handed to every TapoCameraService)."""
+        return self._remote
+
+    def remote_available(self, camera_id: str) -> bool:
+        """True if ``camera_id`` is a cloud camera that is online but not on this LAN and the signed-in
+        account can view it through the cloud relay (the UI then says "Remote")."""
+        cam = self._cams.get(camera_id)
+        provider = self._remote
+        if cam is None or provider is None or not getattr(provider, "available", False):
+            return False
+        cfg = cam.config
+        return cfg.source == "cloud" and cfg.online and not (cfg.lan_found and cfg.host.strip())
+
+    def view_remote_now(self, camera_id: str) -> None:
+        """The user clicked a remote tile waiting for a relay slot ("Remote - click to view"): start it
+        now, taking the slot of the remote stream that has been running longest. Non-blocking; ignored
+        when the camera is not being viewed."""
+        cam = self._cam(camera_id)
+        if cam is None or cam.view is None:
+            return
+        quality, width, height = cam.view
+
+        def fail(msg: str) -> None:
+            self.stream_state.emit(cam.id, "FAILED", msg)
+
+        def call(svc: CameraService) -> None:
+            args = (quality, width, height, partial(self._on_frame, cam), partial(self._on_state, cam))
+            if _accepts_keyword(svc.start_stream, "preempt"):
+                svc.start_stream(*args, preempt=True)
+            else:
+                svc.start_stream(*args)
+
+        self._submit(cam, "start_view", call, on_error=fail)
 
     def uses_local_token(self, camera_id: str) -> bool:
         """True if a local access token is stored for ``camera_id`` (the token itself is never exposed)."""
@@ -474,7 +538,8 @@ class AppController(QObject):
                 from tapo_desktop.core.control_client.transport import PinStore
 
                 self._pin_store = PinStore(self._store.path.parent / "pins.json")
-        return TapoCameraService(config, self._vault, limiter=self._limiter, pin_store=self._pin_store)
+        return TapoCameraService(config, self._vault, limiter=self._limiter, pin_store=self._pin_store,
+                                 remote=self.remote_provider)
 
     def _post(self, fn: Callable[[], None]) -> None:
         """Run ``fn`` on the GUI thread (callable from any thread)."""

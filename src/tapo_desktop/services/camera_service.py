@@ -184,7 +184,14 @@ class TapoCameraService(CameraService):
     camera account; see :meth:`live_transport`), motion from OnvifClient/PullPoint (:2020, camera
     account) or ``getLastAlarmInfo`` polling (no camera account) and RecordingDownloader (:8800,
     cloud password). Cameras with ``lan_found=False`` or no host fail fast with
-    :data:`NOT_ON_NETWORK` and do no network I/O.
+    :data:`NOT_ON_NETWORK` and do no network I/O - unless they are cloud cameras that are online and
+    ``remote()`` returns a signed-in :class:`~tapo_desktop.services.remote.RelayProvider`: then the live
+    view goes through the TP-Link cloud relay (:class:`RelayStreamSupervisor`, VGA in the grid, HD
+    fullscreen, at most ``provider.gate.capacity`` remote streams; extra ones report FAILED
+    :data:`~tapo_desktop.services.remote.REMOTE_CLICK_TO_VIEW` until ``start_stream(..., preempt=True)``),
+    ``connect()`` succeeds without network I/O and every LAN-only feature (control, PTZ, status,
+    recordings, events) raises ``TapoConnectionError(NETWORK_ONLY)``. Offline cloud cameras report
+    "Camera is offline".
 
     The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
 
@@ -205,7 +212,8 @@ class TapoCameraService(CameraService):
                  local_stream_factory: Callable[..., Any] | None = None,
                  stream_factory: Callable[..., Any] | None = None,
                  control_factory: Callable[..., Any] | None = None,
-                 alarm_poll_interval: float = ALARM_POLL_INTERVAL_S):
+                 alarm_poll_interval: float = ALARM_POLL_INTERVAL_S,
+                 remote: Callable[[], Any] | None = None):
         self.config = config
         self._vault = vault
         self._limiter = limiter
@@ -213,8 +221,10 @@ class TapoCameraService(CameraService):
         self._local_stream_factory = local_stream_factory
         self._stream_factory = stream_factory
         self._control_factory = control_factory
+        self._remote = remote
+        self._relay_gate: Any = None  # RemoteStreamGate holding this camera's relay slot
         self._alarm_poll_interval = float(alarm_poll_interval)
-        self._transport: str | None = None  # "local" | "rtsp" of the running supervisor
+        self._transport: str | None = None  # "local" | "rtsp" | "relay" of the running supervisor
         self._poller: _AlarmPoller | None = None
         self._lock = threading.RLock()
         self._client: Any = None
@@ -302,9 +312,30 @@ class TapoCameraService(CameraService):
         """False when the camera was not found on the LAN (cloud camera without a usable host)."""
         return bool(self.config.lan_found and self.config.host.strip())
 
+    def _remote_provider(self) -> Any:
+        """The signed-in account's relay provider when this camera can be viewed remotely, else None:
+        a cloud camera that is online, not on this LAN, with a provider that is signed in."""
+        if self._remote is None or self._on_network():
+            return None
+        if self.config.source != "cloud" or not self.config.online:
+            return None
+        provider = self._remote()
+        return provider if provider is not None and getattr(provider, "available", False) else None
+
+    def _cloud_offline(self) -> bool:
+        return self.config.source == "cloud" and not self.config.online
+
     def _check_on_network(self) -> None:
-        if not self._on_network():
-            raise TapoConnectionError(NOT_ON_NETWORK)
+        """Raise for LAN-only features of a camera that is not on the LAN: remote cameras get
+        :data:`~tapo_desktop.services.remote.NETWORK_ONLY`, offline cloud cameras "Camera is offline",
+        the rest :data:`NOT_ON_NETWORK`."""
+        if self._on_network():
+            return
+        from tapo_desktop.services.remote import CAMERA_OFFLINE, NETWORK_ONLY
+
+        if self._remote_provider() is not None:
+            raise TapoConnectionError(NETWORK_ONLY)
+        raise TapoConnectionError(CAMERA_OFFLINE if self._cloud_offline() else NOT_ON_NETWORK)
 
     def _has_camera_account(self) -> bool:
         return self._vault.get(self.config.id, CredentialKind.CAMERA_ACCOUNT) is not None
@@ -315,7 +346,10 @@ class TapoCameraService(CameraService):
 
         ``"local"`` -> local; ``"rtsp"`` -> RTSP when a camera account exists (else local);
         ``"auto"`` -> RTSP when a camera account exists (Phase 1 manual cameras), else local.
+        A cloud camera that is not on this LAN but online, with a signed-in relay provider -> ``"relay"``.
         """
+        if self._remote_provider() is not None:
+            return "relay"
         mode = (self.config.live_transport or "auto").lower()
         if mode == "local":
             return "local"
@@ -323,6 +357,12 @@ class TapoCameraService(CameraService):
 
     # ------------------------------------------------------------------ control
     def connect(self) -> DeviceInfo:
+        if self._remote_provider() is not None:  # live view only, through the relay: no LAN login
+            if self._device_info is None:
+                cfg = self.config
+                self._device_info = DeviceInfo(model=cfg.model, alias=cfg.name, firmware="", mac=cfg.mac,
+                                               device_id=cfg.device_id or cfg.id)
+            return self._device_info
         self._check_on_network()
         client = self._control()
         if not client.logged_in:
@@ -414,13 +454,22 @@ class TapoCameraService(CameraService):
     # ------------------------------------------------------------------ live stream
     def start_stream(self, quality: StreamQuality, width: int, height: int,
                      on_frame: Callable[[Frame], None],
-                     on_state: Callable[[StreamState, str | None], None]) -> None:
+                     on_state: Callable[[StreamState, str | None], None], *, preempt: bool = False) -> None:
+        """Start or switch the live stream. Not on the LAN: through the cloud relay when the camera is
+        remote-viewable (``preempt=True`` = the user clicked the tile: take a relay slot even when the
+        remote stream limit is reached), else FAILED "Camera is offline" / :data:`NOT_ON_NETWORK`."""
         from tapo_desktop.core.media_engine.supervisor import StreamState
 
         quality, width, height = StreamQuality(quality), int(width), int(height)
         if not self._on_network():
+            provider = self._remote_provider()
+            if provider is not None:
+                self._start_relay(provider, quality, width, height, on_frame, on_state, preempt)
+                return
+            from tapo_desktop.services.remote import CAMERA_OFFLINE
+
             self.stop_stream()
-            on_state(StreamState.FAILED, NOT_ON_NETWORK)
+            on_state(StreamState.FAILED, CAMERA_OFFLINE if self._cloud_offline() else NOT_ON_NETWORK)
             return
         transport = self.live_transport()
         if transport == "rtsp":
@@ -445,6 +494,7 @@ class TapoCameraService(CameraService):
             self._stream_gen += 1  # the old supervisor's STOPPED must not reach the UI
         if current is not None:
             current.stop()
+        self._release_relay_slot()
         with self._lock:
             self._check_open()
             gen = self._stream_gen
@@ -477,11 +527,83 @@ class TapoCameraService(CameraService):
                        resolution=local_resolution(quality), port=self.config.media_port,
                        channel=local_channel(quality), **callbacks, **extra)
 
+    def _start_relay(self, provider: Any, quality: StreamQuality, width: int, height: int,
+                     on_frame: Callable[[Frame], None], on_state: Callable[[StreamState, str | None], None],
+                     preempt: bool) -> None:
+        """Remote live view through the relay [spec:remote.relay.*]: VGA for grid qualities, HD for
+        fullscreen ones; at most ``provider.gate.capacity`` remote streams run at once."""
+        from tapo_desktop.core.media_engine.supervisor import StreamState
+        from tapo_desktop.services.remote import REMOTE_CLICK_TO_VIEW
+
+        resolution, channel = local_resolution(quality), local_channel(quality)
+        gate = provider.gate
+        with self._lock:
+            self._check_open()
+            self._on_frame, self._on_state = on_frame, on_state
+            current = self._supervisor
+            if (current is not None and self._transport == "relay" and self._relay_gate is gate
+                    and current.state not in (StreamState.FAILED, StreamState.STOPPED)):
+                current.switch(resolution, width, height)
+                return
+            self._supervisor = None
+            self._stream_gen += 1
+        if current is not None:
+            current.stop()
+        if self._relay_gate is not gate:
+            self._release_relay_slot()
+        if not gate.acquire(self.config.id, self._evict_relay, preempt=preempt):
+            log.info("camera %s: remote stream limit (%d) reached; waiting for a click", self.config.id,
+                     gate.capacity)
+            on_state(StreamState.FAILED, REMOTE_CLICK_TO_VIEW)
+            return
+        with self._lock:
+            if self._closed:
+                gate.release(self.config.id)
+                raise TapoError("camera service is closed")
+            gen = self._stream_gen
+            callbacks = dict(on_frame=lambda f: self._forward_frame(gen, f),
+                             on_state=lambda s, r: self._forward_state(gen, s, r),
+                             limiter=self._limiter, limiter_key=self.config.device_id or self.config.id)
+            try:
+                sup = provider.create_stream(self.config, width, height, resolution=resolution, channel=channel,
+                                             **callbacks)
+            except Exception:
+                gate.release(self.config.id)
+                raise
+            self._supervisor, self._transport, self._stream_token = sup, "relay", None
+            self._relay_gate = gate
+        sup.start()
+
+    def _evict_relay(self) -> None:
+        """The remote stream limit gave this camera's relay slot to a clicked tile: stop, then tell the
+        UI it can be clicked again (runs on the other camera's worker thread)."""
+        from tapo_desktop.core.media_engine.supervisor import StreamState
+        from tapo_desktop.services.remote import REMOTE_CLICK_TO_VIEW
+
+        with self._lock:
+            sup = self._supervisor if self._transport == "relay" else None
+            if sup is not None:
+                self._supervisor = None
+                self._stream_gen += 1
+            self._relay_gate = None
+            callback = self._on_state
+        if sup is not None:
+            sup.stop()
+        if callback is not None:
+            callback(StreamState.FAILED, REMOTE_CLICK_TO_VIEW)
+
+    def _release_relay_slot(self) -> None:
+        with self._lock:
+            gate, self._relay_gate = self._relay_gate, None
+        if gate is not None:
+            gate.release(self.config.id)
+
     def stop_stream(self) -> None:
         with self._lock:
             sup, self._supervisor = self._supervisor, None
         if sup is not None:
             sup.stop()  # its STOPPED transition is still forwarded
+        self._release_relay_slot()
         with self._lock:
             self._stream_gen += 1
 
@@ -492,7 +614,11 @@ class TapoCameraService(CameraService):
 
     def _forward_state(self, gen: int, state: StreamState, reason: str | None) -> None:
         cb = self._on_state
-        if gen == self._stream_gen and cb is not None:
+        if gen != self._stream_gen:
+            return
+        if self._transport == "relay" and getattr(state, "name", "") == "FAILED":
+            self._release_relay_slot()  # e.g. camera offline: give the slot to another remote tile
+        if cb is not None:
             cb(state, reason)
 
     # ------------------------------------------------------------------ motion events

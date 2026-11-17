@@ -170,6 +170,10 @@ class LocalStreamSupervisor(StreamSupervisor):
       StreamSupervisor (first frame after recovery normally < 3 s).
     * ``switch(resolution, width, height)`` restarts the preview on a new connection, keeping the lease.
     * ``limiter_key`` defaults to ``host``.
+    * ``session_factory(resolution)`` replaces the direct :8800 :class:`MediaSession` of each attempt
+      (same surface; used by :class:`~tapo_desktop.core.media_engine.relay_stream.RelayStreamSupervisor`);
+      the TCP reachability probe is skipped then. A ``TapoError`` with ``fatal=True`` raised while opening
+      the preview goes to FAILED without retrying.
     """
 
     _FEEDS_STDIN = True
@@ -197,6 +201,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         stall_timeout: float = 5.0,
         max_retries: int | None = None,
         local_token: str | None = None,
+        session_factory: Callable[[str], MediaSession] | None = None,
     ):
         if not host or not isinstance(host, str):
             raise ValueError("host must be a non-empty string")
@@ -207,6 +212,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         self._port = int(port)
         self._password = password or ""
         self._local_token = local_token or None
+        self._session_factory = session_factory
         self._channel = int(channel)
         self._io_timeout = max(_MIN_IO_TIMEOUT_S, stall_timeout + 1.0)
         self._session: MediaSession | None = None
@@ -278,10 +284,23 @@ class LocalStreamSupervisor(StreamSupervisor):
         super()._fail(self._hide(reason))
 
     # ================================================================== one attempt
+    def _new_session(self, target: _LocalTarget) -> MediaSession:
+        """The media session of one attempt: ``session_factory(resolution)`` when given (e.g. the cloud
+        relay), else a direct :8800 connection."""
+        if self._session_factory is not None:
+            return self._session_factory(target.resolution)
+        return MediaSession(self._host, self._password, port=self._port, timeout=self._io_timeout,
+                            local_token=self._local_token)
+
+    def _probe(self) -> str | None:
+        """Cheap reachability check before the handshake (None = go ahead). Skipped for injected sessions."""
+        if self._session_factory is not None:
+            return None
+        return tcp_reachable(self._host, self._port, min(_PROBE_TIMEOUT_S, self._io_timeout), self._stopping)
+
     def _attempt(self, exe: str, target: _Target) -> _Outcome:
         assert isinstance(target, _LocalTarget)
-        session = MediaSession(self._host, self._password, port=self._port, timeout=self._io_timeout,
-                               local_token=self._local_token)
+        session = self._new_session(target)
         with self._lock:
             self._session = session
         try:
@@ -303,7 +322,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         """Handshake + preview request; returns (parts iterator, media parts that preceded the
         response) or an _Outcome when the attempt is over."""
         try:
-            problem = tcp_reachable(self._host, self._port, min(_PROBE_TIMEOUT_S, self._io_timeout), self._stopping)
+            problem = self._probe()
             if problem is not None:
                 return _Outcome(reason=problem)
             session.connect()
@@ -336,7 +355,8 @@ class LocalStreamSupervisor(StreamSupervisor):
             return _Outcome(reason=self._hide(f"stream limit reached: {exc}"), fatal=True)
         except TapoError as exc:
             reason = "stopped" if self._stopping.is_set() else self._hide(str(exc))
-            return _Outcome(reason=reason)
+            # errors that know retrying cannot help (e.g. relay: camera offline) end the stream at once
+            return _Outcome(reason=reason, fatal=bool(getattr(exc, "fatal", False)))
 
     def _stream(self, exe: str, target: _LocalTarget, session: MediaSession, parts: Iterator[MediaPart],
                 early: list[MediaPart]) -> _Outcome:

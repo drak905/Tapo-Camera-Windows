@@ -30,6 +30,9 @@ menu with "Sign in...", "Refresh cameras" and "Sign out" (``accounts.refresh_cam
 are disabled. ``cameraList`` rows show the camera name, plus " (Offline)" for cameras the cloud
 reports offline or " (Not on this network)" for cameras not found on the LAN; the bare status is
 in :data:`STATUS_ROLE`. Snapshot results and account events are shown in the status bar.
+
+Phase 3: cameras that are not on the LAN but online and viewable through the TP-Link cloud relay
+(``controller.remote_available(id)``) show " (Remote)" instead of " (Not on this network)".
 """
 from __future__ import annotations
 
@@ -56,6 +59,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.services.camera_service import NOT_ON_NETWORK
+from tapo_desktop.services.remote import REMOTE
 from tapo_desktop.ui import _theme, camera_dialog, sign_in_dialog
 from tapo_desktop.ui.controls_panel import ControlsPanel
 from tapo_desktop.ui.grid import CameraGrid, validate_grid_size
@@ -72,16 +76,17 @@ PTZ_KEYS: dict[Qt.Key, tuple[int, int]] = {
     Qt.Key.Key_D: (PTZ_UNIT, 0), Qt.Key.Key_Right: (PTZ_UNIT, 0),
 }
 _STATUS_MS = 6000
-#: ``cameraList`` item role holding the row status (``""``, ``"Offline"`` or ``NOT_ON_NETWORK``).
+#: ``cameraList`` item role holding the row status (``""``, ``"Offline"``, ``"Remote"`` or ``NOT_ON_NETWORK``).
 STATUS_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
-def camera_row_status(cfg) -> str:
-    """Status suffix of a camera row: "Offline" (cloud says offline), NOT_ON_NETWORK, or ""."""
+def camera_row_status(cfg, remote: bool = False) -> str:
+    """Status suffix of a camera row: "Offline" (cloud says offline), "Remote" (not on this LAN but
+    viewable through the cloud relay: ``remote``), NOT_ON_NETWORK, or ""."""
     if not cfg.online:
         return "Offline"
     if not cfg.lan_found or not cfg.host:
-        return NOT_ON_NETWORK
+        return REMOTE if remote else NOT_ON_NETWORK
     return ""
 
 
@@ -310,14 +315,17 @@ class MainWindow(QMainWindow):
 
     def _refresh_list(self) -> None:
         cams = self._ctrl.cameras()
+        remote_available = getattr(self._ctrl, "remote_available", None)
         with QSignalBlocker(self._list):
             self._list.clear()
             for cfg in cams:
-                status = camera_row_status(cfg)
+                remote = bool(callable(remote_available) and remote_available(cfg.id))
+                status = camera_row_status(cfg, remote=remote)
                 item = QListWidgetItem(f"{cfg.name} ({status})" if status else cfg.name)
                 item.setData(Qt.ItemDataRole.UserRole, cfg.id)
                 item.setData(STATUS_ROLE, status)
-                tip = cfg.host or "No address on this network"
+                tip = cfg.host or ("Not on this network: live view through the TP-Link cloud" if remote
+                                   else "No address on this network")
                 if cfg.model:
                     tip = f"{cfg.model} - {tip}"
                 if cfg.source == "cloud":
@@ -325,7 +333,7 @@ class MainWindow(QMainWindow):
                     if callable(uses):  # yes/no only: the token itself never reaches the UI
                         tip += f"\nusing local access token: {'yes' if uses(cfg.id) else 'no'}"
                 item.setToolTip(tip)
-                if status:
+                if status and status != REMOTE:
                     item.setForeground(QColor(140, 145, 152))  # muted: not streamable right now
                 self._list.addItem(item)
         ids = [c.id for c in cams]
