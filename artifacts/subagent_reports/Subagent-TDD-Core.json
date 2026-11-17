@@ -1,0 +1,55 @@
+{
+  "agent_id": "Subagent-TDD-Core",
+  "status": "done",
+  "tests_total": 388,
+  "tests_red": 388,
+  "tests_passing_unexpectedly": 0,
+  "red_breakdown": {
+    "failed_NotImplementedError": 330,
+    "error_fixture_not_found": 58
+  },
+  "validation": "All 388 tests passed (3 consecutive runs, about 45 s each) against a throwaway reference implementation kept outside the repo (in %TEMP%), together with a copy of lane-fixture's uncommitted mock_tapo_server/conftest. This shows every test can pass and is consistent with the mock. The reference implementation was not committed.",
+  "files": [
+    "src/tapo_desktop/core/auth/crypto.py",
+    "src/tapo_desktop/core/auth/vault.py",
+    "src/tapo_desktop/core/control_client/transport.py",
+    "src/tapo_desktop/core/control_client/dtos.py",
+    "src/tapo_desktop/core/control_client/client.py",
+    "src/tapo_desktop/core/onvif_service/soap.py",
+    "src/tapo_desktop/core/onvif_service/discovery.py",
+    "src/tapo_desktop/core/onvif_service/ptz.py",
+    "src/tapo_desktop/core/onvif_service/events.py",
+    "tests/unit/_core_helpers.py",
+    "tests/unit/_onvif_samples.py",
+    "tests/unit/test_auth_crypto.py",
+    "tests/unit/test_vault.py",
+    "tests/unit/test_dtos.py",
+    "tests/unit/test_control_client.py",
+    "tests/unit/test_control_transport.py",
+    "tests/unit/test_onvif_soap.py",
+    "tests/unit/test_onvif_discovery.py",
+    "tests/unit/test_onvif_ptz.py",
+    "tests/unit/test_onvif_events.py",
+    "tests/integration/_core_it_helpers.py",
+    "tests/integration/test_control_mock.py",
+    "tests/integration/test_control_chaos.py",
+    "tests/integration/test_onvif_mock.py",
+    "artifacts/subagent_reports/Subagent-TDD-Core.json"
+  ],
+  "notes": [
+    "BLOCKER (orchestrator): pyproject.toml is committed with a UTF-8 BOM, so pytest fails with 'pyproject.toml: Invalid statement (at line 1, column 1)'. Tests were run with an equivalent temporary ini (-c %TEMP%/pytest_core.ini --rootdir .). Removing the BOM fixes it. The committed tests/**/__init__.py files also have BOMs; those are harmless.",
+    "Unit tests use FakeCameraTransport (tests/unit/_core_helpers.py), a strict in-process secure/legacy camera built from hashlib and cryptography only. It checks seq, tapo_tag, digest_passwd and the AES envelope independently of tapo_desktop.",
+    "Integration tests get credentials from cam.cloud_password / camera_user / camera_password when the mock exposes them, else the contract defaults cloudpass / camuser / campass.",
+    "Integration tests read cam.request_log through a helper that expands multipleRequest wrappers, so they work whether the mock logs the wrapper or the individual sub-requests.",
+    "While running with lane-fixture's WIP mock, Python's faulthandler printed 'Windows fatal exception: access violation' from the mock's SSL read thread during ChaosProxy.reset_all. All tests still passed. This looks like a first-chance SEH report inside the mock or CPython 3.14 ssl, not a test failure. Tell lane-fixture.",
+    "Contract interpretations (encoded in tests): parse_days returns sorted, de-duplicated dates; motor_step_req and set_motion_detection_req raise ValueError on values outside the contract sets; PinStore lower-cases fingerprints; a CertificateMismatchError must leave the existing pin unchanged; recordings_for_day uses the window [local midnight, +86399 s] and pages 0-99, 100-199 while to_be_continued != 0.",
+    "ONVIF interpretations: get_device_information POSTs to /onvif/device_service; wsse_header returns a self-contained fragment that declares the WSSE 1.0 and WSU namespaces itself; a SOAP Fault (including a wrong password) raises TapoDeviceError(code=-1); an unparsable response raises TapoProtocolError; a network failure raises TapoConnectionError.",
+    "PullPointSubscriber must send PullMessages, Renew and Unsubscribe through OnvifClient.call(path, ...), using only the path+query of the SubscriptionReference address. test_pullpoint_survives_reset_all checks that the proxy's connection count rises. A callback exception must not stop the loop."
+  ],
+  "contract_questions": [
+    "vod.search.day_clips_utc has two shapes: legacy with id:1, and V6 with player_id and no id. search_day_clips_req has no player_id parameter, so the tests require the legacy shape {id:1, channel:0, start_time, end_time, start_index, end_index}. Does V6 support need a separate builder later?",
+    "set_privacy: the spec says lensMask component v1 also sends setLedStatus with the inverse value. The tests only require that setLensMaskConfig is sent. The client may add the LED request after checking components.",
+    "PullMessages through a proxy: the tests require PullMessages to reuse the client's host:port (the contract's call(path, ...) signature implies this). Please confirm this is the intended behaviour for NAT or port-forwarded cameras.",
+    "The contract does not say what happens to a TapoControlClient request when -40401 persists after the one retry. The tests only require some TapoError, at most 3 logins in total."
+  ]
+}
