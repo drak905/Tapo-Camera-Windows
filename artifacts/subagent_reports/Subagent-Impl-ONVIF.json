@@ -1,0 +1,29 @@
+{
+  "agent_id": "Subagent-Impl-ONVIF",
+  "status": "done",
+  "tests_targeted": 75,
+  "tests_passed": 75,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "failing_tests": [],
+  "env_blocked": [],
+  "files": [
+    "src/tapo_desktop/core/onvif_service/_xml.py",
+    "src/tapo_desktop/core/onvif_service/soap.py",
+    "src/tapo_desktop/core/onvif_service/discovery.py",
+    "src/tapo_desktop/core/onvif_service/ptz.py",
+    "src/tapo_desktop/core/onvif_service/events.py",
+    "artifacts/subagent_reports/Subagent-Impl-ONVIF.json"
+  ],
+  "notes": [
+    "Test set: tests/unit/test_onvif_soap.py, test_onvif_discovery.py, test_onvif_ptz.py, test_onvif_events.py and tests/integration/test_onvif_mock.py (including the chaos reset_all and blackhole tests). All 75 passed in 7 full runs of about 15-18 s each. They also passed under -X dev -W error::ResourceWarning.",
+    "No cross-lane runtime dependency. tests/integration/_core_it_helpers.py imports control_client.client and transport at module level, but only the class names are needed, so the Wave 2 stubs are enough.",
+    "OnvifClient.call(path, body_xml) keeps the contract signature and adds optional keyword-only extras: header_xml (appended after the WS-Security token), timeout (time allowed for the response to start; long polls pass pull_timeout + client timeout) and cancel (a threading.Event; while it waits, the client polls the socket with select() every 0.2 s and aborts with TapoConnectionError when the event is set). Each call opens its own short-lived HTTP connection (Connection: close), so one client is thread-safe. The response size is capped at 8 MiB.",
+    "Error mapping: a SOAP Fault, including a wrong password, raises TapoDeviceError(code=-1, method=<op>). The message holds only the subcode and reason, never credentials. An unparsable or non-envelope response, or a non-2xx status without a Fault, raises TapoProtocolError. HTTP 401 with no SOAP body raises TapoAuthError (a TapoError, not a TapoDeviceError). Network errors raise TapoConnectionError. repr/str show host, port and username only.",
+    "Service paths: soap.service_path(client, category) uses only the path+query of the XAddr from GetCapabilities and falls back to /onvif/service, so every request goes to the client's own host:port. OnvifPtz resolves the ptz path and the first profile token lazily on first use. get_profiles uses the cached media XAddr, or /onvif/service.",
+    "PullPointSubscriber: a daemon thread runs CreatePullPointSubscription (InitialTerminationTime PT60S) and then a PullMessages long-poll loop. Renew is scheduled from the camera's TerminationTime minus CurrentTime, which avoids clock skew. Any error re-subscribes with exponential backoff, starting at retry_backoff_s and capped at 30 s. The stale subscription is unsubscribed first only when the error is not a connection error. A callback exception is logged and the loop continues. stop() sets an Event that cancels the in-flight long poll within about 0.2 s, sends Unsubscribe (best effort, timeout at most 2 s) and joins the thread. For a real OnvifClient, follow-up requests also carry wsa:Action and wsa:To (the camera's original subscription address). Duck-typed clients such as FakeOnvifClient get the plain call(path, body).",
+    "Tolerant parsers: parse_probe_match and parse_notifications return [] on garbage. All XML goes through _xml.safe_parse, which refuses any DOCTYPE or ENTITY declaration (protection against entity-expansion attacks). Payload elements are matched by local name in the namespace-aware tree, so SOAP 1.1/1.2, WS-Addressing 2004/2005 and WS-Discovery 2005/2009 are all accepted. The Envelope and Body namespaces are checked exactly. A notification with no parsable UtcTime falls back to now(UTC). MotionEvent.data holds the Source/Data SimpleItems and the PropertyOperation.",
+    "discover() sends the Probe from one UDP socket per local IPv4 interface (IP_MULTICAST_IF, TTL 1), sends it again after 0.3 s and de-duplicates replies by host. On this PC a 2 s live probe returned [] (no ONVIF device answered on the LAN). scan_subnet raises ValueError for networks with more than 65536 addresses and sorts results numerically.",
+    "ENVIRONMENT (no test failure): about 1 run in 5, Python's faulthandler prints 'Windows fatal exception: access violation'. The stack is pure Python: http.client send -> socket.sendall on the pullpoint thread, during test_pullpoint_survives_reset_all. The process keeps running and every test passes. This is a first-chance SEH exception inside Winsock that Windows handles, probably from the AdGuard network filter. It is the same thing Subagent-TDD-Core reported. PowerShell shows it as a NativeCommandError if stderr is merged; pytest's exit code is still 0."
+  ]
+}
