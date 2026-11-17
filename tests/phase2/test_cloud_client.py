@@ -313,7 +313,14 @@ def test_malformed_response_is_cloud_error():
         srv.settimeout(5)
         try:
             conn, _ = srv.accept()
-            conn.recv(65536)
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                buf += conn.recv(65536)
+            head, _, rest = buf.partition(b"\r\n\r\n")
+            length = int(next(line.split(b":")[1] for line in head.split(b"\r\n")
+                              if line.lower().startswith(b"content-length")))
+            while len(rest) < length:
+                rest += conn.recv(65536)
             conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 9\r\n"
                          b"Connection: close\r\n\r\n<html>!</")
             conn.close()
