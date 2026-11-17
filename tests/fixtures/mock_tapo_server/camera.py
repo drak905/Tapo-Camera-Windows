@@ -26,16 +26,31 @@ class MockTapoCamera:
       ``raw_request_log`` (whole decrypted inner bodies), ``media_request_log``, ``media_acks``,
       ``login_attempts``, ``media_auth_failures``, ``media_parts_sent``, ``media_preview_requests``,
       ``onvif_op_log``; ``drop_media_connections()`` resets every :8800 connection
+
+    TPAP (additive; default cameras are unchanged): ``protocol="tpap"`` makes the HTTPS API speak the
+    SPAKE2+ login + AES-128-CCM ``/ds`` channel of newer firmware (v3 step 1 -> -40211), see
+    ``tpap_server.py``. ``tpap_credential`` "md5" | "sha256_extra" picks the passcode the camera
+    expects. Knobs: ``tpap_iterations``, ``tpap_username`` ("md5" = md5_hex("admin") like the app,
+    "admin" = literal), ``tpap_bad_dev_confirm``, ``tpap_refuse_shares`` (refuse the next N correct
+    pake_share with -40401), ``tpap_session_expired``. Counters: ``v3_probe_count``,
+    ``tpap_register_count``, ``tpap_share_attempts``, ``tpap_ds_seqs``.
     """
 
     def __init__(self, cloud_password: str = "cloudpass", camera_user: str = "camuser",
                  camera_password: str = "campass", secure: bool = True, model: str = "C210",
                  dual_lens: bool = False, max_rtsp_clients: int = 2, https_port: int = 0, rtsp_port: int = 0,
-                 onvif_port: int = 0, media_port: int = 0, host: str = "127.0.0.1"):
+                 onvif_port: int = 0, media_port: int = 0, host: str = "127.0.0.1",
+                 protocol: str | None = None, tpap_credential: str = "md5"):
         self.cloud_password = cloud_password
         self.camera_user = camera_user
         self.camera_password = camera_password
         self.secure = secure
+        if protocol not in (None, "secure", "legacy", "tpap"):
+            raise ValueError(f"unknown protocol {protocol!r}")
+        if tpap_credential not in ("md5", "sha256_extra"):
+            raise ValueError(f"unknown tpap_credential {tpap_credential!r}")
+        self.protocol = protocol or ("secure" if secure else "legacy")
+        self.tpap_credential = tpap_credential
         self.model = model
         self.dual_lens = dual_lens
         self.max_rtsp_clients = max_rtsp_clients
@@ -53,6 +68,16 @@ class MockTapoCamera:
         self.media_preview_speed = 1.0  # live preview pacing multiplier (1.0 = real time)
         self.max_failed_logins = 0
         self.lockout_seconds = 1800.0
+        # TPAP knobs / counters (protocol="tpap" only)
+        self.tpap_iterations = 1000
+        self.tpap_username = "md5"
+        self.tpap_bad_dev_confirm = False
+        self.tpap_refuse_shares = 0
+        self.tpap_session_expired = 3600
+        self.v3_probe_count = 0
+        self.tpap_register_count = 0
+        self.tpap_share_attempts = 0
+        self.tpap_ds_seqs: list[int] = []
         # logs / counters
         self._lock = threading.RLock()
         self.request_log: list[dict] = []

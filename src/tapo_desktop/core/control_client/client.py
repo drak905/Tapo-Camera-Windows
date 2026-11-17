@@ -14,6 +14,7 @@ from typing import Any
 
 from tapo_desktop.core.auth import crypto
 from tapo_desktop.core.control_client import dtos
+from tapo_desktop.core.control_client import tpap as tpap_mod
 from tapo_desktop.core.control_client.transport import HttpsTransport, PinStore
 from tapo_desktop.core.errors import (
     TapoAuthError, TapoDeviceError, TapoError, TapoLockedError, TapoProtocolError, TapoSessionExpired,
@@ -26,6 +27,7 @@ _OK = 0
 _SESSION_EXPIRED = -40401        # [spec:auth.errors.table]
 _PROTOCOL_FORMAT_ERROR = -40210  # on securePassthrough: invalid secure session -> re-login
 _INVALID_NONCE = -40413          # normal step-1 challenge of encrypt_type "3"
+_TPAP_REQUIRED = -40211          # step 1 on TPAP-only firmware (encrypt_type ["4"]) [spec:tpap.selection]
 _LOCK_CODES = frozenset({-40404, -40408})  # DEVICE_BLOCKED, SYSTEM_BLOCKED
 _PAGE_SIZE = 100
 _MAX_PAGES = 100                 # safety cap: 10 000 clips per day
@@ -40,6 +42,8 @@ class _Session:
     cnonce: str = ""
     cipher: crypto.SecureSessionCipher | None = None
     seq: int = 0
+    tpap: "tpap_mod.TpapSession | None" = None
+    expires_at: float | None = None
 
     def __repr__(self) -> str:
         return f"_Session(secure={self.secure})"
@@ -101,11 +105,13 @@ class TapoControlClient:
 
     def __init__(self, host: str, password: str, *, username: str = "admin", port: int = 443,
                  transport: HttpsTransport | None = None, pin_store: PinStore | None = None,
-                 timeout: float = 10.0):
+                 timeout: float = 10.0, tpap: dict | None = None, encrypt_type: Any = None):
         self._host = host
         self._port = int(port)
         self._username = username
         self._password = password
+        self._tpap_info = dict(tpap) if isinstance(tpap, dict) else None
+        self._use_tpap = tpap_mod.tpap_requested(self._tpap_info, encrypt_type)
         self._transport = transport if transport is not None else HttpsTransport(
             host, self._port, pin_store=pin_store, timeout=timeout)
         self._headers = {"Accept": "application/json", "User-Agent": "Tapo CameraClient Android",
@@ -129,8 +135,21 @@ class TapoControlClient:
 
     @property
     def is_secure(self) -> bool:
-        """True if the last successful login used the secure (encrypt_type "3") flow."""
+        """True if the last successful login used an encrypted flow (secure v3 or TPAP)."""
         return self._secure
+
+    @property
+    def protocol(self) -> str | None:
+        """``"tpap"``, ``"secure"`` or ``"legacy"`` for the current session, ``None`` if logged out."""
+        sess = self._session
+        if sess is None:
+            return None
+        if sess.tpap is not None:
+            return "tpap"
+        return "secure" if sess.secure else "legacy"
+
+    def _tpap_login(self) -> _Session:
+        raise NotImplementedError
 
     @property
     def logged_in(self) -> bool:
@@ -139,10 +158,19 @@ class TapoControlClient:
 
     def _login_locked(self) -> None:
         self._session = None
+        if self._use_tpap:
+            self._session = self._tpap_login()
+            self._secure = True
+            return
         cnonce = crypto.generate_cnonce()
         resp = self._post_login({"cnonce": cnonce, "encrypt_type": "3", "username": self._username})
         code = _error_code(resp)
         self._raise_if_locked(code, resp)
+        if code == _TPAP_REQUIRED:
+            self._use_tpap = True
+            self._session = self._tpap_login()
+            self._secure = True
+            return
         data = _result(resp).get("data")
         if (code == _INVALID_NONCE and isinstance(data, dict) and isinstance(data.get("nonce"), str)
                 and isinstance(data.get("device_confirm"), str)):

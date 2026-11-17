@@ -198,6 +198,10 @@ class HttpsTransport:
                     raise TapoConnectionError(self._describe(exc)) from exc
         raise AssertionError("unreachable")  # pragma: no cover
 
+    def post_bytes(self, path: str, body: bytes, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
+        """Binary POST (TPAP ``/ds``); RED stub."""
+        raise NotImplementedError
+
     def _describe(self, exc: BaseException) -> str:
         kind = "timed out" if isinstance(exc, TimeoutError) else f"failed ({type(exc).__name__})"
         return f"HTTPS request to {self.host}:{self.port} {kind}"
