@@ -80,9 +80,9 @@ class AppController(QObject):
 ## `tapo_desktop.ui`  (PyQt6 widgets; every interactive widget has a stable `objectName`)
 - `ui.main_window.MainWindow(controller: AppController, tray_enabled: bool = True)`:
   objectNames: `cameraList` (QListWidget), `addCameraButton`, `removeCameraButton`, `layout1x1Button`,
-  `layout2x2Button`, `layout3x3Button`, `cameraGrid`, `controlsPanel`, `playbackPanel`.
+  `layout2x2Button`, `layout3x3Button`, `layout4x4Button`, `layout5x5Button`, `cameraGrid`, `controlsPanel`, `playbackPanel`.
   Keyboard: W/A/S/D (and arrows) pan/tilt the selected camera (press = move, release = stop).
-  `grid_size() -> int`, `set_grid_size(n: int)` (1, 2, 3; persisted via ConfigStore setting "grid_size").
+  `grid_size() -> int`, `set_grid_size(n: int)` (1..5 since Phase 5; persisted via ConfigStore setting "grid_size").
   Closing the window minimizes to tray when "minimize_to_tray" is True; `quit()` stops everything.
 - `ui.grid.CameraGrid` (objectName `cameraGrid`): `tiles() -> list[VideoTile]`, `set_grid_size(n)`,
   `selected_camera_id() -> str | None`; double-click a tile = single-camera fullscreen view

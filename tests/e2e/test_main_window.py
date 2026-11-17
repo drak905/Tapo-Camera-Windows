@@ -89,7 +89,7 @@ def test_grid_size_read_from_settings_and_validated(make_env, qtbot):
     w = show_window(env, qtbot)
     assert w.grid_size() == 3
     qtbot.waitUntil(lambda: bool(len(_visible_ids(w)) == 9), timeout=3000)
-    for bad in (0, 4, -1):
+    for bad in (0, 6, -1):  # requirement change: grids up to 5x5
         with pytest.raises(ValueError):
             w.set_grid_size(bad)
     assert w.grid_size() == 3

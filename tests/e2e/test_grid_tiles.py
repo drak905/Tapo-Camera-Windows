@@ -188,4 +188,4 @@ def test_grid_set_grid_size_validates(make_env, qtbot):
     grid.set_grid_size(1)
     assert grid.grid_size() == 1
     with pytest.raises(ValueError):
-        grid.set_grid_size(5)
+        grid.set_grid_size(6)  # requirement change: grids up to 5x5
