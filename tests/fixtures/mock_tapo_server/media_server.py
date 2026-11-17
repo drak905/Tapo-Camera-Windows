@@ -8,8 +8,12 @@ multipart parts both ways. Media parts are AES-128-CBC/PKCS7 per part with key=M
 iv=MD5(admin:nonce) and ``X-If-Encrypt: 1`` (only when the client sent ``X-Key-Exchange: 1``).
 
 Supported control requests: ``get download`` and ``get playback`` (stream the cached MPEG-TS clip
-in ``media_chunk_size`` parts, then a ``stream_status``/``finished`` notification) and
-``do stop``. Flow control: the sender stalls when more than ``media_ack_window`` parts are
+in ``media_chunk_size`` parts, then a ``stream_status``/``finished`` notification), ``get preview``
+(live view [spec:stream.control.preview]: ``resolutions`` ``["HD"]`` -> 1280x720 clip, ``["VGA"]`` ->
+640x360 clip, looped forever as one continuous live stream by :mod:`.ts_loop` and paced in real time
+(``media_preview_speed`` multiplier), one part per video frame with ``X-If-IFrame``/``X-Data-PTS``,
+until ``do stop`` or the client closes) and ``do stop``. ``MockTapoCamera.drop_media_connections()``
+resets every :8800 connection. Flow control: the sender stalls when more than ``media_ack_window`` parts are
 un-acknowledged ([spec:vod.stream.flow_control_ack]); after ``media_ack_timeout`` seconds without an
 ack the camera sends ``connection_closed`` (close_reason "data timeout") and closes the socket.
 More than ``max_media_sessions`` authenticated connections -> ``HTTP 503`` body
@@ -25,8 +29,8 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from . import crypto, media_assets
-from ._net import TcpServer
+from . import crypto, media_assets, ts_loop
+from ._net import TcpServer, rst_close
 from .rtsp_server import parse_auth_params
 
 if TYPE_CHECKING:
@@ -35,6 +39,7 @@ if TYPE_CHECKING:
 REALM = "TP-Link Streaming Media"
 DEVICE_BOUNDARY = b"--device-stream-boundary--"
 CLIENT_BOUNDARY = b"--client-stream-boundary--"
+PREVIEW_SIZES = {"HD": (1280, 720), "VGA": (640, 360)}  # clip used per preview resolution
 
 
 class _Closed(Exception):
@@ -252,6 +257,9 @@ class _Session:
                 self.ack_cond.notify_all()
             self.send_json({"type": "response", "seq": seq, "result": {"error_code": 0}})
             return
+        if method == "get" and "preview" in params:
+            self._preview(seq, params["preview"])
+            return
         verb = "download" if "download" in params else ("playback" if "playback" in params else None)
         if method != "get" or verb is None:
             self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52402}})
@@ -317,6 +325,54 @@ class _Session:
         except OSError:
             pass
 
+    # -- live preview [spec:stream.control.preview] ----------------------------------------
+    def _preview(self, seq, p) -> None:
+        resolution = None
+        if isinstance(p, dict) and isinstance(p.get("channels"), list) and isinstance(p.get("resolutions"), list):
+            res = p["resolutions"]
+            if p["channels"] and len(res) == len(p["channels"]) and res[0] in PREVIEW_SIZES:
+                resolution = res[0]
+        if resolution is None:
+            self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52402}})
+            return
+        if self.sender is not None and self.sender.is_alive():
+            self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52417}})
+            return
+        self.session_id = str(self.server.next_session_id())
+        self.send_json({"type": "response", "seq": seq,
+                        "result": {"error_code": 0, "session_id": self.session_id, "resolutions": [resolution]}})
+        self.cam._count("media_preview_requests")
+        self.stop_stream.clear()
+        self.sender = threading.Thread(target=self._preview_stream, args=(resolution,), name="mock-media-preview",
+                                       daemon=True)
+        self.sender.start()
+
+    def _preview_stream(self, resolution: str) -> None:
+        """Loop the cached clip as a live stream, paced by its PTS, until stop / close / ack timeout."""
+        try:
+            template = ts_loop.template_for(media_assets.load_ts(*PREVIEW_SIZES[resolution]))
+        except (FileNotFoundError, RuntimeError, ValueError):
+            self.send_json({"type": "notification", "params": {"event_type": "stream_finish", "reason": "internal_error"}})
+            return
+        speed = max(0.01, float(self.cam.media_preview_speed))
+        started = time.monotonic()
+        try:
+            for i, unit in enumerate(ts_loop.TsLoop(template), start=1):
+                delay = started + unit.elapsed / speed - time.monotonic()
+                if delay > 0 and self.stop_stream.wait(delay):
+                    return
+                if self.stop_stream.is_set() or not self._wait_window(i):
+                    return
+                body = crypto.aes_cbc_encrypt(self.key, self.iv, unit.data) if self.encrypt else unit.data
+                hdr = {"Content-Type": "video/mp2t", "X-If-Encrypt": "1" if self.encrypt else "0",
+                       "X-Session-Id": self.session_id or "", "X-Data-Sequence": str(i),
+                       "X-Data-PTS": str(unit.pts), "X-If-IFrame": "1" if unit.keyframe else "0",
+                       "X-Stream-Type": "0"}
+                self.send_part(hdr, body)
+                self.cam._count("media_parts_sent")
+        except OSError:
+            pass
+
     def _wait_window(self, seq: int) -> bool:
         window = self.cam.media_ack_window
         deadline = time.monotonic() + self.cam.media_ack_timeout
@@ -350,6 +406,7 @@ class MediaServer:
         self.lock = threading.Lock()
         self.active = 0
         self.nonces: dict[str, str] = {}
+        self.sessions: set[_Session] = set()
         self._sid = 0
 
     def next_session_id(self) -> int:
@@ -369,7 +426,24 @@ class MediaServer:
             self.active = max(0, self.active - 1)
 
     def _handle(self, sock: socket.socket, addr) -> None:
-        _Session(self, sock).run()
+        session = _Session(self, sock)
+        with self.lock:
+            self.sessions.add(session)
+        try:
+            session.run()
+        finally:
+            with self.lock:
+                self.sessions.discard(session)
+
+    def drop_all(self) -> None:
+        """Reset (TCP RST) every open :8800 connection; their senders stop at once."""
+        with self.lock:
+            sessions = list(self.sessions)
+        for s in sessions:
+            s.stop_stream.set()
+            with s.ack_cond:
+                s.ack_cond.notify_all()
+            rst_close(s.sock)
 
     def start(self) -> None:
         self.tcp.start()
