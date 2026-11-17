@@ -290,7 +290,8 @@ class LocalStreamSupervisor(StreamSupervisor):
                 if self._session is session:
                     self._session = None
 
-    def _open_preview(self, session: MediaSession, target: _LocalTarget):
+    def _open_preview(self, session: MediaSession,
+                      target: _LocalTarget) -> tuple[Iterator[MediaPart], list[MediaPart]] | _Outcome:
         """Handshake + preview request; returns (parts iterator, media parts that preceded the
         response) or an _Outcome when the attempt is over."""
         try:

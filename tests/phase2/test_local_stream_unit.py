@@ -47,6 +47,7 @@ def test_ffmpeg_args_for_piped_mpegts():
     assert "-rtsp_transport" not in args and "-timeout" not in args
     assert "-probesize" in args and args[-1] == "pipe:1"
     assert "scale=640:360" in args[args.index("-vf") + 1]
+    assert args[args.index("-fps_mode") + 1] == "passthrough"
 
 
 def test_ffmpeg_args_default_unchanged():

@@ -70,6 +70,17 @@ def test_plays_with_exact_frame_size(make_local, mock_camera, resolution, size):
     assert sup.pid is not None and sup.pid in {p.pid for p in ffmpeg_children()}
 
 
+@pytest.mark.parametrize("resolution,size", [("VGA", (640, 360)), ("HD", (1280, 720))])
+def test_frame_rate_matches_camera(make_local, mock_camera, resolution, size):
+    """One output frame per camera frame (15 fps clip): no duplicated or dropped frames."""
+    sup, rec = make_local(mock_camera, *size, resolution=resolution)
+    _play(sup, rec, frames=5)
+    t0 = time.monotonic()
+    time.sleep(4.0)
+    n = len(rec.frames_after(t0))
+    assert 4 * 15 * 0.8 <= n <= 4 * 15 * 1.2, f"{n} frames in 4 s (expected ~60)"
+
+
 def test_first_frame_quickly(make_local, mock_camera):
     sup, rec = make_local(mock_camera)
     t0 = time.monotonic()
@@ -194,6 +205,19 @@ def test_stats_shape(make_local, mock_camera):
     assert stats["fps"] > 5
     assert stats["decoder"] in ("d3d11va", "software")
     assert stats["last_frame_age"] is not None and stats["last_frame_age"] < 1.0
+
+
+def test_audio_track_delivered_when_requested(mock_camera, ffmpeg_path):
+    """The mock TS carries AAC (ffmpeg can decode it); s16le 8 kHz mono chunks reach on_audio."""
+    rec = Recorder()
+    sup = LocalStreamSupervisor(mock_camera.host, mock_camera.cloud_password, 640, 360, port=mock_camera.media_port,
+                                ffmpeg_path=ffmpeg_path, stall_timeout=2.0, **rec.kwargs(audio=True))
+    try:
+        _play(sup, rec)
+        assert wait_until(lambda: rec.audio_bytes_after(0) > 8000, 6), "no audio"
+        assert rec.callback_errors == []
+    finally:
+        sup.stop()
 
 
 def test_software_decoding(make_local, mock_camera):

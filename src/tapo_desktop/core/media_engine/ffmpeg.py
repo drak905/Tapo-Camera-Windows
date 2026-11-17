@@ -63,8 +63,9 @@ def build_ffmpeg_args(
     -pix_fmt rgb24 -f rawvideo pipe:1`` (``fps`` limits the output rate via ``-r`` or an fps filter).
     Audio output only when ``audio_url`` is given, after ``pipe:1``:
     ``-map 0:a:0? -ac 1 -ar 8000 -f s16le <audio_url>``.
-    ``input_format`` (e.g. ``"mpegts"`` with ``url="pipe:0"``) forces the demuxer with ``-f`` and
-    replaces the RTSP-only ``-rtsp_transport`` option.
+    ``input_format`` (e.g. ``"mpegts"`` with ``url="pipe:0"``) forces the demuxer with ``-f``,
+    replaces the RTSP-only ``-rtsp_transport`` option and (without ``fps``) adds
+    ``-fps_mode passthrough``.
     Never logs the password (use ``redact_url``).
 
     Implementation note (measured against the mock camera, FFmpeg 8.1): default stream probing
@@ -91,6 +92,10 @@ def build_ffmpeg_args(
     ]
     if fps:
         args += ["-r", str(int(fps))]
+    elif input_format:
+        # one output frame per decoded frame: with a tiny probe ffmpeg may guess the wrong input
+        # rate for a piped TS (measured: 30 fps for the 15 fps HD clip) and duplicate frames
+        args += ["-fps_mode", "passthrough"]
     args += ["-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
     if audio_url:
         args += ["-map", "0:a:0?", "-ac", "1", "-ar", "8000", "-f", "s16le", audio_url]
