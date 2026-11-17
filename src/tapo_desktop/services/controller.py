@@ -97,7 +97,7 @@ log = logging.getLogger(__name__)
 
 #: Fields whose change makes the existing service (sessions, sockets, URLs) obsolete.
 _CONNECTION_FIELDS = ("host", "https_port", "rtsp_port", "onvif_port", "media_port", "enable_onvif_events",
-                      "lan_found", "live_transport")
+                      "lan_found", "live_transport", "control_protocol")
 #: Upper bound for the synchronous :meth:`AppController.stop_all`.
 STOP_ALL_TIMEOUT_S = 10.0
 #: Minimum progress step forwarded to the GUI (the last value 1.0 is always forwarded).

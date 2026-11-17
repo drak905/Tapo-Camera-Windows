@@ -61,6 +61,7 @@ class CameraConfig:
     online: bool = True  # cloud status (status != 0); refreshed on sign-in / refresh
     lan_found: bool = True  # host was located on the LAN (TDP or manual); False -> host is stale/empty
     live_transport: str = "auto"  # "auto": RTSP if a camera account exists, else local :8800 | "local" | "rtsp"
+    control_protocol: str = ""  # "" = auto (v3, TPAP after -40211) | "tpap" (TDP advertised encrypt_type "4")
 
 
 @dataclass(frozen=True)

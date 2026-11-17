@@ -248,9 +248,12 @@ class TapoCameraService(CameraService):
                 if factory is None:
                     from tapo_desktop.core.control_client.client import TapoControlClient as factory
                 cloud = self._creds(CredentialKind.CLOUD)
+                hints: dict[str, Any] = {}
+                if self.config.control_protocol == "tpap":  # TDP said encrypt_type "4": skip the v3 probe
+                    hints["encrypt_type"] = ["4"]
                 self._client = factory(host=self.config.host, password=cloud.password,
                                        username=cloud.username or "admin",
-                                       port=self.config.https_port, pin_store=self._pin_store)
+                                       port=self.config.https_port, pin_store=self._pin_store, **hints)
             return self._client
 
     def _on_network(self) -> bool:

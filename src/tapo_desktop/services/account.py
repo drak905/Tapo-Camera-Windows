@@ -37,6 +37,7 @@ from typing import Any
 
 from PyQt6.QtCore import QCoreApplication, QObject, QThread, Qt, pyqtSignal, pyqtSlot
 
+from tapo_desktop.core.control_client.tpap import tpap_requested
 from tapo_desktop.core.errors import TapoConnectionError
 from tapo_desktop.models import (
     ACCOUNT_VAULT_ID,
@@ -87,6 +88,13 @@ def _normalise_mac(mac: str) -> str:
         digits = re.sub(r"[^0-9A-Fa-f]", "", mac or "").upper()
         return "-".join(digits[i:i + 2] for i in range(0, 12, 2)) if len(digits) == 12 else (mac or "").upper()
     return normalise_mac(mac) if mac else ""
+
+
+def _control_protocol(hit: LanDevice) -> str:
+    """"tpap" if the TDP reply advertises the TPAP login (encrypt_type "4" / tpap.pake) [spec:tpap.selection]."""
+    raw = hit.raw if isinstance(hit.raw, dict) else {}
+    tpap = raw.get("tpap")
+    return "tpap" if tpap_requested(tpap if isinstance(tpap, dict) else None, raw.get("encrypt_type")) else ""
 
 
 def _match(cloud: list[CloudDevice], lan: list[LanDevice]) -> dict[str, LanDevice]:
@@ -440,7 +448,8 @@ class AccountManager(QObject):
             base, name=dev.alias or base.name, source="cloud", device_id=dev.device_id,
             mac=_normalise_mac(dev.mac) if dev.mac else base.mac, model=dev.model or base.model,
             online=bool(dev.online), host=hit.ip if hit is not None else "", lan_found=hit is not None,
-            https_port=(hit.http_port or 443) if hit is not None else base.https_port)
+            https_port=(hit.http_port or 443) if hit is not None else base.https_port,
+            control_protocol=_control_protocol(hit) if hit is not None else base.control_protocol)
 
     def _emit_counts(self) -> None:
         cams = [c for c in self._ctrl.cameras() if c.source == "cloud"]
