@@ -3,6 +3,10 @@
 TPAP (SPAKE2+ + AES-128-CCM ``/ds``, see :mod:`.tpap`) is used when the TDP hints ask for it or when
 the v3 step 1 answers -40211 [spec:tpap.selection].
 
+``local_token`` (optional) is the camera's cloud-issued local access token (LAT) [spec:lat.*]: TPAP
+offers SHA256_HEX_UPPER(LAT) first, and the v3 secure login uses the raw LAT when the camera's
+device_confirm proves it holds the LAT. The legacy MD5 login always uses the password.
+
 Credentials never appear in logs, exception messages or ``repr``.
 """
 from __future__ import annotations
@@ -50,6 +54,7 @@ class _Session:
     seq: int = 0
     tpap: "tpap_mod.TpapSession | None" = None
     expires_at: float | None = None
+    secret: str = ""  # secure v3: the password or LAT the session keys came from (tapo_tag)
 
     def __repr__(self) -> str:
         return f"_Session(secure={self.secure})"
@@ -186,12 +191,18 @@ class TapoControlClient:
     def _tpap_login(self) -> _Session:
         """SPAKE2+ login [spec:tpap.pake_register.request]; the authenticator remembers what worked."""
         if self._tpap_auth is None:
-            self._tpap_auth = tpap_mod.TpapAuthenticator(self._post_login, self._password, tpap=self._tpap_info)
+            self._tpap_auth = tpap_mod.TpapAuthenticator(self._post_login, self._password, tpap=self._tpap_info,
+                                                         local_token=self._local_token)
         tsess = self._tpap_auth.login()
         expires_at = (time.monotonic() + tsess.expires_in
                       if isinstance(tsess.expires_in, int) and tsess.expires_in > 0 else None)
         log.info("logged in to %s:%s (tpap)", self._host, self._port)
         return _Session(stok=tsess.stok, secure=True, seq=tsess.start_seq, tpap=tsess, expires_at=expires_at)
+
+    @property
+    def uses_local_token(self) -> bool:
+        """True if a cloud-issued local access token was given (the token itself is never exposed)."""
+        return self._local_token is not None
 
     @property
     def logged_in(self) -> bool:
@@ -258,20 +269,38 @@ class TapoControlClient:
         self._secure = self._session.secure
         log.info("logged in to %s:%s (%s)", self._host, self._port, "secure" if self._secure else "legacy")
 
+    def _secret_for(self, cnonce: str, nonce: str, device_confirm: str) -> str | None:
+        """The secret the camera proves it knows via ``device_confirm`` [spec:lat.legacy_secure.login].
+
+        The check is local (no login attempt is spent), so both the raw local access token (LAT
+        mode) and the TP-Link ID password can be tested; ``None`` if neither matches.
+        """
+        candidates = [self._local_token] if self._local_token else []
+        candidates.append(self._password)
+        for secret in candidates:
+            if secret and crypto.verify_device_confirm(secret, cnonce, nonce, device_confirm):
+                return secret
+        return None
+
     def _secure_login(self, cnonce: str, nonce: str, device_confirm: str) -> _Session:
-        if not crypto.verify_device_confirm(self._password, cnonce, nonce, device_confirm):
+        secret = self._secret_for(cnonce, nonce, device_confirm)
+        if secret is None:
+            if self._local_token:
+                raise TapoAuthError("camera did not confirm the password: neither the local access token "
+                                    "nor the TP-Link ID password matches")
             raise TapoAuthError("camera did not confirm the password: wrong password, or the camera "
                                 "uses a cloud-synced local access token")
-        keys = crypto.derive_session_keys(self._password, cnonce, nonce)
+        keys = crypto.derive_session_keys(secret, cnonce, nonce)
         resp = self._post_login({"cnonce": cnonce, "encrypt_type": "3", "username": self._username,
-                                 "digest_passwd": crypto.digest_passwd(self._password, cnonce, nonce)})
+                                 "digest_passwd": crypto.digest_passwd(secret, cnonce, nonce)})
         code = _error_code(resp)
         self._raise_if_locked(code, resp)
         if code != _OK:
             raise TapoAuthError(f"secure login rejected by the camera (error {code})")
         res = _result(resp)
         return _Session(stok=self._stok(res), secure=True, cnonce=cnonce,
-                        cipher=crypto.SecureSessionCipher(keys), seq=_as_int(res.get("start_seq"), "start_seq"))
+                        cipher=crypto.SecureSessionCipher(keys), seq=_as_int(res.get("start_seq"), "start_seq"),
+                        secret=secret)
 
     def _legacy_login(self) -> _Session:
         resp = self._post_login({"hashed": True, "password": crypto.md5_upper(self._password),
@@ -371,7 +400,7 @@ class TapoControlClient:
         sess.seq += 1  # consumed whether or not the request succeeds [spec:auth.secure.seq]
         body = crypto.wrap_secure_passthrough(sess.cipher, inner)
         headers["seq"] = str(seq)
-        headers["tapo_tag"] = crypto.compute_tag(self._password, sess.cnonce, body, seq)
+        headers["tapo_tag"] = crypto.compute_tag(sess.secret or self._password, sess.cnonce, body, seq)
         outer = self._post_checked(path, body, headers)
         code = _error_code(outer)
         if code in (_SESSION_EXPIRED, _PROTOCOL_FORMAT_ERROR):

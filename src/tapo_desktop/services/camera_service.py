@@ -24,7 +24,9 @@ from collections.abc import Callable
 from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from tapo_desktop.core.errors import TapoAuthError, TapoConnectionError, TapoDeviceError, TapoError
+from tapo_desktop.core.errors import (
+    TapoAuthError, TapoConnectionError, TapoDeviceError, TapoError, TapoLockedError,
+)
 from tapo_desktop.models import (
     CameraConfig,
     CredentialKind,
@@ -213,6 +215,8 @@ class TapoCameraService(CameraService):
         self._poller: _AlarmPoller | None = None
         self._lock = threading.RLock()
         self._client: Any = None
+        self._client_token: str | None = None  # LAT the control client was built with
+        self._stream_token: str | None = None  # LAT the running local supervisor was built with
         self._device_info: DeviceInfo | None = None
         self._supervisor: Any = None
         self._stream_gen = 0  # bumped whenever a supervisor is replaced: mutes stale callbacks
@@ -239,9 +243,18 @@ class TapoCameraService(CameraService):
             raise TapoError("camera service is closed")
 
     def _control(self) -> Any:
-        """The (lazily created) TapoControlClient; it logs in on first use."""
+        """The (lazily created) TapoControlClient; it logs in on first use.
+
+        The client is rebuilt (fresh session and auth breaker) when the camera's vault local access
+        token changed since it was created [spec:lat.client.recommended_flow].
+        """
+        token = self._local_token()
+        stale = None
         with self._lock:
             self._check_open()
+            if self._client is not None and token != self._client_token:
+                log.info("camera %s: local access token changed; rebuilding the control client", self.config.id)
+                stale, self._client = self._client, None
             if self._client is None:
                 self._check_on_network()
                 factory = self._control_factory
@@ -251,10 +264,36 @@ class TapoCameraService(CameraService):
                 hints: dict[str, Any] = {}
                 if self.config.control_protocol == "tpap":  # TDP said encrypt_type "4": skip the v3 probe
                     hints["encrypt_type"] = ["4"]
+                if token:  # only when present: Phase 1 factories do not know the keyword
+                    hints["local_token"] = token
                 self._client = factory(host=self.config.host, password=cloud.password,
                                        username=cloud.username or "admin",
                                        port=self.config.https_port, pin_store=self._pin_store, **hints)
-            return self._client
+                self._client_token = token
+            client = self._client
+        if stale is not None:
+            try:
+                stale.close()
+            except Exception as exc:
+                log.debug("closing the old control client of camera %s failed: %s", self.config.id, exc)
+        return client
+
+    def _local_token(self) -> str | None:
+        """The camera's cloud-issued local access token from the vault, or None."""
+        creds = self._vault.get(self.config.id, CredentialKind.LOCAL_TOKEN)
+        return creds.password if creds is not None and creds.password else None
+
+    def diagnostics(self) -> str:
+        """One-line, secret-free diagnostic text, e.g.
+        ``"transport: local; control: tpap; using local access token: yes"``."""
+        parts = [f"transport: {self.live_transport()}"]
+        protocol = getattr(self._client, "protocol", None) if self._client is not None else None
+        if isinstance(protocol, str) and protocol:
+            parts.append(f"control: {protocol}")
+        elif self.config.control_protocol:
+            parts.append(f"control: {self.config.control_protocol}")
+        parts.append(f"using local access token: {'yes' if self._local_token() else 'no'}")
+        return "; ".join(parts)
 
     def _on_network(self) -> bool:
         """False when the camera was not found on the LAN (cloud camera without a usable host)."""
@@ -279,16 +318,17 @@ class TapoCameraService(CameraService):
             return "local"
         return "rtsp" if self._has_camera_account() else "local"
 
-    def diagnostics(self) -> str:
-        """One-line, secret-free diagnostic text, e.g. ``"transport: local; using local access token: yes"``."""
-        raise NotImplementedError
-
     # ------------------------------------------------------------------ control
     def connect(self) -> DeviceInfo:
         self._check_on_network()
         client = self._control()
         if not client.logged_in:
-            client.login()
+            try:
+                client.login()
+            except TapoAuthError as exc:  # say whether the LAT was tried; never the token itself
+                yes = "yes" if self._local_token() else "no"
+                cls = TapoLockedError if isinstance(exc, TapoLockedError) else TapoAuthError
+                raise cls(f"{exc} (using local access token: {yes})") from exc
         if self._device_info is None:
             self._device_info = client.get_device_info()
         return self._device_info
@@ -363,7 +403,9 @@ class TapoCameraService(CameraService):
         self._check_open()
         self._check_on_network()
         cloud = self._creds(CredentialKind.CLOUD)
-        downloader = RecordingDownloader(self.config.host, cloud.password, port=self.config.media_port)
+        token = self._local_token()
+        extra = {"local_token": token} if token else {}
+        downloader = RecordingDownloader(self.config.host, cloud.password, port=self.config.media_port, **extra)
         return downloader.download(clip, pathlib.Path(out_path), progress=progress, cancel=self._cancel)
 
     # ------------------------------------------------------------------ live stream
@@ -386,12 +428,14 @@ class TapoCameraService(CameraService):
                                          quality, port=self.config.rtsp_port)
         else:
             target = local_resolution(quality)
+        token = self._local_token() if transport == "local" else None
         with self._lock:
             self._check_open()
             self._on_frame, self._on_state = on_frame, on_state
             current = self._supervisor
             if (current is not None and self._transport == transport
-                    and current.state not in (StreamState.FAILED, StreamState.STOPPED)):
+                    and current.state not in (StreamState.FAILED, StreamState.STOPPED)
+                    and (transport != "local" or token == self._stream_token)):
                 current.switch(target, width, height)
                 return
             self._supervisor = None
@@ -407,8 +451,8 @@ class TapoCameraService(CameraService):
             if transport == "rtsp":
                 sup = self._new_rtsp_supervisor(target, width, height, callbacks)
             else:
-                sup = self._new_local_supervisor(quality, width, height, callbacks)
-            self._supervisor, self._transport = sup, transport
+                sup = self._new_local_supervisor(quality, width, height, callbacks, token)
+            self._supervisor, self._transport, self._stream_token = sup, transport, token
         sup.start()
 
     def _new_rtsp_supervisor(self, url: str, width: int, height: int, callbacks: dict) -> Any:
@@ -417,15 +461,18 @@ class TapoCameraService(CameraService):
             from tapo_desktop.core.media_engine.supervisor import StreamSupervisor as factory
         return factory(url, width, height, **callbacks)
 
-    def _new_local_supervisor(self, quality: StreamQuality, width: int, height: int, callbacks: dict) -> Any:
-        """Local :8800 preview, user ``admin`` + the TP-Link ID password [spec:lan.live_view_selection]."""
+    def _new_local_supervisor(self, quality: StreamQuality, width: int, height: int, callbacks: dict,
+                              token: str | None = None) -> Any:
+        """Local :8800 preview, user ``admin`` + the TP-Link ID password [spec:lan.live_view_selection],
+        or the camera's local access token when one is stored [spec:lat.media.digest]."""
         factory = self._local_stream_factory
         if factory is None:
             from tapo_desktop.core.media_engine.local_stream import LocalStreamSupervisor as factory
         cloud = self._creds(CredentialKind.CLOUD)
+        extra = {"local_token": token} if token else {}  # only when present: older factories lack it
         return factory(self.config.host, cloud.password, width, height,
                        resolution=local_resolution(quality), port=self.config.media_port,
-                       channel=local_channel(quality), **callbacks)
+                       channel=local_channel(quality), **callbacks, **extra)
 
     def stop_stream(self) -> None:
         with self._lock:

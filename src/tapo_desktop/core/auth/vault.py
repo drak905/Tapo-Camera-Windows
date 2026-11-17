@@ -160,7 +160,14 @@ class CredentialVault:
 
     def delete_kind(self, camera_id: str, kind: CredentialKind) -> None:
         """Remove only the ``kind`` entry of ``camera_id`` (no error if absent)."""
-        raise NotImplementedError
+        kind = CredentialKind(kind)
+        with self._lock:
+            cams = self._load()
+            kinds = cams.get(camera_id)
+            if kinds is not None and kinds.pop(kind.value, None) is not None:
+                if not kinds:
+                    del cams[camera_id]
+                self._save(cams)
 
     def camera_ids(self) -> list[str]:
         """Camera ids that have at least one stored credential."""

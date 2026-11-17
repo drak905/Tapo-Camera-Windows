@@ -358,7 +358,9 @@ class MediaSession:
         timeout: float = 10.0,
         local_token: str | None = None,
     ):
-        """``password`` = cloud password (plaintext)."""
+        """``password`` = cloud password (plaintext). ``local_token`` = the camera's local access
+        token (LAT); when given it is the digest / stream-key secret instead of the password, so an
+        encrypt_type 3 challenge uses SHA256_HEX_UPPER(LAT) [spec:lat.media.digest]."""
         self._host = host
         self._port = int(port)
         self._password = password
@@ -376,6 +378,15 @@ class MediaSession:
 
     def __repr__(self) -> str:
         return f"MediaSession(host={self._host!r}, port={self._port}, connected={self._sock is not None})"
+
+    @property
+    def _secret(self) -> str:
+        """Digest secret: the LAT when one was given, else the cloud password."""
+        return self._local_token or self._password
+
+    @property
+    def _secret_name(self) -> str:
+        return "local access token" if self._local_token else "cloud password"
 
     @property
     def session_id(self) -> str | None:
@@ -402,10 +413,10 @@ class MediaSession:
                 challenge = parse_www_authenticate(response.headers.get("www-authenticate", ""))
                 if response.headers.get("connection", "").lower() == "close":
                     self._reopen_socket()
-                authorization = digest_authorization(challenge, self._password, username=self._username)
+                authorization = digest_authorization(challenge, self._secret, username=self._username)
                 response = self._post(authorization)
                 if response.status == 401:
-                    raise TapoAuthError(f"media port {self._host}:{self._port} rejected the cloud password")
+                    raise TapoAuthError(f"media port {self._host}:{self._port} rejected the {self._secret_name}")
             self._check_status(response)
             self._setup_encryption(response, challenge)
             logger.debug("media session to %s:%d established (encrypted=%s)", self._host, self._port,
@@ -499,7 +510,7 @@ class MediaSession:
                 f"camera {self._host} refused another media session (HTTP {response.status}, code {code})"
             )
         if response.status == 401:
-            raise TapoAuthError(f"media port {self._host}:{self._port} rejected the cloud password")
+            raise TapoAuthError(f"media port {self._host}:{self._port} rejected the {self._secret_name}")
         raise TapoProtocolError(f"unexpected HTTP status {response.status} from media port")
 
     def _setup_encryption(self, response: _HttpResponse, challenge: dict[str, str]) -> None:
@@ -508,7 +519,7 @@ class MediaSession:
         if not value:
             return
         key_exchange = parse_key_exchange(value)
-        transformed = transform_password(self._password or DEFAULT_MEDIA_PASSWORD, challenge.get("encrypt_type"))
+        transformed = transform_password(self._secret or DEFAULT_MEDIA_PASSWORD, challenge.get("encrypt_type"))
         self._keys = derive_stream_key_iv(key_exchange, transformed)
         if self._keys is None:
             logger.warning("camera %s offered an unsupported Key-Exchange user; encrypted parts cannot be read",

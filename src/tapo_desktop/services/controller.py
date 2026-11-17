@@ -100,6 +100,8 @@ _CONNECTION_FIELDS = ("host", "https_port", "rtsp_port", "onvif_port", "media_po
                       "lan_found", "live_transport", "control_protocol")
 #: Upper bound for the synchronous :meth:`AppController.stop_all`.
 STOP_ALL_TIMEOUT_S = 10.0
+#: Username stored with a camera's local access token (vault ``CredentialKind.LOCAL_TOKEN``).
+LOCAL_TOKEN_USER = "admin"
 #: Minimum progress step forwarded to the GUI (the last value 1.0 is always forwarded).
 _PROGRESS_STEP = 0.01
 
@@ -252,16 +254,22 @@ class AppController(QObject):
         ``cameras_changed``.
 
         New cameras are appended in the given order. ``cloud`` (if given) becomes every camera's
-        ``CredentialKind.CLOUD`` entry. An existing camera whose connection fields or credentials
-        change gets a fresh service and, if it is on screen, its stream restarted.
+        ``CredentialKind.CLOUD`` entry. ``local_tokens`` maps camera id -> local access token
+        (``CredentialKind.LOCAL_TOKEN`` = ``("admin", <LAT>)``) or ``None`` to remove it; ids not in
+        the mapping keep their stored token. An existing camera whose connection fields or
+        credentials (incl. its LAT) change gets a fresh service and, if it is on screen, its stream
+        restarted.
         """
         restart: list[_Camera] = []
         added: list[str] = []
         previous: dict[str, CameraConfig] = {}
+        tokens = local_tokens or {}
         for config in configs:
             creds_changed = False
             if cloud is not None and self._vault.get(config.id, CredentialKind.CLOUD) != cloud:
                 self._vault.set(config.id, CredentialKind.CLOUD, cloud)
+                creds_changed = True
+            if config.id in tokens and self._apply_local_token(config.id, tokens[config.id]):
                 creds_changed = True
             cam = self._cams.get(config.id)
             if cam is None:
@@ -304,7 +312,31 @@ class AppController(QObject):
 
     def uses_local_token(self, camera_id: str) -> bool:
         """True if a local access token is stored for ``camera_id`` (the token itself is never exposed)."""
-        raise NotImplementedError
+        if camera_id not in self._cams:
+            return False
+        return self._vault.get(camera_id, CredentialKind.LOCAL_TOKEN) is not None
+
+    def _apply_local_token(self, camera_id: str, token: str | None) -> bool:
+        """Store / remove the camera's LAT in the vault; True if the stored value changed."""
+        current = self._vault.get(camera_id, CredentialKind.LOCAL_TOKEN)
+        if token:
+            wanted = Credentials(LOCAL_TOKEN_USER, token)
+            if current == wanted:
+                return False
+            self._vault.set(camera_id, CredentialKind.LOCAL_TOKEN, wanted)
+            return True
+        if current is None:
+            return False
+        delete_kind = getattr(self._vault, "delete_kind", None)
+        if delete_kind is not None:
+            delete_kind(camera_id, CredentialKind.LOCAL_TOKEN)
+        else:  # duck-typed vault without per-kind delete: rewrite the remaining kinds
+            keep = {k: self._vault.get(camera_id, k) for k in CredentialKind if k is not CredentialKind.LOCAL_TOKEN}
+            self._vault.delete(camera_id)
+            for kind, creds in keep.items():
+                if creds is not None:
+                    self._vault.set(camera_id, kind, creds)
+        return True
 
     def _detach(self, camera_id: str) -> None:
         cam = self._cams.pop(camera_id)

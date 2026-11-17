@@ -130,9 +130,12 @@ class RecordingDownloader:
         session_factory: Callable[..., MediaSession] | None = None,
         local_token: str | None = None,
     ):
-        """``session_factory(host, password, port=port)`` creates the MediaSession (default: MediaSession)."""
+        """``session_factory(host, password, port=port[, local_token=...])`` creates the MediaSession
+        (default: MediaSession); ``local_token`` (the camera's LAT, [spec:lat.media.digest]) is passed
+        only when set, so existing factories keep working."""
         self._host = host
         self._password = password
+        self._local_token = local_token or None
         self._port = port
         self._ffmpeg_path = ffmpeg_path
         self._session_factory = session_factory or MediaSession
@@ -181,7 +184,8 @@ class RecordingDownloader:
     # ------------------------------------------------------------------ network phase
     def _fetch(self, clip: RecordingClip, ts_path: pathlib.Path, tracker: _Progress,
                cancel: threading.Event | None) -> None:
-        session = self._session_factory(self._host, self._password, port=self._port)
+        extra = {"local_token": self._local_token} if self._local_token else {}
+        session = self._session_factory(self._host, self._password, port=self._port, **extra)
         try:
             if cancel is not None and cancel.is_set():
                 raise DownloadCancelled("download cancelled before it started")

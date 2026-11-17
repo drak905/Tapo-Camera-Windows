@@ -57,6 +57,7 @@ CAMERA_USER = "admin"
 MAX_ATTEMPTS = 2                   # pake_share attempts per login (password guesses are counted by the camera)
 RELOGIN_RETRY_DELAY_S = 2.0        # pause before repeating a refused share with the known-good passcode
 CREDENTIAL_VARIANTS = ("md5", "sha256")
+LAT_VARIANT = "lat"                # SHA256_HEX_UPPER(local access token) [spec:lat.tpap.passcode_candidates]
 DEFAULT_ITERATIONS = 10000         # Spake2pRegisterResult default when the reply omits it
 ENCRYPTION = "aes_128_ccm"
 CIPHER_SUITE = 1                   # SPAKE2+-P256-SHA256-HKDF-SHA256-HMAC-SHA256
@@ -555,7 +556,9 @@ class TpapAuthenticator:
     ``post_login(params)`` must POST ``{"method": "login", "params": params}`` to ``/`` and return the
     parsed JSON reply. At most :data:`MAX_ATTEMPTS` ``pake_share`` (password) attempts are made per
     :meth:`login`. Order: md5 first (the app's first candidate) unless the register reply carries
-    ``extra_crypt`` (C200 style: SHA256 + shadow) - then sha256 first. After a success only the
+    ``extra_crypt`` (C200 style: SHA256 + shadow) - then sha256 first. With a cloud-issued local
+    access token (``local_token``) SHA256_HEX_UPPER(LAT) is offered FIRST and the best password
+    variant second [spec:lat.tpap.passcode_candidates], still within MAX_ATTEMPTS. After a success only the
     known-good variant is used; a refusal of it is retried once after :data:`RELOGIN_RETRY_DELAY_S`
     (C200 refuses the first share after a session ended). Lockout codes stop at once.
     """
@@ -580,7 +583,7 @@ class TpapAuthenticator:
 
     @property
     def good_variant(self) -> str | None:
-        """Credential variant of the last successful login (``"md5"`` / ``"sha256"``) or ``None``."""
+        """Credential variant of the last successful login (``"lat"`` / ``"md5"`` / ``"sha256"``) or ``None``."""
         return self._good_variant
 
     # -- steps -------------------------------------------------------------------------
@@ -617,9 +620,16 @@ class TpapAuthenticator:
             return _Register(user_random, _b64field(res, "dev_random"), _b64field(res, "dev_salt"),
                              _b64field(res, "dev_share"), iterations, encryption, res.get("extra_crypt"))
 
+    def _passcode(self, variant: str) -> str:
+        """Raw passcode of ``variant``: ``"lat"`` -> SHA256_HEX_UPPER(LAT) [spec:lat.tpap.passcode_candidates]."""
+        if variant == LAT_VARIANT:
+            assert self._local_token is not None
+            return sha256_hex_upper(self._local_token)
+        return credential_for(variant, self._password)
+
     def _share(self, reg: _Register, variant: str) -> TpapSession | int:
         """One password attempt. Returns the session, or the camera's error code on refusal."""
-        passcode = apply_extra_crypt(credential_for(variant, self._password), reg.extra_crypt, mac=self._mac)
+        passcode = apply_extra_crypt(self._passcode(variant), reg.extra_crypt, mac=self._mac)
         w0, w1 = derive_w0_w1(passcode, reg.dev_salt, reg.iterations)
         prover = Spake2pProver(w0, w1, tpap_context(reg.user_random, reg.dev_random))
         try:
@@ -649,7 +659,7 @@ class TpapAuthenticator:
     # -- login -------------------------------------------------------------------------
     def login(self) -> TpapSession:
         """Bounded login; TapoAuthError / TapoLockedError / TpapRejected / TapoProtocolError."""
-        if not self._password:
+        if not self._password and not self._local_token:
             raise TapoAuthError("no password for the TPAP login (sign in with the TP-Link ID)")
         known = self._good_variant
         last_code: int | None = None
@@ -657,12 +667,15 @@ class TpapAuthenticator:
         for attempt in range(MAX_ATTEMPTS):
             if attempt and known is not None:
                 self._sleep(RELOGIN_RETRY_DELAY_S)
+            if known is None and not [v for v in self._order(None) if v not in tried]:
+                break  # LAT-only login: nothing left to offer (the order only grows with extra_crypt)
             reg = self._register()
             if known is not None:
                 variant = known
             else:
-                order = ("sha256", "md5") if reg.extra_crypt else CREDENTIAL_VARIANTS
-                variant = next(v for v in order if v not in tried)
+                variant = next((v for v in self._order(reg.extra_crypt) if v not in tried), "")
+                if not variant:
+                    break
             tried.append(variant)
             result = self._share(reg, variant)
             if isinstance(result, TpapSession):
@@ -672,4 +685,18 @@ class TpapAuthenticator:
             last_code = result
             log.debug("TPAP pake_share refused (error %s, variant %s)", result, variant)
         self._good_variant = None  # e.g. the password changed: the next login tries both variants again
+        if self._local_token:
+            raise TapoAuthError("camera rejected the local access token and the TP-Link ID password "
+                                f"(TPAP, error {last_code})")
         raise TapoAuthError(f"camera rejected the TP-Link ID password (TPAP, error {last_code})")
+
+    def _order(self, extra_crypt: Any) -> list[str]:
+        """Candidate passcodes, best first: the LAT (if any), then the password variants.
+
+        With ``extra_crypt`` (C200 style) SHA-256 is the better password guess, else md5 (the app's
+        first candidate). Without a password only the LAT is offered.
+        """
+        order = [LAT_VARIANT] if self._local_token else []
+        if self._password:
+            order += ["sha256", "md5"] if extra_crypt else list(CREDENTIAL_VARIANTS)
+        return order

@@ -48,8 +48,9 @@ def rig(tmp_path, qtbot, mock_cloud_factory, mock_tdp_factory, ffmpeg_path, monk
     try:
         cloud = mock_cloud_factory(accounts={EMAIL: PASSWORD}, devices=devices,
                                    local_tokens={devices[0]["deviceId"]: LAT})
-        tdp = mock_tdp_factory(devices=[tdp_device_for(d, ip=c.host, http_port=c.https_port, encrypt_type=["4"],
-                                                       tpap=TPAP_HINT) for d, c in zip(devices, cams)])
+        tdp = mock_tdp_factory(devices=[tdp_device_for(d, ip=c.host, http_port=c.https_port,
+                                                       extra={"encrypt_type": ["4"], "tpap": TPAP_HINT})
+                                        for d, c in zip(devices, cams)])
         media_by_https = {c.https_port: c.media_port for c in cams}
         vault = CredentialVault(tmp_path / "vault.json")
 

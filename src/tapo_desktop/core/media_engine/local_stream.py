@@ -160,6 +160,8 @@ class LocalStreamSupervisor(StreamSupervisor):
     """Live view of one camera over :8800, same public surface as :class:`StreamSupervisor`.
 
     * ``password`` is the TP-Link ID (cloud) password; user ``admin`` [spec:stream.local8800.auth.digest].
+      ``local_token`` (the camera's cloud-issued LAT) replaces it as the digest secret when given
+      [spec:lat.media.digest].
     * ``resolution`` ``"HD"`` (main stream) or ``"VGA"`` (minor stream) is what the camera sends;
       frames are always scaled/padded to ``width`` x ``height``.
     * Wrong password -> FAILED, reason contains "auth" (no retry, no ffmpeg spawned).
@@ -204,6 +206,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         self._host = host
         self._port = int(port)
         self._password = password or ""
+        self._local_token = local_token or None
         self._channel = int(channel)
         self._io_timeout = max(_MIN_IO_TIMEOUT_S, stall_timeout + 1.0)
         self._session: MediaSession | None = None
@@ -266,7 +269,10 @@ class LocalStreamSupervisor(StreamSupervisor):
 
     def _hide(self, text: str) -> str:
         text = _Scrubber(self._target.url)(text)
-        return text.replace(self._password, "***") if len(self._password) >= 3 else text
+        for secret in (self._password, self._local_token or ""):
+            if len(secret) >= 3:
+                text = text.replace(secret, "***")
+        return text
 
     def _fail(self, reason: str) -> None:
         super()._fail(self._hide(reason))
@@ -274,7 +280,8 @@ class LocalStreamSupervisor(StreamSupervisor):
     # ================================================================== one attempt
     def _attempt(self, exe: str, target: _Target) -> _Outcome:
         assert isinstance(target, _LocalTarget)
-        session = MediaSession(self._host, self._password, port=self._port, timeout=self._io_timeout)
+        session = MediaSession(self._host, self._password, port=self._port, timeout=self._io_timeout,
+                               local_token=self._local_token)
         with self._lock:
             self._session = session
         try:

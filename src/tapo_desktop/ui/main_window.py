@@ -320,6 +320,10 @@ class MainWindow(QMainWindow):
                 tip = cfg.host or "No address on this network"
                 if cfg.model:
                     tip = f"{cfg.model} - {tip}"
+                if cfg.source == "cloud":
+                    uses = getattr(self._ctrl, "uses_local_token", None)
+                    if callable(uses):  # yes/no only: the token itself never reaches the UI
+                        tip += f"\nusing local access token: {'yes' if uses(cfg.id) else 'no'}"
                 item.setToolTip(tip)
                 if status:
                     item.setForeground(QColor(140, 145, 152))  # muted: not streamable right now

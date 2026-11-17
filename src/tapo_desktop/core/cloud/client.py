@@ -64,6 +64,11 @@ ERR_TOKEN_EXPIRED = -20651
 ERR_TOKEN_MISMATCH = -20652
 ERR_LOGGED_IN_ELSEWHERE = -20675
 ERR_MFA_REQUIRED = -20677
+_TOKEN_ERRORS = frozenset({ERR_TOKEN_EXPIRED, ERR_TOKEN_MISMATCH, ERR_LOGGED_IN_ELSEWHERE})
+#: Service id of the IoT app server that serves the thing list with local access tokens
+#: [spec:lat.cloud.base_url]; resolved through ``getAppServiceUrl``.
+IOT_APP_SERVER_SERVICE_ID = "nbu.iot-app-server.app-v2"
+THINGS_PAGE_SIZE = 100  # ThingCloudRepository: ThingListPageParams(0, 100)
 _AUTH_MESSAGES = {
     -20004: "Sign-in failed. Check your email and password.",
     -20200: "That email address is not valid.",
@@ -189,6 +194,7 @@ class TapoCloudClient:
         self._region: str | None = None
         self._account: AccountInfo | None = None
         self.__mfa: _PendingMfa | None = None
+        self._iot_url: str | None = None
 
     def __repr__(self) -> str:
         return (f"TapoCloudClient(base_url={self.base_url!r}, signed_in={self.__token is not None}, "
@@ -288,12 +294,136 @@ class TapoCloudClient:
             return list(devices.values())
 
     def get_service_urls(self, service_ids: list[str] | tuple[str, ...]) -> dict[str, str]:
-        """``getAppServiceUrl``: service id -> regional URL [spec:lat.cloud.base_url]."""
-        raise NotImplementedError
+        """``getAppServiceUrl``: service id -> regional URL [spec:lat.cloud.base_url].
+
+        Signed POST to the account's app server with the token in the query; re-logs in once on
+        token expiry. Non-string entries are dropped.
+        """
+        ids = [str(s) for s in service_ids if s]
+        if not ids:
+            return {}
+        with self._lock:
+            result = self._signed_call_with_relogin("/api/v2/common/getAppServiceUrl", {"serviceIds": ids})
+            urls = result.get("serviceUrls")
+            if not isinstance(urls, dict):
+                return {}
+            return {str(k): v.rstrip("/") for k, v in urls.items() if isinstance(v, str) and v}
 
     def local_access_tokens(self) -> dict[str, str]:
-        """deviceId (thingName) -> local access token from the IoT thing list [spec:lat.source.thing_list]."""
-        raise NotImplementedError
+        """deviceId (thingName) -> local access token from the IoT thing list [spec:lat.source.thing_list].
+
+        ``GET {iot-app-server}/v2/things`` with ``Authorization: ut|<token>`` and the app headers
+        [spec:lat.cloud.headers], every page. Devices without a (non-empty string) token are left
+        out; malformed entries are skipped. Token expiry -> one silent re-login, like
+        :meth:`list_cameras`. Raises CloudError / TapoConnectionError.
+        """
+        with self._lock:
+            self._require_signed_in()
+            relogged = False
+            while True:
+                try:
+                    return self._fetch_local_tokens()
+                except CloudError as exc:
+                    if relogged or exc.code not in _TOKEN_ERRORS:
+                        raise
+                    relogged = True
+                    self._iot_url = None  # resolve again with the new session
+                    self._relogin(captcha=exc.code == ERR_TOKEN_EXPIRED)
+
+    # ------------------------------------------------------------------ IoT app server (LAT)
+    def _require_signed_in(self) -> None:
+        if self.__token is None or self._region is None:
+            raise CloudError("Not signed in to a TP-Link ID.", "not_signed_in")
+
+    def _signed_call_with_relogin(self, path: str, body: dict) -> dict:
+        self._require_signed_in()
+        assert self._region is not None
+        try:
+            return self._call(self._region, path, body, token=True)
+        except CloudError as exc:
+            if exc.code not in _TOKEN_ERRORS:
+                raise
+            self._relogin(captcha=exc.code == ERR_TOKEN_EXPIRED)
+            return self._call(self._region, path, body, token=True)
+
+    def _iot_server(self) -> str:
+        """The IoT app server URL (``nbu.iot-app-server.app-v2``), cached per session."""
+        if self._iot_url is None:
+            url = self.get_service_urls([IOT_APP_SERVER_SERVICE_ID]).get(IOT_APP_SERVER_SERVICE_ID, "")
+            parts = urlsplit(url)
+            if parts.scheme not in ("http", "https") or not parts.hostname:
+                raise CloudError("The TP-Link cloud returned no IoT server address.", "no_iot_url")
+            if urlsplit(self.base_url).scheme == "https" and parts.scheme != "https":
+                raise CloudError("The TP-Link cloud returned an insecure IoT server address.", "bad_url")
+            self._iot_url = url.rstrip("/")
+        return self._iot_url
+
+    def _iot_headers(self) -> dict[str, str]:
+        """IoT cloud headers [spec:lat.cloud.headers] (never logged: carries the session token)."""
+        return {"Authorization": f"ut|{self.__token}", "app-cid": f"app:{APP_TYPE}:{self.terminal_uuid}",
+                "x-app-name": APP_TYPE, "x-app-version": self.app_version, "x-term-id": self.terminal_uuid,
+                "x-ospf": PLATFORM, "x-net-type": "wifi", "x-strict": "0", "x-locale": self._locale(),
+                "User-Agent": f"{APP_TYPE}/{self.app_version}(Windows PC/;wifi)",
+                "Accept": "application/json", "Connection": "close"}
+
+    def _fetch_local_tokens(self) -> dict[str, str]:
+        base = self._iot_server()
+        parts = urlsplit(base)
+        tokens: dict[str, str] = {}
+        seen = 0
+        for page in range(_MAX_PAGES):
+            query = urlencode([("page", page), ("pageSize", THINGS_PAGE_SIZE),
+                               ("deviceTypes", ",".join(REQUEST_DEVICE_TYPES)), ("includePcDevice", "false"),
+                               ("includeKasaShareDevices", "true"), ("includeMatterDevice", "false"),
+                               ("includeExternalVendorDeviceInfo", "true")])
+            target = f"{parts.path.rstrip('/')}/v2/things?{query}"
+            status, raw = self._http_request("GET", parts.scheme, parts.hostname or "", parts.port, target, None,
+                                             self._iot_headers(), "/v2/things")
+            body = self._iot_json(status, raw)
+            items = body.get("data")
+            items = items if isinstance(items, list) else []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                lat = item.get("localAccessToken")
+                if not isinstance(lat, str) or not lat:
+                    continue
+                for key in ("thingName", "deviceId"):
+                    name = item.get(key)
+                    if isinstance(name, str) and name:
+                        tokens[name] = lat
+            seen += len(items)
+            total = body.get("total")
+            if not items:
+                break
+            if isinstance(total, int) and not isinstance(total, bool):
+                if seen >= total:
+                    break
+            elif len(items) < THINGS_PAGE_SIZE:
+                break
+        log.info("IoT thing list: local access tokens for %d device(s)", len(tokens))
+        return tokens
+
+    @staticmethod
+    def _iot_json(status: int, raw: bytes) -> dict:
+        """Parse an IoT cloud reply; HTTP 401 / token codes -> CloudError(code=-20651 ...)."""
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            body = None
+        if status == 401:
+            code = _int_code(body.get("code")) if isinstance(body, dict) else 0
+            log.info("IoT cloud /v2/things: HTTP 401 (code %s)", code)
+            raise CloudError("The TP-Link cloud session expired.", code if code in _TOKEN_ERRORS else ERR_TOKEN_EXPIRED)
+        if not isinstance(body, dict):
+            log.warning("IoT cloud /v2/things: HTTP %s with non-JSON body", status)
+            raise CloudError(f"Unexpected answer from the TP-Link IoT cloud (HTTP {status}).",
+                             status if status >= 400 else "malformed")
+        code = _int_code(body.get("code")) if "code" in body else 0
+        if status >= 400 or code != 0:
+            log.info("IoT cloud /v2/things: HTTP %s, code %s", status, code)
+            raise CloudError(f"TP-Link IoT cloud error {code or status}.", code or status)
+        return body
 
     # ------------------------------------------------------------------ internals
     def _pending_mfa(self) -> _PendingMfa:
@@ -397,6 +527,10 @@ class TapoCloudClient:
 
     def _http_post(self, scheme: str, host: str, port: int | None, target: str, data: bytes,
                    headers: dict[str, str], label: str) -> tuple[int, bytes]:
+        return self._http_request("POST", scheme, host, port, target, data, headers, label)
+
+    def _http_request(self, method: str, scheme: str, host: str, port: int | None, target: str,
+                      data: bytes | None, headers: dict[str, str], label: str) -> tuple[int, bytes]:
         conn: http.client.HTTPConnection
         if scheme == "https":
             if self._ssl is None:
@@ -405,7 +539,7 @@ class TapoCloudClient:
         else:
             conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
         try:
-            conn.request("POST", target, body=data, headers=headers)
+            conn.request(method, target, body=data, headers=headers)
             resp = conn.getresponse()
             raw = resp.read(_MAX_RESPONSE_BYTES + 1)
             if len(raw) > _MAX_RESPONSE_BYTES:

@@ -303,15 +303,17 @@ class AccountManager(QObject):
 
         def job() -> None:
             devices = None
+            tokens = None
             try:
                 if client is not None:
                     if getattr(client, "token", None) is None:  # started offline: log in now
                         client.login(email, password)
                     devices = list(client.list_cameras())
+                    tokens = self._fetch_local_tokens(client)
             except Exception as exc:
                 log.warning("cloud camera list unavailable, keeping the cached list: %s", exc)
             lan = self._run_discover()
-            self._post(lambda: self._apply_cameras(gen, devices, lan, password))
+            self._post(lambda: self._apply_cameras(gen, devices, lan, password, tokens=tokens))
 
         self._strand.submit(job)
 
@@ -348,12 +350,33 @@ class AccountManager(QObject):
     def _finish_login(self, gen: int, client: Any, account: AccountInfo, email: str, password: str,
                       remember: bool) -> None:
         devices = None
+        tokens = None
         try:
             devices = list(client.list_cameras())
         except Exception as exc:
             log.warning("signed in, but the cloud camera list is unavailable: %s", exc)
+        else:
+            tokens = self._fetch_local_tokens(client)
         lan = self._run_discover()
-        self._post(lambda: self._apply_signed_in(gen, client, account, email, password, remember, devices, lan))
+        self._post(lambda: self._apply_signed_in(gen, client, account, email, password, remember, devices, lan,
+                                                 tokens))
+
+    @staticmethod
+    def _fetch_local_tokens(client: Any) -> dict[str, str] | None:
+        """deviceId -> local access token [spec:lat.source.thing_list]; None when unknown (the fetch
+        failed or the client has no such API), so cached tokens are kept. Never raises."""
+        fetch = getattr(client, "local_access_tokens", None)
+        if fetch is None:
+            return None
+        try:
+            tokens = fetch()
+        except Exception as exc:  # sign-in must not depend on the IoT cloud
+            log.warning("local access tokens unavailable, keeping the stored ones: %s (%s)",
+                        type(exc).__name__, getattr(exc, "code", ""))
+            return None
+        if not isinstance(tokens, dict):
+            return None
+        return {str(k): v for k, v in tokens.items() if isinstance(v, str) and v}
 
     def _run_discover(self) -> list[LanDevice]:
         try:
@@ -401,7 +424,8 @@ class AccountManager(QObject):
         self.sign_in_failed.emit(_user_message(exc))
 
     def _apply_signed_in(self, gen: int, client: Any, account: AccountInfo, email: str, password: str,
-                         remember: bool, devices: list[CloudDevice] | None, lan: list[LanDevice]) -> None:
+                         remember: bool, devices: list[CloudDevice] | None, lan: list[LanDevice],
+                         tokens: dict[str, str] | None = None) -> None:
         if gen != self._gen:
             return
         self._client, self._account, self._email, self._password = client, account, email, password
@@ -411,14 +435,17 @@ class AccountManager(QObject):
         if remember:
             self._vault.set(ACCOUNT_VAULT_ID, CredentialKind.CLOUD, Credentials(email, password))
             self._store.set_setting(SETTING_ACCOUNT, dataclasses.asdict(account))
-        self._apply_cameras(gen, devices, lan, password, notify=False)
+        self._apply_cameras(gen, devices, lan, password, notify=False, tokens=tokens)
         self.signed_in.emit(account)
         self._emit_counts()
 
     def _apply_cameras(self, gen: int, devices: list[CloudDevice] | None, lan: list[LanDevice],
-                       password: str, *, notify: bool = True) -> None:
+                       password: str, *, notify: bool = True, tokens: dict[str, str] | None = None) -> None:
         """Upsert cloud cameras from ``devices`` (None = cloud unavailable: refresh the cached
-        cloud cameras' LAN state only, remove nothing)."""
+        cloud cameras' LAN state only, remove nothing).
+
+        ``tokens`` (deviceId -> local access token) replaces every listed camera's vault
+        ``LOCAL_TOKEN`` (a camera without a token loses it); ``None`` = unknown, keep the stored ones."""
         if gen != self._gen:
             return
         cached = [c for c in self._ctrl.cameras() if c.source == "cloud"]
@@ -436,7 +463,12 @@ class AccountManager(QObject):
         if prune:
             keep = {c.id for c in configs}
             self._ctrl.remove_cameras([c.id for c in cached if c.id not in keep])
-        self._ctrl.upsert_cameras(configs, Credentials(CAMERA_USER, password))
+        if tokens is None:
+            self._ctrl.upsert_cameras(configs, Credentials(CAMERA_USER, password))
+        else:
+            lats = {c.id: tokens.get(c.device_id or c.id) for c in configs}
+            log.info("local access tokens: %d of %d cloud camera(s)", sum(1 for v in lats.values() if v), len(lats))
+            self._ctrl.upsert_cameras(configs, Credentials(CAMERA_USER, password), local_tokens=lats)
         if notify:
             self._emit_counts()
 
