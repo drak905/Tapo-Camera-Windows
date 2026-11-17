@@ -21,9 +21,11 @@ class MockTapoCamera:
       ``fixed_nonce`` / ``fixed_start_seq``  make the secure login deterministic (golden vector)
       ``media_digest_algorithm``             "MD5" (default) or "SHA-256" for the :8800 challenge
       ``media_ack_window`` / ``media_ack_timeout`` / ``media_chunk_size`` / ``max_media_sessions``
+      ``media_preview_speed``                pacing multiplier of the :8800 live preview (1.0 = real time)
       ``max_failed_logins`` / ``lockout_seconds`` automatic lockout after N bad logins (0 = off)
       ``raw_request_log`` (whole decrypted inner bodies), ``media_request_log``, ``media_acks``,
-      ``login_attempts``, ``media_auth_failures``, ``media_parts_sent``, ``onvif_op_log``
+      ``login_attempts``, ``media_auth_failures``, ``media_parts_sent``, ``media_preview_requests``,
+      ``onvif_op_log``; ``drop_media_connections()`` resets every :8800 connection
     """
 
     def __init__(self, cloud_password: str = "cloudpass", camera_user: str = "camuser",
@@ -48,6 +50,7 @@ class MockTapoCamera:
         self.media_ack_timeout = 5.0
         self.media_chunk_size = 188 * 32
         self.max_media_sessions = 2
+        self.media_preview_speed = 1.0  # live preview pacing multiplier (1.0 = real time)
         self.max_failed_logins = 0
         self.lockout_seconds = 1800.0
         # logs / counters
@@ -60,6 +63,7 @@ class MockTapoCamera:
         self.login_attempts = 0
         self.media_auth_failures = 0
         self.media_parts_sent = 0
+        self.media_preview_requests = 0
         # injections
         self._token_expiry_every = 0
         self._errors: dict[str, list[int]] = {}
@@ -206,6 +210,11 @@ class MockTapoCamera:
     @property
     def media_active_sessions(self) -> int:
         return self._media.active if self._media else 0
+
+    def drop_media_connections(self) -> None:
+        """Reset every open :8800 connection (TCP RST), like a camera-side network drop."""
+        if self._media:
+            self._media.drop_all()
 
     # -- internal hooks used by the servers -----------------------------------------------
     def _count(self, name: str, n: int = 1) -> None:

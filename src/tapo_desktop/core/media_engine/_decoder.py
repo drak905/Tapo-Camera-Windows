@@ -85,8 +85,10 @@ class FfmpegDecoder:
         job: JobObject | None = None,
         wake: threading.Event | None = None,
         name: str = "ffmpeg",
+        stdin_pipe: bool = False,
     ) -> None:
         self._command = command
+        self._stdin_pipe = stdin_pipe
         self._frame_size = width * height * 3
         self._on_frame = on_frame
         self._on_audio = on_audio
@@ -110,7 +112,7 @@ class FfmpegDecoder:
         self.started_at = self.last_activity = time.monotonic()
         self._proc = subprocess.Popen(
             self._command,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if self._stdin_pipe else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
@@ -164,9 +166,32 @@ class FfmpegDecoder:
             if thread is not current:
                 thread.join(max(0.05, deadline - time.monotonic()))
         if proc is not None:
-            for pipe in (proc.stdout, proc.stderr):
+            for pipe in (proc.stdin, proc.stdout, proc.stderr):
                 if pipe is not None:
-                    pipe.close()
+                    try:
+                        pipe.close()
+                    except OSError:
+                        pass  # stdin: broken pipe after the kill
+
+    def write(self, data: bytes) -> bool:
+        """Write input bytes to ffmpeg's stdin (``stdin_pipe=True`` only), blocking while the pipe is full.
+
+        The blocking write is the backpressure from the decoder to the network reader. Returns False
+        once the child is gone or the pipe is closed (never raises).
+        """
+        proc = self._proc
+        if proc is None or proc.stdin is None or self._closed.is_set():
+            return False
+        view = memoryview(data)
+        try:
+            while view:
+                written = proc.stdin.write(view)
+                if not written:
+                    return False
+                view = view[written:]
+        except (OSError, ValueError):
+            return False
+        return True
 
     # ------------------------------------------------------------------ status
     @property

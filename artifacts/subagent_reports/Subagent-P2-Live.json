@@ -1,0 +1,48 @@
+{
+  "agent_id": "Subagent-P2-Live",
+  "lane": "P2-live",
+  "branch": "phase2/live",
+  "status": "done",
+  "commits": ["96686ca live: red tests", "7697904 live: LocalStreamSupervisor over :8800 preview (green)", "live: fps passthrough for piped TS, audio test, typing", "live: report"],
+  "tests_added": 46,
+  "tests_added_breakdown": {
+    "tests/phase2/test_local_stream_unit.py": "15 (preview/stop request builders vs spec, ffmpeg args for piped mpegts, argument validation, repr hides password)",
+    "tests/phase2/test_local_stream.py": "18 (exact frame size VGA 640x360 / HD 1280x720 / VGA->480x270, 15 fps without duplicates for VGA and HD, first frame < 3 s, switch VGA->HD, 20.5 s without reconnects with acks, wrong password -> FAILED 'auth', 3rd session -> FAILED 'limit', limiter lease, stop < 3 s with no ffmpeg and session released, stop during blackholed connect, stats shape, software decoding, audio, unreachable -> FAILED)",
+    "tests/phase2/test_local_stream_chaos.py": "5 (drop_media_connections, proxy.reset_all, 3 repeated resets, blackhole(5) stall + recovery, refused 4 s then recovery)",
+    "tests/phase2/test_local_stream_fixture.py": "9 (mock preview self-check: encrypted TS of the requested resolution, continuous PTS step 6000 and zero continuity-counter errors over > 2 loops, keyframe every 15 parts, real-time pacing, no acks -> stall at 50 parts then connection_closed, do stop, drop_media_connections, 3rd session 503, invalid resolution -52402)"
+  },
+  "results": {
+    "phase2_lane": "46/46 passed, 3 full runs (about 107 s each)",
+    "whole_suite_not_soak_not_hardware": "807 passed, 8 deselected, 0 failed (306 s)",
+    "measured_on_mock": "first frame 1.2-1.3 s (VGA and HD, d3d11va); recovery after drop_media_connections: first frame 1.7 s; blackhole(5): stall detected at 2.1 s (stall_timeout 2), first frame 1.2 s after it ends; stop() 0.02 s; 15.0 fps; Python process 4 % (VGA) / 8 % (HD) of one core and 53-60 MB RSS, and that includes the in-process mock camera encrypting and sending the stream"
+  },
+  "files": [
+    "src/tapo_desktop/core/media_engine/local_stream.py (new)",
+    "src/tapo_desktop/core/media_engine/supervisor.py (private hooks only: _Outcome.fatal, _decoder_command, _FEEDS_STDIN, _interrupt; public API unchanged)",
+    "src/tapo_desktop/core/media_engine/_decoder.py (FfmpegDecoder stdin_pipe=False default + write())",
+    "src/tapo_desktop/core/media_engine/ffmpeg.py (build_ffmpeg_args input_format=None default; output unchanged without it)",
+    "src/tapo_desktop/core/vod/session.py (MediaSession.send_ack, additive)",
+    "tests/fixtures/mock_tapo_server/ts_loop.py (new)",
+    "tests/fixtures/mock_tapo_server/media_server.py (additive: get preview, drop_all, session tracking)",
+    "tests/fixtures/mock_tapo_server/camera.py (additive: media_preview_speed, media_preview_requests, drop_media_connections())",
+    "tests/fixtures/mock_tapo_server/media_assets.py (ensure_all also caches the 1280x720 TS)",
+    "tests/phase2/test_local_stream_unit.py, test_local_stream.py, test_local_stream_chaos.py, test_local_stream_fixture.py (new)"
+  ],
+  "decisions": [
+    "LocalStreamSupervisor subclasses StreamSupervisor and reuses its state machine, lease, backoff (0.5 s cap while recently playing), hwaccel fallback, no-audio fallback, frame sink and stats. It overrides only _attempt, switch(resolution, width, height), _host_label, _decoder_command, _interrupt and _fail. isinstance(local, StreamSupervisor) is True.",
+    "One attempt: abortable TCP probe (_netprobe), then MediaSession.connect (Digest, user admin, cloud password), then the preview request [spec:stream.control.preview] {channels:[channel], resolutions:[HD|VGA], audio:['default']}. The worker waits for the JSON response before it spawns ffmpeg, so auth/limit failures never start ffmpeg. A pump thread then writes each decrypted video/mp2t part to ffmpeg stdin ('-f mpegts -i pipe:0') and acks every part whose X-Data-Sequence % 25 == 0 with build_ack_part (exact spec bytes, no seq).",
+    "Backpressure: the pump's blocking pipe write stops socket reads when ffmpeg is slow, so TCP slows the camera. Python has no queues. At most 8 media parts that arrive before the preview response are kept.",
+    "Failure mapping: TapoAuthError -> FAILED 'auth failed: ...' (no retry). HTTP 503, -52407 or another limit code (-52405/-52419/-52435) in the response -> FAILED 'stream limit reached: ...'. Socket loss, connection_closed/stream_finish notifications, ffmpeg exit or no frame for stall_timeout -> RECONNECTING. MediaSession I/O timeout = max(3 s, stall_timeout + 1 s).",
+    "switch() opens a new connection with the new resolution (the camera's 'do change_resolutions' is not used, because the output size changes too and ffmpeg has to restart anyway). On stop and switch the client first sends 'do stop'. stop() kills ffmpeg, then closes the socket through the _interrupt hook, so it also returns quickly during a blocked handshake.",
+    "Added '-fps_mode passthrough' for piped TS. Without it ffmpeg guessed 30 fps for the 15 fps HD clip (tiny probe) and duplicated every frame (measured 126 frames in 4 s). RTSP args are unchanged.",
+    "Mock preview: the cached 6 s clip (VGA 640x360 or HD 1280x720) is looped by ts_loop.TsLoop. Each loop shifts PTS/DTS/PCR by the clip's video period and renumbers continuity counters. Audio PES that would overlap the next loop are dropped, so ffmpeg reports no non-monotonic DTS for video or audio. Every loop starts on an IDR. There is one part per video frame (X-If-IFrame, X-Data-PTS, X-Data-Sequence), paced by PTS (media_preview_speed multiplier for fast fixture tests). Parts are encrypted per spec. The existing ack window (50 parts / 5 s timeout) and the 2-session limit apply unchanged.",
+    "Did not create tests/phase2/conftest.py or __init__.py, because the P2-cloud lane owns the new conftest. The tests import helpers from tests.integration._media_helpers and use only the Phase 1 fixtures."
+  ],
+  "steering": "steer-b8e4dff9 ('work just like the mobile version'): the live path follows the app's LAN behaviour from cloud_account_spec: :8800 preview, user admin plus the TP-Link ID password, acks every 25 parts, HD = main stream and VGA = minor stream. The app defaults to HD on the LAN. Choosing HD or VGA per tile is the P2-app lane's job (the contract maps fullscreen_quality HD -> 'HD', SD -> 'VGA').",
+  "open_issues": [
+    "Not verified on real hardware. Real cameras mux G.711 A-law as private TS stream type 0x90, and ffmpeg does not recognise it, so on_audio gets nothing from a real camera. The supervisor goes on video-only (Phase 1 no-audio fallback). Audio would need a Python PES demux plus alaw.py.",
+    "Only 'video/mp2t' parts are fed to ffmpeg. If a real camera sends audio as separate 'audio/mp2t' parts in the same mux, they are skipped. Check on hardware.",
+    "The client sends no periodic 'heartbeat' notifications, because the spec gives no interval. It sends acks about every 1.7 s at 15 fps. If a real camera closes idle previews, add a heartbeat.",
+    "The HKDF / secure_v4 stream encryption variants (stream.local8800.encryption.hkdf) are not supported. MediaSession handles only the MD5 Key-Exchange, as in Phase 1."
+  ]
+}

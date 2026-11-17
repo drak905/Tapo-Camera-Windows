@@ -7,7 +7,8 @@ processes never see partial files.
 * H.264 Annex-B elementary stream: libx264 baseline, no B-frames, 15 fps, keyframe every
   second, SPS/PPS repeated before every IDR.
 * PCMA (G.711 A-law) raw 8 kHz mono.
-* MPEG-TS (H.264 640x360 + AAC 8 kHz mono) used by the :8800 download/playback flow.
+* MPEG-TS (H.264 640x360 + AAC 8 kHz mono) used by the :8800 download/playback flow and the VGA
+  live preview; the same at 1280x720 for the HD live preview.
 """
 from __future__ import annotations
 
@@ -200,3 +201,4 @@ def ensure_all(dual_lens: bool = False) -> None:
     load_video(640, 360)
     load_pcma()
     load_ts()
+    load_ts(1280, 720)  # :8800 live preview, resolution HD
