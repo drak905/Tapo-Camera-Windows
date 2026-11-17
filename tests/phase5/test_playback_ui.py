@@ -48,7 +48,9 @@ def _panel(ctrl, qtbot):
 
     panel = PlaybackPanel(ctrl)
     qtbot.addWidget(panel)
+    panel.resize(400, 500)
     panel.show()
+    qtbot.waitExposed(panel)
     panel.set_camera("cam0")
     panel.findChild(QDateEdit, "recordingDate").setDate(QDate(RECORDING_DAY.year, RECORDING_DAY.month,
                                                               RECORDING_DAY.day))
@@ -92,6 +94,7 @@ def test_play_button_opens_one_window_per_camera(ctrl, qtbot):
     assert _calls(ctrl, "start_playback")[0].args[0] == CLIPS[0].start.timestamp()
     item = lst.item(1)
     rect = lst.visualItemRect(item)
+    qtbot.mouseClick(lst.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
     qtbot.mouseDClick(lst.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
     assert panel.player_window("cam0") is w
     target = CLIPS[1].start.timestamp()
