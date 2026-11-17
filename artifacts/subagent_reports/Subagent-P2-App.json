@@ -1,0 +1,48 @@
+{
+  "agent_id": "Subagent-P2-App",
+  "status": "done",
+  "lane": "P2-app",
+  "branch": "phase2/app",
+  "commits": ["2813113 app: red tests", "0289a33 app: green", "0e62897 app: refactor"],
+  "tests_added": 59,
+  "tests_red_at_red_commit": 53,
+  "tests_green": 59,
+  "full_suite": "pytest -m \"not soak and not hardware\": 820 passed, 8 deselected (194 s); all Phase 1 tests unchanged and green",
+  "files": [
+    "src/tapo_desktop/services/account.py (new: AccountManager)",
+    "src/tapo_desktop/services/camera_service.py (transport selection, Not on this network, getLastAlarmInfo poller)",
+    "src/tapo_desktop/services/controller.py (vault property, upsert_cameras, remove_cameras, latest_image)",
+    "src/tapo_desktop/ui/sign_in_dialog.py (new)",
+    "src/tapo_desktop/ui/snapshot.py (new)",
+    "src/tapo_desktop/ui/main_window.py (accountButton + menu, row status, MFA on silent sign-in)",
+    "src/tapo_desktop/ui/controls_panel.py (snapshotButton, snapshot_taken signal)",
+    "src/tapo_desktop/app.py (startup: restore_session or SignInDialog)",
+    "tests/phase2/app_fakes.py", "tests/phase2/_app_helpers.py",
+    "tests/phase2/test_account_sign_in.py", "tests/phase2/test_account_mfa.py",
+    "tests/phase2/test_account_session.py", "tests/phase2/test_account_ui.py",
+    "tests/phase2/test_account_app_startup.py", "tests/phase2/test_sign_in_ui.py",
+    "tests/phase2/test_camera_service_transport.py", "tests/phase2/test_camera_service_mock_camera.py"
+  ],
+  "decisions": [
+    "Transport: 'local' -> LocalStreamSupervisor always; 'rtsp' -> RTSP if a CAMERA_ACCOUNT exists, else local; 'auto' -> RTSP if a CAMERA_ACCOUNT exists (keeps Phase 1 manual cameras on RTSP, as models.py documents), else local. Cloud cameras have no camera account, so they use :8800 like the phone app.",
+    "Local preview: resolution 'HD' for HD/TELE_HD, 'VGA' for SD/TELE_SD; channel 1 for TELE_* (second lens), else 0; port = media_port; password = CLOUD vault entry. LocalStreamSupervisor is called as factory(host, password, width, height, resolution=, port=, channel=, on_frame=, on_state=, limiter=, limiter_key=host).",
+    "TapoCameraService gained optional local_stream_factory / stream_factory / control_factory / alarm_poll_interval kwargs (defaults import the core classes lazily). control_factory is called with keyword args host=, password=, username=, port=, pin_store=.",
+    "lan_found False or empty host: start_stream -> on_state(FAILED, 'Not on this network'); connect(), start_events() and download_recording() raise TapoConnectionError('Not on this network') without network I/O.",
+    "Motion without a camera account: daemon thread polls getLastAlarmInfo every 5 s; the first reading is a baseline; each later change of last_alarm_time emits one active MotionEvent(source='last_alarm_info', topic='tapo:LastAlarmInfo/<type>'). Verified against the mock camera.",
+    "Cloud errors are recognised by class name in the MRO (CloudMfaRequired, CloudAuthError, CloudError) so account.py imports without core.cloud; network failures are TapoConnectionError. match_devices / normalise_mac are imported lazily from core.discovery.matcher with a built-in fallback implementing spec lan.match_rule.",
+    "Cloud cameras: id = deviceId, source 'cloud', host = LAN ip or '', https_port = LanDevice.http_port or 443, mac normalised. A successful cloud list also removes cloud cameras that left the account; an offline or failed list only updates LAN state of cached cameras. Manual cameras are never touched.",
+    "'Keep me signed in' off: no account secret and no 'account' setting are stored; per-camera CLOUD creds are stored for the session; at the next start restore_session() finds no account and removes those cloud cameras.",
+    "Silent sign-in that gets an MFA challenge opens SignInDialog on its MFA section. A failed silent sign-in (e.g. password changed) shows a status-bar message and keeps the cached cameras.",
+    "'Use without account' at startup is remembered (setting 'sign_in_skipped'), so the dialog is not forced on every start; signing in clears it. The account menu always offers 'Sign in...'.",
+    "Camera row text: name, plus ' (Offline)' (cloud online=False) or ' (Not on this network)'; the bare status is in Qt.UserRole+1. Manual cameras keep text == name (Phase 1 tests).",
+    "Snapshot: controller caches the newest delivered QImage per camera; PNG saved to %USERPROFILE%\\Pictures\\Tapo Desktop\\<sanitised name>_<YYYYmmdd_HHMMSS>[_n].png; result shown in the status bar."
+  ],
+  "open_issues": [
+    "Cloud lane: the contract registers fixtures via pytest_plugins in tests/phase2/conftest.py. pytest rejects pytest_plugins in a non-root conftest ('no longer supported'), so a full-suite run (pytest from the root) will likely fail collection at merge unless it moves to tests/conftest.py or the fixtures are imported directly.",
+    "No tests/phase2/__init__.py was added (to avoid an add/add conflict with the cloud lane). tests.phase2.* imports work as a namespace package either way.",
+    "Cloud lane: CloudDevice.alias should already be decoded; the Tapo cloud returns base64 aliases for some devices.",
+    "Live lane: TapoCameraService assumes LocalStreamSupervisor(host, password, width, height, *, resolution, port, channel, on_frame, on_state, limiter, limiter_key) and switch(resolution, width, height), as in the contract. Only fakes test this until the lanes are merged.",
+    "A camera added manually in Phase 1 and also in the cloud account shows up twice (no dedupe by MAC)."
+  ],
+  "steering": "steer-b8e4dff9-cfdd-4dcf-a687-f5f95948219c applied: same flow as the phone app (sign in with TP-Link ID and MFA, cameras from the cloud list, TDP match, admin + TP-Link ID password, automatic :8800 live view, silent re-login, offline cached list)."
+}
