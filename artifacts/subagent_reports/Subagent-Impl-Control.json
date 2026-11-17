@@ -1,0 +1,31 @@
+{
+  "agent_id": "Subagent-Impl-Control",
+  "status": "done",
+  "tests_targeted": 313,
+  "tests_passed": 313,
+  "tests_failed": 0,
+  "tests_skipped": 0,
+  "failing_tests": [],
+  "env_blocked": [],
+  "files": [
+    "src/tapo_desktop/core/auth/crypto.py",
+    "src/tapo_desktop/core/auth/vault.py",
+    "src/tapo_desktop/core/auth/_atomic.py",
+    "src/tapo_desktop/core/control_client/transport.py",
+    "src/tapo_desktop/core/control_client/dtos.py",
+    "src/tapo_desktop/core/control_client/client.py",
+    "artifacts/subagent_reports/Subagent-Impl-Control.json"
+  ],
+  "runs": "Full lane set (tests/unit/test_auth_crypto.py, test_vault.py, test_dtos.py, test_control_client.py, test_control_transport.py, tests/integration/test_control_mock.py, test_control_chaos.py) run twice after refactor: 313 passed each time (about 33 s), exit code 0.",
+  "notes": [
+    "No test was modified. Runtime deps: stdlib, cryptography, ctypes only.",
+    "crypto: verify_device_confirm uses hmac.compare_digest (imported as crypto.compare_digest). decrypt maps bad base64, bad length, bad padding and bad UTF-8 to TapoProtocolError. Added public helper dumps_compact() (wire JSON). SessionKeys/SecureSessionCipher reprs hide key material.",
+    "vault: DPAPI via ctypes (CryptProtectData/CryptUnprotectData with CRYPTPROTECT_UI_FORBIDDEN, LocalFree on output). File format {version:1, cameras:{id:{kind:<b64 DPAPI blob>}}}. The blob holds JSON {camera_id, kind, username, password}; get() checks the embedded id/kind so a blob copied to another entry is rejected. No DPAPI entropy is used, because test_vault_secret_blobs_are_dpapi decrypts blobs with no entropy. The file is re-read on every call, so several vault instances on one path stay consistent. Writes are atomic (mkstemp in the same directory, fsync, os.replace); the temp file is removed on failure.",
+    "PinStore: in-memory dict behind a lock, persisted to {pins:{'host:port': fp}} with the same atomic writer (core/auth/_atomic.py, shared private helper). A fingerprint mismatch raises CertificateMismatchError and leaves the old pin unchanged.",
+    "HttpsTransport: http.client.HTTPSConnection subclass whose connect() runs the TOFU check, so http.client auto-reconnects are also pin-checked. Keep-alive is reused. Before reusing an idle socket, select() checks whether the peer closed or reset it; if so the socket is dropped first, which avoids most writes into dead sockets and wasted secure seq numbers. Reconnect-and-resend happens only once, and only for stale-socket errors on a reused connection (reset/abort/broken pipe/SSL EOF/RemoteDisconnected/BadStatusLine). Timeouts are never retried, so a blackholed camera fails within one timeout. All OSError/HTTPException errors map to TapoConnectionError; messages contain only host:port and the exception class.",
+    "TapoControlClient: one RLock covers login and the whole seq/tag/POST critical section. Step 1 is answered -40413 with nonce and device_confirm -> secure flow; any other answer (e.g. the mock legacy camera's -40210) -> legacy MD5 login. -40404/-40408 -> TapoLockedError (message includes sec_left). device_confirm mismatch -> TapoAuthError without sending step 2. seq starts at start_seq and is consumed per secure POST, success or not. Re-login once and retry once on: outer -40401, outer -40210 on securePassthrough (spec auth.errors.table: invalid secure session), undecryptable response, per-item -40401, HTTP 401. If it persists, the original error is raised (TapoSessionExpired for -40401). TapoConnectionError does not trigger a re-login. reboot() drops the session. repr shows host/port/username/secure/logged_in only.",
+    "dtos: added public helper has_more_clips(result) (reads playback.to_be_continued) for paging. recordings_for_day uses [local midnight, +86399 s], pages of 100, and stops when to_be_continued is 0 or a page is empty, with a 100-page safety cap. Clips are returned sorted by start. parse_device_info requires a non-empty device_model.",
+    "ENV NOISE (not a failure): during test_control_chaos reset tests, Python's faulthandler sometimes prints 'Windows fatal exception: access violation' with the main thread inside ssl.SSLSocket.send. It happens when the proxy's RST races the client's write (http.client sends headers and body as separate writes). The process continues, the exception is handled, and every test passes with exit code 0. This is a first-chance SEH report from native code (OpenSSL/Winsock, possibly the AdGuard network filter), not from Python code in this lane. It was 9 reports per run before the select() staleness check and 0-3 after. Subagent-TDD-Core reported the same thing.",
+    "Hardware risks (untested): the TLS context uses Python defaults (TLS >= 1.2, OpenSSL security level 2). If an old firmware has a weak key, a context tweak (@SECLEVEL=1) may be needed. If a secure camera answers step 1 with something other than -40413, the client falls back to the legacy MD5 login; the TOFU pin limits the downgrade risk."
+  ]
+}

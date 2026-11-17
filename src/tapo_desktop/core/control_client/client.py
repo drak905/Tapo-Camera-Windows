@@ -5,114 +5,393 @@ Credentials never appear in logs, exception messages or ``repr``.
 from __future__ import annotations
 
 import datetime
+import json
+import logging
+import threading
+from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
+from tapo_desktop.core.auth import crypto
+from tapo_desktop.core.control_client import dtos
 from tapo_desktop.core.control_client.transport import HttpsTransport, PinStore
+from tapo_desktop.core.errors import (
+    TapoAuthError, TapoDeviceError, TapoError, TapoLockedError, TapoProtocolError, TapoSessionExpired,
+)
 from tapo_desktop.models import DayNightMode, DeviceInfo, Preset, RecordingClip
+
+log = logging.getLogger(__name__)
+
+_OK = 0
+_SESSION_EXPIRED = -40401        # [spec:auth.errors.table]
+_PROTOCOL_FORMAT_ERROR = -40210  # on securePassthrough: invalid secure session -> re-login
+_INVALID_NONCE = -40413          # normal step-1 challenge of encrypt_type "3"
+_LOCK_CODES = frozenset({-40404, -40408})  # DEVICE_BLOCKED, SYSTEM_BLOCKED
+_PAGE_SIZE = 100
+_MAX_PAGES = 100                 # safety cap: 10 000 clips per day
+
+
+@dataclass
+class _Session:
+    """Live login state. Never rendered (repr disabled) because it holds the stok and keys."""
+
+    stok: str
+    secure: bool
+    cnonce: str = ""
+    cipher: crypto.SecureSessionCipher | None = None
+    seq: int = 0
+
+    def __repr__(self) -> str:
+        return f"_Session(secure={self.secure})"
+
+
+class _SessionInvalid(Exception):
+    """Internal: the session is no longer usable. ``error`` is raised if a fresh login does not help."""
+
+    def __init__(self, error: TapoError):
+        super().__init__(type(error).__name__)
+        self.error = error
+
+
+def _as_int(value: Any, what: str) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    raise TapoProtocolError(f"response {what} is not an integer")
+
+
+def _error_code(obj: dict) -> int:
+    return _as_int(obj.get("error_code", _OK), "error_code")
+
+
+def _result(obj: dict) -> dict:
+    res = obj.get("result")
+    return res if isinstance(res, dict) else {}
+
+
+def _parse_json(text: str) -> dict:
+    try:
+        obj = json.loads(text)
+    except ValueError as exc:
+        raise TapoProtocolError("camera response is not JSON") from exc
+    if not isinstance(obj, dict):
+        raise TapoProtocolError("camera response is not a JSON object")
+    return obj
+
+
+def _normalize_item(item: Any) -> dict:
+    if not isinstance(item, dict):
+        raise TapoProtocolError("multipleRequest response item is not an object")
+    method = item.get("method")
+    return {"method": method if isinstance(method, str) else None, "result": _result(item),
+            "error_code": _error_code(item)}
 
 
 class TapoControlClient:
     """Thread-safe client. Auto-logs-in on first use; on -40401 (top-level or per-item) or HTTP 401
-    it re-logs-in once and retries once. ``seq`` increments per secure request."""
+    it re-logs-in once and retries once. ``seq`` increments per secure request.
+
+    One re-entrant lock serialises login and the whole seq/tag/POST critical section, so concurrent
+    callers can never desynchronise the secure session's ``seq``.
+    """
 
     def __init__(self, host: str, password: str, *, username: str = "admin", port: int = 443,
                  transport: HttpsTransport | None = None, pin_store: PinStore | None = None,
                  timeout: float = 10.0):
-        raise NotImplementedError
+        self._host = host
+        self._port = int(port)
+        self._username = username
+        self._password = password
+        self._transport = transport if transport is not None else HttpsTransport(
+            host, self._port, pin_store=pin_store, timeout=timeout)
+        self._headers = {"Accept": "application/json", "User-Agent": "Tapo CameraClient Android",
+                         "requestByApp": "true", "Referer": f"https://{host}:{self._port}"}
+        self._lock = threading.RLock()
+        self._session: _Session | None = None
+        self._secure = False
 
+    def __repr__(self) -> str:
+        return (f"TapoControlClient(host={self._host!r}, port={self._port}, username={self._username!r}, "
+                f"secure={self._secure}, logged_in={self.logged_in})")
+
+    # ================================================================== login
     def login(self) -> None:
         """Secure login (encrypt_type "3") if step 1 returns -40413 with a nonce, else legacy MD5 login.
 
         Bad device_confirm / bad password -> TapoAuthError; -40404 / lock codes -> TapoLockedError.
         """
-        raise NotImplementedError
+        with self._lock:
+            self._login_locked()
 
     @property
     def is_secure(self) -> bool:
-        raise NotImplementedError
+        """True if the last successful login used the secure (encrypt_type "3") flow."""
+        return self._secure
 
     @property
     def logged_in(self) -> bool:
-        raise NotImplementedError
+        """True while a session (stok) is held."""
+        return self._session is not None
 
+    def _login_locked(self) -> None:
+        self._session = None
+        cnonce = crypto.generate_cnonce()
+        resp = self._post_login({"cnonce": cnonce, "encrypt_type": "3", "username": self._username})
+        code = _error_code(resp)
+        self._raise_if_locked(code, resp)
+        data = _result(resp).get("data")
+        if (code == _INVALID_NONCE and isinstance(data, dict) and isinstance(data.get("nonce"), str)
+                and isinstance(data.get("device_confirm"), str)):
+            self._session = self._secure_login(cnonce, data["nonce"], data["device_confirm"])
+        else:
+            log.debug("%s did not offer a secure challenge (error %s); using legacy login", self._host, code)
+            self._session = self._legacy_login()
+        self._secure = self._session.secure
+        log.info("logged in to %s:%s (%s)", self._host, self._port, "secure" if self._secure else "legacy")
+
+    def _secure_login(self, cnonce: str, nonce: str, device_confirm: str) -> _Session:
+        if not crypto.verify_device_confirm(self._password, cnonce, nonce, device_confirm):
+            raise TapoAuthError("camera did not confirm the password: wrong password, or the camera "
+                                "uses a cloud-synced local access token")
+        keys = crypto.derive_session_keys(self._password, cnonce, nonce)
+        resp = self._post_login({"cnonce": cnonce, "encrypt_type": "3", "username": self._username,
+                                 "digest_passwd": crypto.digest_passwd(self._password, cnonce, nonce)})
+        code = _error_code(resp)
+        self._raise_if_locked(code, resp)
+        if code != _OK:
+            raise TapoAuthError(f"secure login rejected by the camera (error {code})")
+        res = _result(resp)
+        return _Session(stok=self._stok(res), secure=True, cnonce=cnonce,
+                        cipher=crypto.SecureSessionCipher(keys), seq=_as_int(res.get("start_seq"), "start_seq"))
+
+    def _legacy_login(self) -> _Session:
+        resp = self._post_login({"hashed": True, "password": crypto.md5_upper(self._password),
+                                 "username": self._username})
+        code = _error_code(resp)
+        self._raise_if_locked(code, resp)
+        if code != _OK:
+            raise TapoAuthError(f"login rejected by the camera (error {code})")
+        return _Session(stok=self._stok(_result(resp)), secure=False)
+
+    @staticmethod
+    def _stok(res: dict) -> str:
+        stok = res.get("stok")
+        if not isinstance(stok, str) or not stok:
+            raise TapoProtocolError("login response has no stok")
+        return stok
+
+    @staticmethod
+    def _raise_if_locked(code: int, resp: dict) -> None:
+        if code in _LOCK_CODES:
+            data = _result(resp).get("data")
+            left = data.get("sec_left") if isinstance(data, dict) else None
+            suffix = f"; retry in {left} s" if isinstance(left, int) and not isinstance(left, bool) else ""
+            raise TapoLockedError(f"camera is blocking logins after too many failures (error {code}){suffix}")
+
+    def _post_login(self, params: dict) -> dict:
+        status, _hdrs, text = self._transport.post(
+            "/", crypto.dumps_compact({"method": "login", "params": params}), dict(self._headers))
+        if status == 401:
+            raise TapoAuthError("login rejected (HTTP 401)")
+        if status != 200:
+            raise TapoProtocolError(f"login answered with HTTP {status}")
+        return _parse_json(text)
+
+    # ================================================================== requests
     def request(self, req: dict) -> dict:
         """Send one request via multipleRequest and return its ``result``.
 
         Non-zero item error_code -> TapoDeviceError(code, method).
         """
-        raise NotImplementedError
+        items = self.multiple_request([req])
+        if not items:
+            raise TapoProtocolError(f"no response item for {req.get('method')}")
+        item = items[0]
+        if item["error_code"] != _OK:
+            raise TapoDeviceError(item["error_code"], item["method"] or req.get("method"))
+        return item["result"]
 
     def multiple_request(self, reqs: list[dict]) -> list[dict]:
         """Send a batch; return raw items ``[{"method", "result", "error_code"}]``."""
-        raise NotImplementedError
+        with self._lock:
+            for attempt in (1, 2):
+                if self._session is None:
+                    self._login_locked()
+                try:
+                    return self._send_batch(reqs)
+                except _SessionInvalid as invalid:
+                    self._session = None
+                    if attempt == 2:
+                        raise invalid.error from None
+                    log.info("session on %s:%s is no longer valid (%s); logging in again",
+                             self._host, self._port, invalid)
+        raise AssertionError("unreachable")  # pragma: no cover
 
+    def _send_batch(self, reqs: list[dict]) -> list[dict]:
+        reply = self._post_ds(dtos.multiple_request(reqs))
+        code = _error_code(reply)
+        if code == _SESSION_EXPIRED:
+            raise _SessionInvalid(TapoSessionExpired("multipleRequest"))
+        if code != _OK:
+            raise TapoDeviceError(code, "multipleRequest")
+        responses = _result(reply).get("responses")
+        if not isinstance(responses, list):
+            raise TapoProtocolError("multipleRequest response has no responses list")
+        items = [_normalize_item(r) for r in responses]
+        for item in items:
+            if item["error_code"] == _SESSION_EXPIRED:
+                raise _SessionInvalid(TapoSessionExpired(item["method"]))
+        return items
+
+    def _post_ds(self, inner: dict) -> dict:
+        """POST ``inner`` to ``/stok=<stok>/ds`` (secure-wrapped if needed); return the inner reply."""
+        sess = self._session
+        assert sess is not None
+        path = f"/stok={sess.stok}/ds"
+        headers = dict(self._headers)
+        if not sess.secure:
+            return self._post_checked(path, crypto.dumps_compact(inner), headers)
+        assert sess.cipher is not None
+        seq = sess.seq
+        sess.seq += 1  # consumed whether or not the request succeeds [spec:auth.secure.seq]
+        body = crypto.wrap_secure_passthrough(sess.cipher, inner)
+        headers["seq"] = str(seq)
+        headers["tapo_tag"] = crypto.compute_tag(self._password, sess.cnonce, body, seq)
+        outer = self._post_checked(path, body, headers)
+        code = _error_code(outer)
+        if code in (_SESSION_EXPIRED, _PROTOCOL_FORMAT_ERROR):
+            err = TapoSessionExpired("securePassthrough") if code == _SESSION_EXPIRED \
+                else TapoDeviceError(code, "securePassthrough")
+            raise _SessionInvalid(err)
+        if code != _OK:
+            raise TapoDeviceError(code, "securePassthrough")
+        encrypted = _result(outer).get("response")
+        if not isinstance(encrypted, str):
+            raise TapoProtocolError("securePassthrough response has no encrypted payload")
+        try:
+            return _parse_json(sess.cipher.decrypt(encrypted))
+        except TapoProtocolError as exc:
+            raise _SessionInvalid(exc) from exc
+
+    def _post_checked(self, path: str, body: str, headers: dict[str, str]) -> dict:
+        status, _hdrs, text = self._transport.post(path, body, headers)
+        if status == 401:
+            raise _SessionInvalid(TapoSessionExpired(None))
+        if status != 200:
+            raise TapoProtocolError(f"camera answered with HTTP {status}")
+        return _parse_json(text)
+
+    # ================================================================== convenience wrappers
     def get_device_info(self) -> DeviceInfo:
-        raise NotImplementedError
+        """Model, alias, firmware etc. (getDeviceInfo)."""
+        return dtos.parse_device_info(self.request(dtos.get_device_info_req()))
 
     def get_components(self) -> dict[str, int]:
-        raise NotImplementedError
+        """Supported components and their versions (getAppComponentList)."""
+        return dtos.parse_component_list(self.request(dtos.get_component_list_req()))
 
     def move(self, x: int, y: int) -> None:
-        raise NotImplementedError
+        """Relative pan/tilt move (motorMove)."""
+        self.request(dtos.motor_move_req(x, y))
 
     def step(self, direction: int) -> None:
-        raise NotImplementedError
+        """One step in ``direction`` (0, 90, 180 or 270 degrees)."""
+        self.request(dtos.motor_step_req(direction))
 
     def stop_move(self) -> None:
-        raise NotImplementedError
+        """Stop any PTZ motion."""
+        self.request(dtos.motor_stop_req())
 
     def get_presets(self) -> list[Preset]:
-        raise NotImplementedError
+        """Saved PTZ presets."""
+        return dtos.parse_presets(self.request(dtos.get_presets_req()))
 
     def goto_preset(self, preset_id: str) -> None:
-        raise NotImplementedError
+        """Move to a saved preset."""
+        self.request(dtos.goto_preset_req(preset_id))
 
     def add_preset(self, name: str) -> None:
-        raise NotImplementedError
+        """Save the current position as a new preset."""
+        self.request(dtos.add_preset_req(name))
 
     def delete_preset(self, preset_id: str) -> None:
-        raise NotImplementedError
+        """Delete a preset."""
+        self.request(dtos.delete_preset_req(preset_id))
 
     def get_privacy(self) -> bool:
-        raise NotImplementedError
+        """True if privacy mode (lens mask) is on."""
+        return dtos.parse_privacy(self.request(dtos.get_privacy_req()))
 
     def set_privacy(self, enabled: bool) -> None:
-        raise NotImplementedError
+        """Turn privacy mode (lens mask) on or off."""
+        self.request(dtos.set_privacy_req(enabled))
 
     def get_day_night(self) -> DayNightMode:
-        raise NotImplementedError
+        """Current day/night (IR) mode."""
+        return dtos.parse_day_night(self.request(dtos.get_day_night_req()))
 
     def set_day_night(self, mode: DayNightMode) -> None:
-        raise NotImplementedError
+        """Set the day/night (IR) mode."""
+        self.request(dtos.set_day_night_req(mode))
 
     def get_led(self) -> bool:
-        raise NotImplementedError
+        """True if the status LED is enabled."""
+        return dtos.parse_led(self.request(dtos.get_led_req()))
 
     def set_led(self, enabled: bool) -> None:
-        raise NotImplementedError
+        """Enable or disable the status LED."""
+        self.request(dtos.set_led_req(enabled))
 
     def set_alarm(self, active: bool) -> None:
-        raise NotImplementedError
+        """Start or stop the manual siren/light alarm."""
+        self.request(dtos.manual_alarm_req(active))
 
     def get_motion_detection(self) -> tuple[bool, int | None]:
-        raise NotImplementedError
+        """``(enabled, digital_sensitivity or None)``."""
+        return dtos.parse_motion_detection(self.request(dtos.get_motion_detection_req()))
 
     def set_motion_detection(self, enabled: bool, sensitivity: int | None = None) -> None:
-        raise NotImplementedError
+        """Enable/disable motion detection; ``sensitivity`` in {20, 60, 80} if given."""
+        self.request(dtos.set_motion_detection_req(enabled, sensitivity))
 
     def get_sd_status(self) -> list[dict]:
-        raise NotImplementedError
+        """One dict per storage device (empty list if no card)."""
+        return dtos.parse_sd_status(self.request(dtos.get_sd_status_req()))
 
     def days_with_recordings(self, start: date, end: date) -> list[date]:
-        raise NotImplementedError
+        """Days in ``[start, end]`` that have recordings, sorted."""
+        return dtos.parse_days(self.request(dtos.search_days_req(start, end)))
 
     def recordings_for_day(self, day: date, tz: datetime.tzinfo | None = None) -> list[RecordingClip]:
         """Clips of local day ``[00:00, 24:00)`` in ``tz`` (None = local timezone); pages until
         ``to_be_continued`` is 0."""
-        raise NotImplementedError
+        midnight = datetime.datetime.combine(day, datetime.time(0))
+        midnight = midnight.replace(tzinfo=tz) if tz is not None else midnight.astimezone()
+        start = int(midnight.timestamp())
+        end = start + 86399
+        clips: list[RecordingClip] = []
+        for page in range(_MAX_PAGES):
+            first = page * _PAGE_SIZE
+            result = self.request(dtos.search_day_clips_req(start, end, first, first + _PAGE_SIZE - 1))
+            page_clips = dtos.parse_day_clips(result)
+            clips.extend(page_clips)
+            if not page_clips or not dtos.has_more_clips(result):
+                break
+        else:
+            log.warning("recordings_for_day(%s) stopped after %d pages", day, _MAX_PAGES)
+        return sorted(clips, key=lambda c: c.start)
 
     def reboot(self) -> None:
-        raise NotImplementedError
+        """Reboot the camera (the session ends; the next request logs in again)."""
+        self.request(dtos.reboot_req())
+        with self._lock:
+            self._session = None
 
     def close(self) -> None:
-        raise NotImplementedError
+        """Forget the session and close the HTTPS connection (idempotent)."""
+        self._session = None
+        self._transport.close()
