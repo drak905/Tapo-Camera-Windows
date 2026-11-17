@@ -41,6 +41,11 @@
       "source_file": "specs/lat_spec.json",
       "summary": "Local Access Token (LAT): an opaque per-device string issued by the TP-Link IoT cloud in ThingInfo.localAccessToken (GET {iot-app-server}/v2/things, Authorization 'ut|<token>'). For TPAP pake 2 the app offers passcodes [md5_hex(cloud pw), SHA256_HEX_UPPER(LAT), SHA256_HEX_UPPER(cloud pw)]. The owner app moves the camera's admin credential to the LAT by sending changeAdminPassword (old 'empty', passwd SHA256_HEX_UPPER(LAT)) over the cloud passthrough, so after that only the LAT candidate works locally. Media :8800 digest uses SHA256_HEX_UPPER(LAT) in LAT mode.",
       "item_count": 15
+    },
+    "remote": {
+      "source_file": "specs/remote_spec.json",
+      "summary": "Remote (off-LAN) live view in the Tapo app for Tapo cameras uses the cloud RELAY path (connection type 0). The app first resolves the CIPC relay-API host with the signed account call /api/v2/common/getAppServiceUrl (serviceIds ['cipc.api.cloud']). It then asks for a relay slot, either over its IoT MQTT session (topic $tpiot/things/<thingName>/relay/request/get, tried first for IoT-cloud cameras) or over HTTPS POST https://<cipcHost>/v2/relay/request with 'Authorization: <account token>' (no 'ut|', no HMAC signing). The response gives relayUrl (host + /relayservice?... path), relayIp, relayToken, optional cdnUrl/activeCert/concurrentType/quicEnable/elbCookie. The app opens TLS (SNI = relay host, chain must verify against TP-Link private roots bundled in e41/b.java) to relayIp:443, sends one never-ending 'POST /relayservice?...&retryTime=N HTTP/1.1' with X-token etc. On '200' the socket becomes a raw tunnel to the camera's /stream multipart session: the client skips the inner HTTP POST /stream + Digest step entirely and directly exchanges the same multipart JSON/MPEG-TS parts as on the LAN :8800 stream. Heartbeat part every 15 s. The app sends nothing to the camera itself; the cloud signals the camera (inferred). Correction to tapo_protocol_spec: ports 17443/18443/19443 belong only to the legacy Kasa-camera path, not Tapo relay.",
+      "item_count": 18
     }
   },
   "items": [
@@ -13370,6 +13375,1205 @@
       ],
       "confidence": "inferred",
       "lane": "lat"
+    },
+    {
+      "id": "remote.overview.selection",
+      "kind": "state_machine",
+      "description": "Which remote transports exist and how the relay strategy is chosen. Connection types: 256 local, 17 UPnP (public ip:ext_port, TLS-PSK), 16 P2P (STUN/UDT hole punch), 0 relay. For relay the 'middleware' f0 picks RelayStrategy MQTT (default, used when device isSupportIoTCloud and app mqtt enabled) and falls back to CIPC HTTP once MQTT fails; CIPC is retried at most once (counter < 1). A rate-limit blocks a key 'devId_<id>|st_<streamType>|rs_<res>|it_<imgType>' when more than 100 requests per minute.",
+      "value": {
+        "connection_types": {
+          "256": "local LAN",
+          "17": "UPnP (public IP + mapped port, TLS-PSK)",
+          "16": "P2P (STUN + UDT, appNonce/devNonce secureV4)",
+          "0": "cloud relay"
+        },
+        "relay_strategy_enum": {
+          "MQTT": 0,
+          "CIPC": 1
+        },
+        "strategy_order": [
+          "MQTT (IoT-cloud cameras, app connected to MQTT)",
+          "CIPC HTTPS /v2/relay/request"
+        ],
+        "middleware_wait_timeout_ms": {
+          "relay(f0)": 18000,
+          "p2p(i0)": 40000,
+          "other(l)": 10000,
+          "default": 5000
+        },
+        "fatal_errors_no_retry": [
+          -1014,
+          -52407,
+          -52411,
+          -20675,
+          -1102,
+          -1103,
+          -52212,
+          -5015,
+          -100001,
+          -1007
+        ],
+        "recommended_for_windows_client": "CIPC HTTPS path (no MQTT session needed) + node_https tunnel (TLS over TCP 443)."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 112,
+          "snippet": "RelayStrategy relayStrategy = RelayStrategy.MQTT; ... if (cloudInfo.z() && cloudInfo.g() == 1 && zC) ..."
+        },
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 482,
+          "snippet": "Z0(): if strategy == MQTT -> strategy = CIPC; else f236236l++"
+        },
+        {
+          "source": "jadx",
+          "file": "va1/a.java",
+          "line": 53,
+          "snippet": "else if (i12 == 1) i0Var = new f0(aVar, str); else i12 == 0 ? new i0(..) : new l(..)"
+        },
+        {
+          "source": "jadx",
+          "file": "va1/e.java",
+          "line": 221,
+          "snippet": "aVar2 instanceof f0 -> i15 = 18000; i0 -> 40000; l -> 10000; else 5000"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pcommon/util/a.java",
+          "line": 147,
+          "snippet": "h(i12): i12 == -1014 || -52407 || -52411 || -20675 || -1102 || -1103 || -52212 || -5015 || -100001 || -1007"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/relayenum/RelayStrategy.java",
+          "line": 6,
+          "snippet": "MQTT(0), CIPC(1);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.cipc_host.discovery",
+      "kind": "request",
+      "description": "Resolve the CIPC relay-API host. Signed TP-Link ID cloud call (same HMAC-SHA1 X-Authorization/Content-MD5 scheme as cloud.signing, token-required default true) to the account's regional appServerUrl. Result cached per cloudUserName in SharedPreferences 'sp_cipc_url'+user.",
+      "value": {
+        "method": "POST",
+        "url": "{appServerUrlV2 or bootstrap}/api/v2/common/getAppServiceUrl",
+        "annotations": [
+          "signature-required:true"
+        ],
+        "body": {
+          "serviceIds": [
+            "cipc.api.cloud"
+          ]
+        },
+        "service_id_rule": "production (env 'dist' or 'beta' or empty): 'cipc.api.cloud'; env 'beta2': 'cipc.api.cloud.uat2'; other env X: 'cipc.api.cloud.' + X",
+        "response": {
+          "error_code": 0,
+          "result": {
+            "regionCode": "<e.g. aps1>",
+            "serviceUrls": {
+              "cipc.api.cloud": "<host or https://host>"
+            }
+          }
+        },
+        "use": "cipcBase = 'https://' + strip('http://','https://', serviceUrls['cipc.api.cloud'])",
+        "fallback_when_empty": "https:// + host from o41.z.b(env, 'aps') => 'aps1-cipc-api.i.tplinkcloud.com' (beta: 'aps1-cipc-api-beta.i.tplinkcloud.com')",
+        "other_regional_constants": [
+          "use1-cipc-api.i.tplinkcloud.com",
+          "euw1-cipc-api.i.tplinkcloud.com"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/WebServiceV2Api.java",
+          "line": 46,
+          "snippet": "@o(\"{url}/api/v2/common/getAppServiceUrl\") getAppServiceUrl(..., AppServiceUrlParams)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpnetwork/TPCloudNetwork/repository/AppRelayUrlRepository.java",
+          "line": 164,
+          "snippet": "appServiceUrlParams.setServiceIds(Collections.singletonList(f172480g));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpnetwork/TPCloudNetwork/repository/AppRelayUrlRepository.java",
+          "line": 74,
+          "snippet": "getServiceUrls().get(appServiceUrlParams.getServiceIds().get(0))"
+        },
+        {
+          "source": "jadx",
+          "file": "bs0/b.java",
+          "line": 87,
+          "snippet": "return \"cipc.api.cloud\"; ... return \"cipc.api.cloud\" + str;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 350,
+          "snippet": "strN = s31.a.n(); if empty strN = z.b(s31.a.g(), \"aps\"); return HTTPS_PREFIX + util.a.j(strN)"
+        },
+        {
+          "source": "jadx",
+          "file": "o41/z.java",
+          "line": 14,
+          "snippet": "\"http://aps1-cipc-api.i.tplinkcloud.com\" / use1 / euw1 variants"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/core/TapoAppContext.java",
+          "line": 361,
+          "snippet": "getCipcServerUrl() { return e8.t(); }  // AppRelayUrlRepository + hs0.k.j(cloudUserName)"
+        },
+        {
+          "source": "jadx",
+          "file": "hs0/k.java",
+          "line": 233,
+          "snippet": "SP.a3().g(\"sp_cipc_url\" + SP.P(str), \"\")"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.cipc.http_client",
+      "kind": "header",
+      "description": "OkHttp client and interceptor (ma1.a) used for every CIPC call. Because CIPC calls never set 'X-Support-Iot', the interceptor puts the raw TP-Link ID account token into Authorization (no 'ut|' prefix, no HMAC signature). Missing token => synthetic 401 'app missing token'. Anything after ';' in the token is dropped.",
+      "value": {
+        "headers_added_if_absent": {
+          "Host": "<cipc host>",
+          "User-Agent": "relay/request passes s31.a.m(): 'Tapo_APP/<Build.MODEL>/<versionName>_Android/Android <Build.VERSION.RELEASE>' (default when absent: 'TP-Link_Tapo_Android Android <versionName>')",
+          "Authorization": "<account token>  (TCAccountBean.getToken(), the token from TP-Link ID /api/v2/account/login)",
+          "Content-Type": "application/json; charset=UTF-8",
+          "Content-Length": "<n>",
+          "Accept": "*/*",
+          "Connection": "Keep-alive",
+          "X-Client-Id": "<app terminal uuid>",
+          "X-Source": "tapo-app",
+          "X-Brand": "TPLINK",
+          "X-Ca-Type": "cloud-self",
+          "sw8": "only in debug builds"
+        },
+        "x_support_iot_variant": "If a request carried 'X-Support-Iot: true' the interceptor would instead send 'app-cid: app:TP-Link_Tapo_Android:<uuid>' and 'Authorization: ut|<token>'; if 'X-Support-Iot: false' it HMAC-signs with path '/api/v2/common/passthrough'. Relay calls use neither.",
+        "timeouts_ms": {
+          "connect": 10000,
+          "read": 15000,
+          "write": 15000
+        },
+        "tls": "system trust + certificate pins: '*.i.tplinkcloud.com' -> sha256/sWOm6BARva1IdHBJi44hKEhzNuy0CHXHZMe/wdoj2UM=, sha256/Fu9isq+p0sM2EVoXFnUb+tJIKh9DE7LumIEH+g5I1QI=; '*.tplinknbu.com' and '*.iot.i.tplinknbu.com' -> sha256/czChulbLa+RN7mJdSNLup0uD+Kjvx5zUk3kqYpJ9AIU=, sha256/FWN0bUK+G5UtW1TnZEs2o7RvMbuwcVO5Dv69SGU/xwQ=, sha256/esp3Rf3jZTN/NshwLAi/Yv76ZLtGJYHByPCPpCDc2Kg=",
+        "token_source": "s31.a.i() -> TapoAppContext.getLoginToken() -> t81.a.f() -> TCAccountBean.getToken()"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ma1/a.java",
+          "line": 120,
+          "snippet": "} else { a(request, \"Authorization\", builderNewBuilder, strI); }  // no X-Support-Iot header"
+        },
+        {
+          "source": "jadx",
+          "file": "ma1/a.java",
+          "line": 79,
+          "snippet": "if (strI.contains(\";\")) strI = strI.split(\";\")[0];"
+        },
+        {
+          "source": "jadx",
+          "file": "ma1/a.java",
+          "line": 126,
+          "snippet": "X-Client-Id=uuid; X-Source=m.e(); X-Brand=m.d(); X-Ca-Type=\"cloud-self\""
+        },
+        {
+          "source": "jadx",
+          "file": "ma1/a.java",
+          "line": 97,
+          "snippet": "a(request, \"Authorization\", builderNewBuilder, \"ut|\" + strI);  // only when X-Support-Iot:true"
+        },
+        {
+          "source": "jadx",
+          "file": "ma1/e.java",
+          "line": 43,
+          "snippet": "builder.add(\"*.i.tplinkcloud.com\", \"sha256/sWOm6BARva1IdHBJi44hKEhzNuy0CHXHZMe/wdoj2UM=\", ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "o41/m.java",
+          "line": 60,
+          "snippet": "e(): \"tapo-app\"; d(): \"TPLINK\"; b(): \"TP-Link_Tapo_Android\"; c(): \"Tapo_APP\""
+        },
+        {
+          "source": "jadx",
+          "file": "s31/a.java",
+          "line": 137,
+          "snippet": "String.format(\"%1$s/%2$s/%3$s_Android/Android %4$s\", m.c(), Build.MODEL, o41.b.a(), RELEASE)"
+        },
+        {
+          "source": "jadx",
+          "file": "t81/a.java",
+          "line": 51,
+          "snippet": "return tCAccountBeanF.getToken();"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.cipc.request_relay_url",
+      "kind": "request",
+      "description": "Ask the CIPC relay API for a relay slot for one stream. This is the call the app makes for every remote preview (and playback/talk/download/image). Body is RequestUrlParam built by CameraRelayHelper.buildHttpRequestParamV2. Gson omits null fields.",
+      "value": {
+        "method": "POST",
+        "url": "https://<cipcHost>/v2/relay/request",
+        "legacy_v1": "POST https://<cipcHost>/v1/relay/request?source=tapo-app (same body; not used by current code path)",
+        "extra_headers": {
+          "X-Request-Signature": "10 random chars from [a-zA-Z0-9]; only a per-request correlation id used by the OkHttp EventListener, NOT a cryptographic signature",
+          "User-Agent": "Tapo_APP/<model>/<version>_Android/Android <release>"
+        },
+        "body_fields": {
+          "deviceId": "cloud deviceId of the camera (raw, not MD5)",
+          "dataTimeoutCount": "int, per-device data-timeout counter kept by the app (0 for a fresh client)",
+          "cloudType": "2 if device isSupportIoTCloud else 1",
+          "deviceType": "device type string from device list, e.g. 'SMART.IPCAMERA'",
+          "playerId": "app terminal uuid",
+          "rootCaVer": "\"1\"",
+          "streamType": "int: preview 0, playback 1, audio(talk) 2, download 3, usr_def_audio 4 or 3 (see subType rule), download_vod 3, image 4 or 3",
+          "preConnection": "preview only: 1 = pre-connection request, 0 = normal (also when cached pre-conn expired), 2 = reuse of a still-valid pre-connection; non-preview: 0 (V1) / absent (V2)",
+          "resolution": "preview only: 'HD' (main) or 'VGA' (sub)",
+          "channelId": "'0' for playback/download (non-hub), audio, usr_def_audio",
+          "subType": "download: 'cover'; download_vod: 'video'; image: image type; usr_def_audio: audio type",
+          "customParams": "JSON string of CustomParams, e.g. '{}' or '{\"ignore_limit\":true}' for preview; audio: {\"mode\":\"half_duplex\"|\"aec\"}; playback: {event_type, camera_device_id, camera_mac, traj_start_time, streams, continuous_play_config}; image: {image_type,image_format,image_name,image_tag}; optional audio_config {encode_type, sample_rate}",
+          "invalidRelayPublicIp": "optional: relay public IP that failed before (asks server for another node)",
+          "trackId": "UUID string (random per connection unless caller supplies one)",
+          "v1_only": {
+            "relayService": "/relayservice?... path",
+            "localReqUrl": "/stream or /stream/audio",
+            "hubDeviceId": "hub id",
+            "deviceAbilityList": "string"
+          }
+        },
+        "example_preview_body": {
+          "deviceId": "<deviceId>",
+          "dataTimeoutCount": 0,
+          "cloudType": 2,
+          "deviceType": "SMART.IPCAMERA",
+          "playerId": "<uuid>",
+          "rootCaVer": "1",
+          "preConnection": 0,
+          "resolution": "HD",
+          "streamType": 0,
+          "customParams": "{}",
+          "trackId": "<uuid>"
+        },
+        "response_envelope": {
+          "errorCode": 0,
+          "msg": "<text>",
+          "result": "<RequestUrlResult, see remote.relay.cipc.response>"
+        },
+        "error_handling": {
+          "errorCode != 0": "MediaException(errorCode,'Http Get Url Fail.')",
+          "-1102 TOKEN_INVALID": "app refreshes the account token (s31.a.P()) and repeats the request once",
+          "HTTP error": "errorCode read from JSON body 'errorCode' if present else HTTP status",
+          "UnknownHost / NoRoute -2104 / ConnectTimeout -2103 / SocketTimeout -2102": "network errors",
+          "other non-fatal": "falls back to a raw-socket CIPC client (SimpleCipcClient) then retry"
+        },
+        "error_codes": {
+          "-1007": "DEVICE_OFFLINE",
+          "-1014": "ERROR_RELAY_NODE_UNREACHABLE / INVALID_NODE",
+          "-1102": "TOKEN_INVALID",
+          "-1103": "ACCOUNT_NOT_BIND_TO_DEVICE",
+          "-5015": "CLOUD_ANOMALY",
+          "-52212": "FLOW_UPPER_LIMIT_REACHED",
+          "-52407": "TOO_MANY_CLIENT",
+          "-52411": "TALK_IS_USED",
+          "-100001": "RELAY_REQUEST_LIMIT"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraCipcApi.java",
+          "line": 31,
+          "snippet": "@o(\"{url}/v2/relay/request\") requestRelayUrlV2(url, @i(\"X-Request-Signature\"), @i(\"User-Agent\"), @a RequestUrlParam)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraCipcApi.java",
+          "line": 28,
+          "snippet": "@o(\"{url}/v1/relay/request\") requestRelayUrl(url, @t(\"source\"), X-Request-Signature, body)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 160,
+          "snippet": "buildHttpRequestParamV2: setDeviceId, setDataTimeoutCount, setCloudType(isSupportIoTCloud ? 2 : 1), setDeviceType, setPlayerId(uuid), setRootCaVer"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/RequestUrlParam.java",
+          "line": 9,
+          "snippet": "@SerializedName(\"channelId\") ... \"cloudType\" ... \"customParams\" ... \"deviceId\" ... \"trackId\""
+        },
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 689,
+          "snippet": "final String strC = com.tplink.libtpp2pcommon.util.d.c(10); ... httpGetUrl(..., strC)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pcommon/util/d.java",
+          "line": 39,
+          "snippet": "c(n): random chars of \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\""
+        },
+        {
+          "source": "jadx",
+          "file": "z31/a.java",
+          "line": 17,
+          "snippet": "a(type, sub): 0->0,1->1,2->2,3->3, 4/6 -> (sub==null||b(sub)) ? 4 : 3, 5->3"
+        },
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 750,
+          "snippet": "if (errorCode == -1102) return f0Var.W0(i12);  // refresh token then retry"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 288,
+          "snippet": "g(): errorCode != 0 -> throw new MediaException(errorCode, \"Http Get Url Fail.\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpappcommonmedia/exception/MediaException.java",
+          "line": 60,
+          "snippet": "TOKEN_INVALID = -1102; TOO_MANY_CLIENT = -52407; DEVICE_OFFLINE = -1007"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.cipc.response",
+      "kind": "response",
+      "description": "RequestUrlResult (result of /v2/relay/request, of the MQTT reply, of pre-connection batch entries and of a 304 redirect body) and how the app maps it into ConnectionParam.",
+      "value": {
+        "fields": {
+          "relayUrl": "'[https://]<relayHost>/relayservice?deviceid=<id>&type=video&resolution=HD...' (host + path)",
+          "relayIp": "IPv4 of the relay node; connect here if non-empty, else DNS-resolve relayHost",
+          "relayToken": "value for the X-token header on the relay tunnel request",
+          "sessionToken": "alternative token (code checks it but finally overwrites with relayToken)",
+          "relayBusinessUrl": "business URL (spelling variant 'relayBussinessUrl' also parsed); used as X-CDN-Origin host when going through CDN",
+          "cdnUrl": "optional CDN edge host",
+          "activeCert": "list of bundled root-cert NAMES (keys of e41/b.java map) that the CDN cert must chain to",
+          "elbCookie": "optional load-balancer cookie => send as 'Cookie' header",
+          "preConnIdleTime": "seconds a pre-connection stays valid (aliveTime); isExpire = now - successTime > (aliveTime-10)*1000",
+          "quicEnable": "0/null = no QUIC, 1 = QUIC allowed, 2 = QUIC with racing (serial-numbered requests)",
+          "concurrentType": "ordered list of tunnel kinds to race: 'node_quic','node_https','cdn_quic','cdn_https'",
+          "clientToken": "echo of MQTT clientToken",
+          "commonResult": {
+            "errorCode": "int",
+            "resultMsg": "string"
+          }
+        },
+        "mapping": [
+          "u = relayUrl without 'http://' / 'https://'",
+          "relayHost = u[0 : indexOf('/')]; relayPath = u[indexOf('/') : ]",
+          "relayBussinessUrl = relayBusinessUrl || relayBussinessUrl || u",
+          "relayToken = relayToken",
+          "cookie = elbCookie; aliveTime = preConnIdleTime"
+        ],
+        "default_concurrent_types_when_absent": "[node_quic if QUIC allowed] + node_https (or cdn_* variants when a usable cdnUrl is present)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/RequestUrlResult.java",
+          "line": 12,
+          "snippet": "\"activeCert\",\"cdnUrl\",\"clientToken\",\"commonResult\",\"concurrentType\",\"elbCookie\",\"preConnIdleTime\",\"quicEnable\",\"relayBusinessUrl\",\"relayBussinessUrl\",\"relayIp\",\"relayToken\",\"relayUrl\",\"sessionToken\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 313,
+          "snippet": "parseResultToConnectionParam: strJ = a.j(getRelayUrl()); setRelayHost(strJ.substring(0, iIndexOf)); relayUrl.f238766a = strJ.substring(iIndexOf)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/HttpResult.java",
+          "line": 10,
+          "snippet": "@SerializedName(\"errorCode\") ... (\"msg\") ... (\"result\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/ConnectionParam.java",
+          "line": 185,
+          "snippet": "isExpire(): now - preConnectionSuccessTime > (aliveTime - 10) * 1000"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/i0.java",
+          "line": 97,
+          "snippet": "concurrentType empty -> add node_quic/cdn_quic if needTryQuic, then node_https or cdn_https"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.path_format",
+      "kind": "endpoint",
+      "description": "Relay service path templates. The path normally comes from relayUrl in the CIPC response; the app also builds the same template locally (dVar.f238766a) as the default / V1 relayService value. The tunnel request URI is relayPath + '&retryTime=' + retryCount.",
+      "value": {
+        "preview": "/relayservice?deviceid=<deviceId>&type=video&resolution=<HD|VGA>",
+        "preview_nvr_channel": "/relayservice?deviceid=<id>&type=nvr&resolution=<HD|VGA>&channel=<n>",
+        "playback": "/relayservice?deviceid=<id>&type=sdvod&playerid=<uuid>[&channel=<n>]",
+        "download": "/relayservice?deviceid=<id>&type=download&bidirectionid=<uuid>[&channel=<n>]",
+        "talk": "/relayservice?deviceid=<id>&type=dtspk&playerid=<uuid>&channel=<n>",
+        "image": "/relayservice?deviceid=<id>&type=image&playerid=<uuid>&subtype=<imageType>",
+        "inner_stream_path": "/stream (video/playback/download) or /stream/audio (talk) = localReqUrl",
+        "tunnel_uri": "<relayPath>&retryTime=<n starting 0>"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pcommon/util/a.java",
+          "line": 123,
+          "snippet": "\"/relayservice?deviceid=\" + str + \"&type=video&resolution=\" + resolutionFromKey.getValue()"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pcommon/util/a.java",
+          "line": 111,
+          "snippet": "f(): preview/playback/download -> \"/stream\"; audio -> \"/stream/audio\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 567,
+          "snippet": "return getRelayUrl().f238766a + \"&retryTime=\" + this.f172696p;"
+        },
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 911,
+          "snippet": "dVar.f238766a = util.a.g(bVar.j(), ..., i12, i13, strN, ...); dVar.f238767b = util.a.f(i12);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.tunnel.tls",
+      "kind": "constant",
+      "description": "Transport to the relay node for concurrentType 'node_https' (HTTP/1.1 class d0, what a Windows client should implement). TCP connect to relayIp (or DNS of relayHost) port 443, TLS via SSLContext 'TLSv1.2', SNI = relayHost, OkHostnameVerifier on relayHost, then the peer chain must verify against one of the TP-Link private roots bundled in e41/b.java. 'node_quic' uses HTTP/3 (xquic) to the same host:443; 'cdn_https'/'cdn_quic' connect to cdnUrl:443 and require the chain to match the roots named in activeCert.",
+      "value": {
+        "port": 443,
+        "connect_timeout_ms": 15000,
+        "tls": "TLS 1.2 context (platform default ciphers)",
+        "sni": "relayHost (node) or cdnUrl (cdn)",
+        "hostname_verification": "yes, against relayHost / cdnUrl",
+        "node_trust_roots": [
+          "s_default_rootCA_3",
+          "nbu_cloud_cert (CN=tp-link-CA)",
+          "cloud_self_cert (CN=TP-Link Cloud Root CA)",
+          "kasa_cert_1",
+          "kasa_cert_2"
+        ],
+        "root_pem_location": "jadx file e41/b.java lines 199-203 (map.put(name, PEM)); public DigiCert/GlobalSign/GoDaddy/Sectigo/Starfield roots at lines 204-220 are used for CDN activeCert names",
+        "keystore_for_socket": "e41/d.java d(): KeyStore with s_default_rootCA_3, nbu_cloud_cert, cloud_self_cert, kasa_cert_1, kasa_cert_2 wrapped together with the system trust manager",
+        "windows_note": "Use SslStream with a custom RemoteCertificateValidationCallback that builds the chain against these bundled roots (ExtraStore + CustomRootTrust) and checks the host name."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/d0.java",
+          "line": 132,
+          "snippet": "hVar.c(new InetSocketAddress(byName, BR.viewListener));  // byName = relayIp or DNS(relayHost)"
+        },
+        {
+          "source": "jadx",
+          "file": "androidx/databinding/library/baseAdapters/BR.java",
+          "line": 451,
+          "snippet": "public static final int viewListener = 443;"
+        },
+        {
+          "source": "jadx",
+          "file": "ma1/h.java",
+          "line": 279,
+          "snippet": "sSLParameters.setServerNames(Collections.singletonList(new SNIHostName(str)));"
+        },
+        {
+          "source": "jadx",
+          "file": "ma1/h.java",
+          "line": 192,
+          "snippet": "if (!OkHostnameVerifier.INSTANCE.verify(this.f211567d, session)) throw ...; e41.b.g().a(session.getPeerCertificateChain());"
+        },
+        {
+          "source": "jadx",
+          "file": "e41/b.java",
+          "line": 95,
+          "snippet": "a(chain): list s_default_rootCA_3, nbu_cloud_cert, cloud_self_cert, kasa_cert_1, kasa_cert_2 -> b(chain, list) else 'untrusted server'"
+        },
+        {
+          "source": "jadx",
+          "file": "e41/d.java",
+          "line": 36,
+          "snippet": "d(): arrayList.add(\"s_default_rootCA_3\"); add(\"nbu_cloud_cert\"); add(\"cloud_self_cert\"); ... SSLContext.getInstance(TLS_v1_2)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/w0.java",
+          "line": 230,
+          "snippet": "HTTP/3: d41.d(POST, k0(), HttpVersion.HTTP_3, Z()) ; authority = host + \":443\""
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.tunnel.request",
+      "kind": "request",
+      "description": "The single HTTP/1.1 request written on the TLS socket to open the relay tunnel. Header order is the LinkedHashMap insertion order below; serialization is 'POST <uri> HTTP/1.1\\r\\n' + 'Name: value\\r\\n'... + '\\r\\n' with no body. Content-Length is a huge sentinel so the request body never ends: everything sent afterwards on the socket is tunnel payload.",
+      "value": {
+        "request_line": "POST /relayservice?deviceid=<id>&type=video&resolution=HD&retryTime=0 HTTP/1.1",
+        "headers_in_order": [
+          [
+            "User-Agent",
+            "Client=TP-Link_Tapo_Android Android <versionName>/1.3"
+          ],
+          [
+            "Keep-Relay",
+            "3600"
+          ],
+          [
+            "Accept",
+            "*/*"
+          ],
+          [
+            "Content-Type",
+            "multipart/mixed;boundary=--client-stream-boundary--"
+          ],
+          [
+            "Host",
+            "<relayHost>  (cdn mode: <cdnUrl>)"
+          ],
+          [
+            "Content-Length",
+            "9223372036854775807  (cdn mode: 21474836470)"
+          ],
+          [
+            "X-CDN-Origin",
+            "cdn mode only: host part of relayBusinessUrl"
+          ],
+          [
+            "X-CDN-Degrade",
+            "'1' only when a CDN attempt failed and the app fell back to the node"
+          ],
+          [
+            "X-token",
+            "<relayToken>  (fallback when empty: account token, with '; tokenType=appSlaveToken' / 'appSubDeviceToken' / 'appSlaveSubDeviceToken' suffix for shared/sub devices)"
+          ],
+          [
+            "X-Client-Model",
+            "<device model string, Android Build.MODEL>"
+          ],
+          [
+            "X-Client-UUID",
+            "<app terminal uuid>"
+          ],
+          [
+            "X-Client-SessionID",
+            "optional, only if ConnectionParam.session set"
+          ],
+          [
+            "X-Track-Id",
+            "<trackId UUID, same as in /v2/relay/request>"
+          ],
+          [
+            "X-Redirect-Times",
+            "0 (incremented after 304 redirects)"
+          ],
+          [
+            "X-Pull-Mode",
+            "'2' DIRECT_FORWARDING (normal) or '1' PRE_CONNECTION"
+          ],
+          [
+            "Cookie",
+            "<elbCookie> if present"
+          ],
+          [
+            "X-Compete",
+            "'1' only when racing several tunnel kinds"
+          ],
+          [
+            "X-Version",
+            "2.0"
+          ],
+          [
+            "X-Arrive-Latency",
+            "ms between DNS start and connect end (>=0)"
+          ]
+        ],
+        "quic_extra": "X-Serial-Num: <n> when quicEnable == 2",
+        "pull_mode_enum": {
+          "COMMON": "0",
+          "PRE_CONNECTION": "1",
+          "DIRECT_FORWARDING": "2"
+        },
+        "keep_relay_source": "ConnectionParam.setRelayTime(Constants.SECONDS_IN_HOUR = 3600)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 481,
+          "snippet": "put(\"User-Agent\", \"Client=\" + s31.a.r() + \"/1.3\"); put(KEEP_RELAY, getRelayTime())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 484,
+          "snippet": "put(\"Content-Type\", \"multipart/mixed;boundary=\" + this.f172681a.d());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 497,
+          "snippet": "put(\"Host\", getRelayHost()); put(\"Content-Length\", \"9223372036854775807\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 503,
+          "snippet": "put(\"X-token\", relayToken); put(X_CLIENT_MODEL, ..m()); put(X_CLIENT_UUID, ..n());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 513,
+          "snippet": "put(\"X-Pull-Mode\", f172684d ? PRE_CONNECTION : DIRECT_FORWARDING); ... put(\"X-Version\", \"2.0\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/d0.java",
+          "line": 321,
+          "snippet": "new d41.d(HttpMethod.POST, k0(), HttpVersion.HTTP_1_1, Z(), null); hVar.j(dVar.f()); hVar.h()"
+        },
+        {
+          "source": "jadx",
+          "file": "d41/d.java",
+          "line": 62,
+          "snippet": "method + \" \" + uri + \" \" + version + \"\\r\\n\"; each 'k: v\\r\\n'; then \"\\r\\n\""
+        },
+        {
+          "source": "jadx",
+          "file": "ub1/d.java",
+          "line": 291,
+          "snippet": "va1.c.d(ua, user, a(md5) /*token+tokenType*/, uuid, Build.MODEL, ..., \"--client-stream-boundary--\", ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "ub1/d.java",
+          "line": 29,
+          "snippet": "a(): token; '; tokenType=appSlaveToken' | '; tokenType=appSubDeviceToken' | '; tokenType=appSlaveSubDeviceToken'"
+        },
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 898,
+          "snippet": "this.f236234j.setRelayTime(Constants.SECONDS_IN_HOUR);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.tunnel.response",
+      "kind": "response",
+      "description": "Handling of the relay node's HTTP response head to the tunnel request.",
+      "value": {
+        "200": "tunnel open. Response header 'X-Client-Id' (or 'x-client-id') is stored as rcClientId; header 'pre_connection: 1' marks a pre-connection. Start 15 s heartbeat timer. All further bytes are tunnel payload.",
+        "304": "redirect: body is a RequestUrlResult JSON; take relayIp, relayToken and relayUrl (host / path split) and reconnect (X-Redirect-Times increments).",
+        "other": "body is HttpResult JSON {errorCode,msg,result}; errorCode stored as failure reason. errorCode -33 resets/marks the device data-timeout counter.",
+        "relay_errors_in_stream": "relay-level failures are surfaced to the player as a JSON part {type:'error', ... error_code} (code -11002 for transport failures)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 632,
+          "snippet": "if (mapD.containsKey(\"pre_connection\")) ... if (iC == 200) { X_CLIENT_ID / \"x-client-id\" -> setRcClientId; N0(); return true; }"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 645,
+          "snippet": "if (iC != 304) { HttpResult ... if (errorCode == -33) ...; return false; }"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 656,
+          "snippet": "304: RequestUrlResult -> setRelayIp, setRelayToken, split relayUrl on '/'"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.stream_over_tunnel",
+      "kind": "stream",
+      "description": "What flows inside the tunnel after the 200. The app bridges the tunnel to a loopback ServerSocketChannel (bind port 0) and its normal stream client (tb1.a) connects there over plain TCP. For connection type 0 the stream client does NOT send the inner 'POST /stream' request and does NOT run Digest: tb1.a.s(auth, true) just sets code 204. So no Key-Exchange header is received and no AES key is derived (cipher stays null). The client immediately writes multipart JSON control parts (same format as LAN :8800, boundary '----client-stream-boundary--') e.g. the preview request, and reads device parts (boundary '----device-stream-boundary--') carrying JSON responses and MPEG-TS media exactly like the LAN stream.",
+      "value": {
+        "client_part_format": "----client-stream-boundary--\\r\\nContent-Type: application/json\\r\\nContent-Length: <len>\\r\\n[extra headers]\\r\\n\\r\\n<json>\\r\\n",
+        "device_part_boundary": "----device-stream-boundary--",
+        "first_message": "preview request, see tapo_protocol_spec stream.control.preview: {\"type\":\"request\",\"seq\":1,\"params\":{\"method\":\"get\",\"preview\":{\"channels\":[0],\"resolutions\":[\"HD\"],\"audio\":[\"default\"]}}}",
+        "digest": "skipped for type 0 (K() false)",
+        "inner_http": "skipped for type 0 (z24 = true -> code 204, no request written)",
+        "media_encryption": "no Key-Exchange => parts are returned as-is; if a part had X-If-Encrypt: 1 with no cipher the bytes pass through undecrypted. Treat relay media as plaintext MPEG-TS inside the TLS tunnel.",
+        "session_id": "X-Session-Id header from the preview response is reused on later control parts, as on LAN"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 354,
+          "snippet": "boolean z24 = y() == 0 ? z16 : z15;  // z16 == true"
+        },
+        {
+          "source": "jadx",
+          "file": "tb1/a.java",
+          "line": 589,
+          "snippet": "s(str, z12): if (z12) { this.f230045k = 204; clear(); } else { B(str); F(z12); }"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/c.java",
+          "line": 190,
+          "snippet": "K(): (f186141r || type == 0 || 17 == type || H()) ? false : true"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 519,
+          "snippet": "if (mapR.containsKey(SSLClient.KEY_EXCHANGE)) { ... C(str10, strB); }  // only when iS == 200"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/c.java",
+          "line": 205,
+          "snippet": "z12 = X-If-Encrypt == \"1\" ... if (!z12) return bArrP; ... return t(bArrP)  // t() returns input when cipher null"
+        },
+        {
+          "source": "jadx",
+          "file": "va1/e.java",
+          "line": 241,
+          "snippet": "\"建立连接耗时:\" ... \"本地代理服务器端口: \" + this.f234484e  // local proxy port"
+        },
+        {
+          "source": "jadx",
+          "file": "ua1/c.java",
+          "line": 223,
+          "snippet": "serverSocketChannelOpen.socket().bind(new InetSocketAddress(0));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pcommon/util/a.java",
+          "line": 74,
+          "snippet": "\"----client-stream-boundary--\" / \"----device-stream-boundary--\" + Content-Type + Content-Length"
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.heartbeat",
+      "kind": "constant",
+      "description": "Keep-alive written by the relay client into the tunnel every 15 s after the 200 (interval timer 15000 ms initial delay and period). Relay service enum values seen: 'heartbeat', 'killclient', 'killDTplayer'.",
+      "value": {
+        "interval_ms": 15000,
+        "bytes": "----client-stream-boundary--\\r\\nContent-Type: application/json\\r\\nContent-Length: 63\\r\\n\\r\\n{\"type\": \"notification\", \"params\": {\"event_type\": \"heartbeat\"}}\\r\\n",
+        "json": "{\"type\": \"notification\", \"params\": {\"event_type\": \"heartbeat\"}}",
+        "service_enum": [
+          "heartbeat",
+          "killclient",
+          "killDTplayer"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+          "line": 257,
+          "snippet": "vr1.r.x0(DEFAULT_MAX_TIME, DEFAULT_MAX_TIME, MILLISECONDS) -> O0(): send util.a.a()"
+        },
+        {
+          "source": "jadx",
+          "file": "io/netty/handler/traffic/AbstractTrafficShapingHandler.java",
+          "line": 26,
+          "snippet": "public static final long DEFAULT_MAX_TIME = 15000;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pcommon/util/a.java",
+          "line": 64,
+          "snippet": "\"{\\\"type\\\": \\\"notification\\\", \\\"params\\\": {\\\"event_type\\\": \\\"heartbeat\\\"}}\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/Service.java",
+          "line": 12,
+          "snippet": "HEART_BEAT(EVENT_HEART_BEAT), KILL_CLIENT(\"killclient\"), KILL_TALK_PLAYER(\"killDTplayer\")"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.camera_signalling",
+      "kind": "state_machine",
+      "description": "How the camera learns about the relay session. The app sends no passthrough/services-sync call to the camera for relay; its only requests are getAppServiceUrl, /v2/relay/request (or the MQTT relay/request/get publish) and the tunnel POST. The relay request carries deviceId + streamType + resolution + trackId, so the cloud relay service must notify the camera over the camera's own persistent cloud connection and the camera dials the same relay node. The client never needs the camera's LAN IP, the localAccessToken or Digest for relay.",
+      "value": {
+        "client_side_calls": [
+          "POST {appServer}/api/v2/common/getAppServiceUrl (signed)",
+          "POST https://<cipcHost>/v2/relay/request (Authorization: <token>)",
+          "TLS relayIp:443 'POST /relayservice?...'"
+        ],
+        "camera_side": "server-driven (not visible in the APK)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 690,
+          "snippet": "i0(): CameraRelayHelper.httpGetUrl(buildGetUrlParam(...)) -> K0() -> N0(): new i0(relay clients)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 424,
+          "snippet": "httpGetUrl(...): requestRelayUrlV2(mApiServerUrl, sig, ua, requestUrlParam)"
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.mqtt_variant",
+      "kind": "request",
+      "description": "Preferred relay-request transport for IoT-cloud cameras: publish over the app's IoT MQTT session (only when the MQTT session for that thing is connected and subscribed; reply timeout 2 s; not used during the first 10 s after app start). On failure (-2016 'Don't exist mqtt connection!' or timeout -2017) the app switches to the CIPC HTTPS request.",
+      "value": {
+        "publish_topic": "$tpiot/things/<thingName>/relay/request/get",
+        "reply_topic": "$tpiot/things/<thingName>/relay/request/get/reply",
+        "payload": {
+          "userToken": "ut|<account token>",
+          "timestamp": "<epoch ms>",
+          "requestRelayParams": {
+            "relayParamsJson": "<RequestUrlParam object, same as /v2/relay/request body>"
+          },
+          "clientToken": "<deviceId>_<hash>",
+          "userAgent": "Tapo_APP/<model>/<ver>_Android/Android <rel>",
+          "clientId": "<uuid>",
+          "caType": "cloud-self",
+          "protocolVersion": 2
+        },
+        "reply": {
+          "clientToken": "<echo>",
+          "relayRespJson": {
+            "errorCode": 0,
+            "message": "<text>",
+            "result": "<RequestUrlResult>"
+          }
+        },
+        "mqtt_broker": "thing 'NewCloudGatewayUrlRenewal' host; ssl:// or wss:// on 443 (tcp/ws variants 8883); credentials from the IoT MQTT login (not analysed here)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "wa1/f0.java",
+          "line": 143,
+          "snippet": "new MqttGetRelayParam(\"ut|\" + strI, currentTimeMillis(), new RelayParamWrapper(buildGetUrlParam(..)), null); setCaType(\"cloud-self\"); setProtocolVersion(2)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/mqtt/MqttGetRelayParam.java",
+          "line": 9,
+          "snippet": "\"caType\",\"clientId\",\"clientToken\",\"protocolVersion\",\"requestRelayParams\",\"timestamp\",\"userAgent\",\"userToken\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/bean/mqtt/MqttResponse.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"relayRespJson\") MqttResultWrapper {errorCode, message, result}"
+        },
+        {
+          "source": "jadx",
+          "file": "yq/o0.java",
+          "line": 908,
+          "snippet": "O0(String.format(\"$tpiot/things/%s/relay/request/get\", str2), mqttMessage)"
+        },
+        {
+          "source": "jadx",
+          "file": "yq/o0.java",
+          "line": 1098,
+          "snippet": "\"$tpiot/things/%s/relay/request/get/reply\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/core/TapoAppContext.java",
+          "line": 968,
+          "snippet": "jCurrentTimeMillis < MIN_BACKOFF_MILLIS ? \"\" : repo.k4(str2, str3).E1(2L, SECONDS)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameraapi/repo/base/CameraThingBaseRepository.java",
+          "line": 85,
+          "snippet": "new MediaException(-2016, \"Don't exist mqtt connection!\")"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.relay.preconnection_batch",
+      "kind": "request",
+      "description": "Optional optimisation: on the device list screen the app pre-requests relay slots for several cameras in one call; results are cached per deviceId and reused (preConnection=2, X-Pull-Mode 1) until preConnIdleTime-10 s. Not required for a desktop client.",
+      "value": {
+        "method": "POST",
+        "url": "https://<cipcHost>/v2/relay/preConnectionBatchRequest",
+        "headers": {
+          "User-Agent": "Tapo_APP/..."
+        },
+        "body": {
+          "playerId": "<uuid>",
+          "requestList": [
+            "<RequestUrlParam with preConnection 1>"
+          ]
+        },
+        "response": {
+          "errorCode": 0,
+          "preConnRespInfoList": [
+            {
+              "errorCode": 0,
+              "relayAccessInfo": "<RequestUrlResult>"
+            }
+          ]
+        },
+        "v1": "POST {cipc}/v1/relay/preConnectionBatchRequest?source=tapo-app",
+        "other_endpoints": [
+          "GET {cipc}/v1/status (warm-up)",
+          "POST {cipc}/v1/metric"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraCipcApi.java",
+          "line": 19,
+          "snippet": "@o(\"{url}/v2/relay/preConnectionBatchRequest\") buildRelayPreConnectionV2(url, User-Agent, PreConnParams)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/model/PreConnParams.java",
+          "line": 11,
+          "snippet": "@SerializedName(\"playerId\") ... @SerializedName(\"requestList\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 72,
+          "snippet": "singlePreConnResult.getRelayAccessInfo() -> parseResultToConnectionParam -> xa1.a.c().k(deviceId, param)"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.correction.kasa_ports",
+      "kind": "constant",
+      "description": "Correction to tapo_protocol_spec item stream.fallback.relay_p2p: relay ports 17443 (mediaType 1), 18443 (mediaType 2) and 19443 (other) are only used in ub1.d.t(), the branch for legacy Kasa cameras (isKasaDeviceConnection). Tapo cameras use the CIPC flow above and connect to the relay node on 443. The Tapo path also passes '<region>-relay-dcipc.i.tplinkcloud.com:80/:443' into the middleware model, which the current Java relay client does not use for the tunnel host (host comes from relayUrl).",
+      "value": {
+        "kasa_only_ports": {
+          "17443": "mediaType 1",
+          "18443": "mediaType 2",
+          "19443": "default"
+        },
+        "tapo_relay_port": 443,
+        "relay_dcipc_hosts": {
+          "aps": "aps1-relay-dcipc.i.tplinkcloud.com",
+          "euw": "euw1-relay-dcipc.i.tplinkcloud.com",
+          "default": "use1-relay-dcipc.i.tplinkcloud.com"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ub1/d.java",
+          "line": 231,
+          "snippet": "if (baseConnection.isKasaDeviceConnection()) return t(baseConnection);  // t() picks 17443/18443/19443"
+        },
+        {
+          "source": "jadx",
+          "file": "ub1/d.java",
+          "line": 291,
+          "snippet": "x(): va1.c.d(..., strC + \":80\", strC + \":443\", strN /*cipc url*/, \"--client-stream-boundary--\", ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "o41/z.java",
+          "line": 22,
+          "snippet": "c(env, url): \"http://aps1-relay-dcipc.i.tplinkcloud.com\" / euw1 / use1"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.upnp.summary",
+      "kind": "state_machine",
+      "description": "UPnP path (type 17) also works off-LAN when the camera has mapped a public port on the router. The app reads the camera's public IP and mapped port from the device's cloud-synced info and connects with TLS 1.2 ECDHE-PSK (or TLS 1.3 PSK) using the camera's upnp PSK identity/key, then runs the same /stream multipart protocol without Digest. Details already in tapo_protocol_spec (stream.local28800.tls_psk, stream.fallback.relay_p2p).",
+      "value": {
+        "ip_source": "ALCameraDevice.getPubIp().getIp()",
+        "port_source": "getUpnpStatus().getVHttpd().getExtPort()",
+        "psk": "getUpnpPsk().getPskIdentity() / getPsk()",
+        "cipher": "TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA (TLSv1.2)",
+        "digest": "skipped (type 17)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/core/TapoAppContext.java",
+          "line": 508,
+          "snippet": "getUpnpIp(): cameraDevice.getPubIp().getIp()"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/core/TapoAppContext.java",
+          "line": 514,
+          "snippet": "getUpnpPort(): Integer.parseInt(getUpnpStatus().getVHttpd().getExtPort())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/core/TapoAppContext.java",
+          "line": 463,
+          "snippet": "getPskId(): getUpnpPsk().getPskIdentity(); getPskPwd(): getUpnpPsk().getPsk()"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/c.java",
+          "line": 536,
+          "snippet": "i14 == 17 -> new k41.b(TLS_v1_2, TLS_ECDHE_PSK_WITH_AES_128_CBC_SHA, pskId, psk, 18)"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.p2p.summary",
+      "kind": "state_machine",
+      "description": "P2P path (type 16), recorded only at summary depth. The app runs STUN (stun.tplinkcloud.com, port 3478; beta: stun-beta.tplinkcloud.com) to learn its NAT mapping, asks the camera through the cloud to punch with a 'p2p' request, then runs UDT over UDP and a secureV4 key schedule from appNonce/devNonce (see tapo_protocol_spec stream.local8800.encryption.secure_v4_p2p). Not recommended for a first Windows implementation.",
+      "value": {
+        "stun_host": "stun.tplinkcloud.com (or cloud-provided stunUrl)",
+        "stun_port": 3478,
+        "device_request_shape": {
+          "method": "do",
+          "p2p": {
+            "request_p2p": {
+              "version": "<str>",
+              "app_imp_version": 0,
+              "app_nonce": "<nonce>",
+              "nat_type": 0,
+              "pub_ip": "<ip>",
+              "pub_port": 0,
+              "pri_ip": "<ip>",
+              "pri_port": 0,
+              "punch_version": 0,
+              "punch_timeout": 0,
+              "punch_maxfds": 0,
+              "cone2symm_interval": 0,
+              "symm2cone_interval": 0,
+              "stun_url": "<host>",
+              "share_info": "<str>",
+              "local_server_port": 0,
+              "ignore_limit": false
+            }
+          }
+        },
+        "wrapper": {
+          "deviceId": "<id>",
+          "requestData": "<above>",
+          "shareList": "<str>"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pstun/bean/request/cloudp2pconnect/StunRequestBean.java",
+          "line": 9,
+          "snippet": "\"app_imp_version\",\"app_nonce\",\"nat_type\",\"pri_ip\",\"pub_ip\",\"punch_timeout\",\"stun_url\",..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2pstun/bean/request/cloudp2pconnect/StunRequestBeanWrapper.java",
+          "line": 9,
+          "snippet": "@SerializedName(\"request_p2p\") bean; @SerializedName(\"p2p\") subDevBean"
+        },
+        {
+          "source": "jadx",
+          "file": "o41/z.java",
+          "line": 9,
+          "snippet": "\"stun.tplinkcloud.com\" : \"stun-beta.tplinkcloud.com\""
+        },
+        {
+          "source": "jadx",
+          "file": "pa1/a.java",
+          "line": 8,
+          "snippet": "public static int f220631a = 3478;"
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "remote"
+    },
+    {
+      "id": "remote.client_recipe.relay_preview",
+      "kind": "state_machine",
+      "description": "End-to-end recipe for a Windows client to show remote live view, using only the CIPC + node_https path.",
+      "value": {
+        "steps": [
+          "1. TP-Link ID login (existing cloud.* items) -> account token T, appServerUrl, terminal uuid U.",
+          "2. Device list -> camera deviceId D, deviceType, isSupportIoTCloud (cloudType 2/1).",
+          "3. Signed POST {appServerUrl}/api/v2/common/getAppServiceUrl body {\"serviceIds\":[\"cipc.api.cloud\"]} -> H = serviceUrls['cipc.api.cloud'] (strip scheme). Cache it.",
+          "4. POST https://H/v2/relay/request, headers Authorization: T, User-Agent: Tapo_APP/<model>/3.22.806_Android/Android <ver>, X-Request-Signature: <10 random alnum>, X-Client-Id: U, X-Source: tapo-app, X-Brand: TPLINK, X-Ca-Type: cloud-self, Content-Type: application/json; charset=UTF-8; body {deviceId:D, dataTimeoutCount:0, cloudType, deviceType, playerId:U, rootCaVer:'1', preConnection:0, resolution:'HD'|'VGA', streamType:0, customParams:'{}', trackId:<uuid>}.",
+          "5. If errorCode -1102: re-login and retry once. Else take relayUrl -> relayHost + relayPath, relayIp, relayToken, elbCookie.",
+          "6. TCP connect relayIp (or DNS relayHost):443, TLS with SNI relayHost, verify host name and chain against TP-Link roots from e41/b.java.",
+          "7. Write 'POST <relayPath>&retryTime=0 HTTP/1.1' + headers of remote.relay.tunnel.request (X-token: relayToken, X-Pull-Mode: 2, X-Version: 2.0, Keep-Relay: 3600, Content-Type multipart boundary, huge Content-Length) + blank line.",
+          "8. Read response head. 304 -> parse body as RequestUrlResult and reconnect; non-200 -> parse {errorCode} and fail.",
+          "9. On 200: write the preview request JSON part (stream.control.preview) directly; no inner POST /stream, no Digest.",
+          "10. Parse device multipart parts as on LAN; media parts are MPEG-TS (expected plaintext); send heartbeat part every 15 s; send stop request ({method:'do',stop:'null'}) before closing."
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+          "line": 424,
+          "snippet": "httpGetUrl -> requestRelayUrlV2 -> parseResultToConnectionParam"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpp2prelay/client/d0.java",
+          "line": 321,
+          "snippet": "[HTTP/1.1] send default http request => POST k0() with Z() headers"
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "remote"
     }
   ],
   "unresolved": [
@@ -13567,6 +14771,36 @@
       "topic": "REA",
       "detail": "No REA commands were run. REA android commands do not work in this environment (orchestrator note), so all evidence is from JADX source.",
       "lane": "lat"
+    },
+    {
+      "topic": "Relay media encryption",
+      "detail": "No Key-Exchange is received on the relay path, so the app derives no AES key. Whether the camera ever sets X-If-Encrypt: 1 on relay parts (and with what key) must be checked with a live capture. If it does, check the HKDF/MD5 schemes with the account password as for LAN.",
+      "lane": "remote"
+    },
+    {
+      "topic": "relayToken lifetime and reuse",
+      "detail": "No expiry field besides preConnIdleTime; the app requests a fresh relay slot for every connection. Assume a single use.",
+      "lane": "remote"
+    },
+    {
+      "topic": "CIPC response headers / rate limits",
+      "detail": "Server-side behaviour (relay time limit 'TAPO_RELAY_LIMIT', -100001 RELAY_REQUEST_LIMIT, daily remote-view quota) is enforced in the cloud and not visible in the APK.",
+      "lane": "remote"
+    },
+    {
+      "topic": "How the camera is told to dial the relay",
+      "detail": "This happens on the server and is not visible in the APK; see remote.relay.camera_signalling.",
+      "lane": "remote"
+    },
+    {
+      "topic": "MQTT broker login",
+      "detail": "The MQTT variant needs the IoT MQTT session (gateway URL, username/password from the thing cloud). Not analysed, because the CIPC HTTPS path does the same job.",
+      "lane": "remote"
+    },
+    {
+      "topic": "REA tooling",
+      "detail": "REA android commands were reported broken for this task, so all evidence comes from JADX sources via ripgrep. No REA commands were run.",
+      "lane": "remote"
     }
   ]
 }

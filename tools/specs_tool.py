@@ -29,6 +29,7 @@ LANES = {
     "cloud": "cloud_account_spec.json",
     "tpap": "tpap_spec.json",
     "lat": "lat_spec.json",
+    "remote": "remote_spec.json",
 }
 MERGED = SPECS / "tapo_protocol_spec.json"
 CONFIDENCE = {"verified", "inferred", "external"}

@@ -23,6 +23,16 @@ Routes (``REGION_PREFIX`` = ``/eu`` emulates the regional ``appServerUrlV2``):
   ``x-app-name``, ``x-app-version``, ``x-term-id``, ``x-strict: 0``). Bad/expired token -> HTTP 401
   ``{"code": -20651, "message": ...}``; bad headers -> HTTP 400. Each ThingInfo carries
   ``localAccessToken`` from :attr:`MockTapoCloud.local_tokens` (deviceId -> LAT; absent -> null).
+
+Phase 3 (remote live view, additive) [spec:remote.relay.cipc.*]:
+* ``getAppServiceUrl`` also answers ``cipc.api.cloud`` = :attr:`MockTapoCloud.cipc_url` when asked for
+  it (``cipc_service_url`` overrides the value; ``""`` leaves the id out).
+* ``POST /cipc/v2/relay/request`` - NOT signed. Checks ``Authorization: <raw token>`` (bad/expired ->
+  HTTP 401 ``{"errorCode": -1102}``), ``X-Request-Signature`` (10 alnum), ``X-Client-Id``,
+  ``X-Source: tapo-app``, ``X-Brand: TPLINK``, ``X-Ca-Type: cloud-self``, ``User-Agent: Tapo_APP/...``
+  (bad headers -> HTTP 400) and the RequestUrlParam body; answers ``relay.issue_slot(...)`` of the
+  attached :class:`tests.fixtures.mock_relay.MockRelay` (``relay`` attribute) or
+  ``relay_errors[deviceId]`` as ``errorCode``.
 """
 from __future__ import annotations
 
@@ -43,7 +53,10 @@ SECRET_KEY = "6ed7d97f3e73467f8a5bab90b577ba4c"
 REGION_PREFIX = "/eu"
 IOT_PREFIX = "/iot"
 IOT_SERVICE_ID = "nbu.iot-app-server.app-v2"
+CIPC_PREFIX = "/cipc"
+CIPC_SERVICE_ID = "cipc.api.cloud"
 APP_TYPE = "TP-Link_Tapo_Android"
+_SIGNATURE_RE = re.compile(r"^[A-Za-z0-9]{10}$")
 
 _AUTH_RE = re.compile(
     r"^Timestamp=(?P<ts>[^,]+), Nonce=(?P<nonce>[^,]+), AccessKey=(?P<ak>[^,]+), Signature=(?P<sig>[0-9a-f]+)$")
@@ -88,7 +101,10 @@ class _Handler(BaseHTTPRequestHandler):
             length = 0
         body = self.rfile.read(length) if length > 0 else b""
         parts = urlsplit(self.path)
-        status, payload = cloud._handle(parts.path, parse_qs(parts.query), body, dict(self.headers.items()))
+        if parts.path.startswith(CIPC_PREFIX + "/"):
+            status, payload = cloud._handle_cipc(parts.path[len(CIPC_PREFIX):], body, dict(self.headers.items()))
+        else:
+            status, payload = cloud._handle(parts.path, parse_qs(parts.query), body, dict(self.headers.items()))
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json;charset=UTF-8")
@@ -136,6 +152,9 @@ class MockTapoCloud:
         self.locked: set[str] = set()
         self.local_tokens: dict[str, str] = dict(local_tokens or {})
         self.things_max_page_size = 100
+        self.relay: Any = None  # MockRelay serving /v2/relay/request slots (Phase 3)
+        self.relay_errors: dict[str, int] = {}  # deviceId -> errorCode answered by /v2/relay/request
+        self.cipc_service_url: str | None = None  # None -> cipc_url; "" -> not listed
         self.request_log: list[dict] = []
         self.sent_codes: list[tuple[int, str]] = []
         self.bound_terminals: set[str] = set()
@@ -190,6 +209,11 @@ class MockTapoCloud:
     def iot_url(self) -> str:
         """IoT app server URL handed out by ``getAppServiceUrl``."""
         return self.base_url + IOT_PREFIX
+
+    @property
+    def cipc_url(self) -> str:
+        """CIPC relay-API base URL handed out for ``cipc.api.cloud``."""
+        return self.base_url + CIPC_PREFIX
 
     def expire_tokens(self) -> None:
         """Invalidate every issued token (next device call answers -20651)."""
@@ -350,7 +374,51 @@ class MockTapoCloud:
         if not isinstance(ids, list) or not ids:
             return {"errorCode": -20104, "msg": "serviceIds missing"}
         urls = {sid: self.iot_url for sid in ids if sid == IOT_SERVICE_ID}
+        cipc = self.cipc_url if self.cipc_service_url is None else self.cipc_service_url
+        if CIPC_SERVICE_ID in ids and cipc:
+            urls[CIPC_SERVICE_ID] = cipc
         return self._ok({"regionCode": "EU", "serviceUrls": urls})
+
+    # ---------------------------------------------------------------- CIPC relay API (unsigned)
+    def _handle_cipc(self, path: str, body: bytes, headers: dict[str, str]) -> tuple[int, dict]:
+        hdr = {k.lower(): v for k, v in headers.items()}
+        try:
+            params = json.loads(body.decode("utf-8")) if body else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            params = None
+        with self._lock:
+            self.request_log.append({"method": "POST", "path": CIPC_PREFIX + path, "query": {}, "body": params,
+                                     "headers": headers, "signature_ok": None})
+            email = self._tokens.get(hdr.get("authorization", ""))
+        if path != "/v2/relay/request":
+            return 404, {"errorCode": -1, "msg": "not found"}
+        ua = hdr.get("user-agent", "")
+        if (not _SIGNATURE_RE.match(hdr.get("x-request-signature", "")) or not hdr.get("x-client-id")
+                or hdr.get("x-source") != "tapo-app" or hdr.get("x-brand") != "TPLINK"
+                or hdr.get("x-ca-type") != "cloud-self" or not ua.startswith("Tapo_APP/")
+                or "_Android/Android " not in ua or not hdr.get("content-type", "").startswith("application/json")):
+            return 400, {"errorCode": -1, "msg": "bad headers"}
+        if email is None:
+            return 401, {"errorCode": -1102, "msg": "token invalid"}
+        if not isinstance(params, dict):
+            return 400, {"errorCode": -1, "msg": "bad json"}
+        known = {d["deviceId"] for d in self.devices}
+        valid = (params.get("deviceId") in known and params.get("cloudType") in (1, 2)
+                 and params.get("deviceType") and params.get("playerId") == hdr.get("x-client-id")
+                 and params.get("rootCaVer") == "1" and params.get("streamType") == 0
+                 and params.get("preConnection") == 0 and params.get("resolution") in ("HD", "VGA")
+                 and params.get("customParams") == "{}" and params.get("trackId")
+                 and params.get("dataTimeoutCount") == 0)
+        if not valid:
+            return 200, {"errorCode": -1, "msg": "bad relay request params"}
+        code = self.relay_errors.get(params["deviceId"])
+        if code:
+            return 200, {"errorCode": code, "msg": "relay request refused"}
+        if self.relay is None:
+            return 200, {"errorCode": -1014, "msg": "no relay node"}
+        result = self.relay.issue_slot(params["deviceId"], params["resolution"], params["cloudType"],
+                                       params["trackId"])
+        return 200, {"errorCode": 0, "msg": "Success", "result": result}
 
     # ---------------------------------------------------------------- IoT app server (GET, unsigned)
     def _handle_iot_get(self, path: str, query: dict[str, list[str]],
