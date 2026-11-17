@@ -65,7 +65,7 @@ _STATUS_MS = 6000
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller, tray_enabled: bool = True):
+    def __init__(self, controller, tray_enabled: bool = True, accounts=None):
         super().__init__()
         self._ctrl = controller
         self._store = controller.config_store

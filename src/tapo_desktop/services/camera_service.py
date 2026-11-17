@@ -46,6 +46,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 log = logging.getLogger(__name__)
 
 STATUS_KEYS: tuple[str, ...] = ("privacy", "day_night", "led", "motion_detection", "alarm")
+#: Stream failure reason for cameras that were not found on the LAN.
+NOT_ON_NETWORK = "Not on this network"
 
 
 class CameraService(abc.ABC):
@@ -173,7 +175,9 @@ class TapoCameraService(CameraService):
     """
 
     def __init__(self, config: CameraConfig, vault: CredentialVault, *,
-                 limiter: StreamLimiter | None = None, pin_store: PinStore | None = None):
+                 limiter: StreamLimiter | None = None, pin_store: PinStore | None = None,
+                 local_stream_factory=None, stream_factory=None, control_factory=None,
+                 alarm_poll_interval: float = 5.0):
         self.config = config
         self._vault = vault
         self._limiter = limiter

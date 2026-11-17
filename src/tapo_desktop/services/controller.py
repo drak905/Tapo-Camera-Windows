@@ -236,6 +236,9 @@ class AppController(QObject):
         self._save()
         self.cameras_changed.emit()
 
+    def latest_image(self, camera_id: str):
+        raise NotImplementedError
+
     # ================================================================== streaming
     def start_view(self, camera_id: str, quality: StreamQuality, width: int, height: int) -> None:
         """Start (or switch) the live stream of ``camera_id``; non-blocking."""
