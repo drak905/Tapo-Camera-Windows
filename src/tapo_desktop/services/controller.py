@@ -90,7 +90,8 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logging.getLogger(__name__)
 
 #: Fields whose change makes the existing service (sessions, sockets, URLs) obsolete.
-_CONNECTION_FIELDS = ("host", "https_port", "rtsp_port", "onvif_port", "media_port", "enable_onvif_events")
+_CONNECTION_FIELDS = ("host", "https_port", "rtsp_port", "onvif_port", "media_port", "enable_onvif_events",
+                      "lan_found", "live_transport")
 #: Upper bound for the synchronous :meth:`AppController.stop_all`.
 STOP_ALL_TIMEOUT_S = 10.0
 #: Minimum progress step forwarded to the GUI (the last value 1.0 is always forwarded).
@@ -135,6 +136,7 @@ class _Camera:
     removed: bool = False
     latest_frame: Any = None
     frame_pending: bool = False
+    last_image: QImage | None = None  # newest delivered frame (GUI thread; snapshots)
 
     @property
     def id(self) -> str:
@@ -226,18 +228,80 @@ class AppController(QObject):
 
     def remove_camera(self, camera_id: str) -> None:
         """Stop and close the camera's service, forget its credentials and config."""
-        cam = self._cams.pop(camera_id, None)
-        if cam is None:
+        if camera_id not in self._cams:
             raise KeyError(camera_id)
-        cam.removed = True
-        cam.view = None
-        cam.control.submit(self._guarded(cam, "remove", partial(self._close_service, cam, stop_first=True)))
-        self._vault.delete(camera_id)
+        self._detach(camera_id)
         self._save()
         self.cameras_changed.emit()
 
-    def latest_image(self, camera_id: str):
-        raise NotImplementedError
+    # ---------------------------------------------------------- Phase 2 (lane P2-app) additions
+    @property
+    def vault(self) -> CredentialVault:
+        """The credential vault given to ``__init__`` (AccountManager stores the account secret)."""
+        return self._vault
+
+    def upsert_cameras(self, configs: list[CameraConfig], cloud: Credentials | None = None) -> None:
+        """Add or replace several cameras at once (cloud camera sync); one save, one
+        ``cameras_changed``.
+
+        New cameras are appended in the given order. ``cloud`` (if given) becomes every camera's
+        ``CredentialKind.CLOUD`` entry. An existing camera whose connection fields or credentials
+        change gets a fresh service and, if it is on screen, its stream restarted.
+        """
+        restart: list[_Camera] = []
+        added: list[str] = []
+        previous: dict[str, CameraConfig] = {}
+        for config in configs:
+            creds_changed = False
+            if cloud is not None and self._vault.get(config.id, CredentialKind.CLOUD) != cloud:
+                self._vault.set(config.id, CredentialKind.CLOUD, cloud)
+                creds_changed = True
+            cam = self._cams.get(config.id)
+            if cam is None:
+                self._cams[config.id] = self._new_camera(config)
+                added.append(config.id)
+                continue
+            previous.setdefault(config.id, cam.config)
+            old, cam.config = cam.config, config
+            if creds_changed or any(getattr(old, f) != getattr(config, f) for f in _CONNECTION_FIELDS):
+                restart.append(cam)
+        try:
+            self._save()
+        except Exception:
+            for cid in added:
+                del self._cams[cid]
+            for cid, old in previous.items():
+                self._cams[cid].config = old
+            raise
+        for cam in restart:
+            cam.control.submit(self._guarded(cam, "close", partial(self._close_service, cam)))
+            if cam.view is not None:
+                self._submit_start(cam, *cam.view)
+        self.cameras_changed.emit()
+
+    def remove_cameras(self, camera_ids: list[str]) -> None:
+        """Remove several cameras (streams stopped, credentials forgotten); unknown ids are ignored.
+        One save and one ``cameras_changed`` (only if something was removed)."""
+        removed = [cid for cid in camera_ids if cid in self._cams]
+        if not removed:
+            return
+        for cid in removed:
+            self._detach(cid)
+        self._save()
+        self.cameras_changed.emit()
+
+    def latest_image(self, camera_id: str) -> QImage | None:
+        """The newest frame delivered for ``camera_id`` (for snapshots), or None."""
+        cam = self._cams.get(camera_id)
+        return cam.last_image if cam is not None else None
+
+    def _detach(self, camera_id: str) -> None:
+        cam = self._cams.pop(camera_id)
+        cam.removed = True
+        cam.view = None
+        cam.last_image = None
+        cam.control.submit(self._guarded(cam, "remove", partial(self._close_service, cam, stop_first=True)))
+        self._vault.delete(camera_id)
 
     # ================================================================== streaming
     def start_view(self, camera_id: str, quality: StreamQuality, width: int, height: int) -> None:
@@ -492,6 +556,7 @@ class AppController(QObject):
             return
         image = frame_to_qimage(frame)
         if image is not None:
+            cam.last_image = image
             self.frame_ready.emit(cam.id, image)
 
     def _on_state(self, cam: _Camera, state: Any, reason: str | None) -> None:

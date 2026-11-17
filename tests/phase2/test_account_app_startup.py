@@ -34,6 +34,9 @@ def patched_app(qapp, tmp_path, monkeypatch):
         def exec(self):
             return QDialog.DialogCode.Rejected
 
+        def deleteLater(self):
+            pass
+
     monkeypatch.setattr(sign_in_dialog, "SignInDialog", RecordingDialog)
 
     def no_cloud(*_a, **_k):
@@ -56,6 +59,17 @@ def test_main_without_account_shows_sign_in_dialog(patched_app):
     assert app.main([]) == 0
     assert len(dialogs) == 1
     assert dialogs[0].accounts is not None and hasattr(dialogs[0].accounts, "sign_in")
+
+
+def test_use_without_account_is_remembered(patched_app):
+    from tapo_desktop.services.config_store import ConfigStore
+
+    app, dialogs, home = patched_app
+    assert app.main([]) == 0
+    assert len(dialogs) == 1  # rejected = "Use without account"
+    assert ConfigStore(home / "config.json").get_setting("sign_in_skipped", False) is True
+    assert app.main([]) == 0
+    assert len(dialogs) == 1  # not forced again on the next start
 
 
 def test_main_with_stored_account_restores_silently(patched_app, monkeypatch):

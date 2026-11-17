@@ -21,10 +21,10 @@ import logging
 import pathlib
 import threading
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from tapo_desktop.core.errors import TapoAuthError, TapoDeviceError, TapoError
+from tapo_desktop.core.errors import TapoAuthError, TapoConnectionError, TapoDeviceError, TapoError
 from tapo_desktop.models import (
     CameraConfig,
     CredentialKind,
@@ -48,6 +48,22 @@ log = logging.getLogger(__name__)
 STATUS_KEYS: tuple[str, ...] = ("privacy", "day_night", "led", "motion_detection", "alarm")
 #: Stream failure reason for cameras that were not found on the LAN.
 NOT_ON_NETWORK = "Not on this network"
+#: Motion polling period when no camera account exists (ONVIF needs one) [spec:events.last_alarm_info].
+ALARM_POLL_INTERVAL_S = 5.0
+LAST_ALARM_INFO_REQUEST: dict = {"method": "getLastAlarmInfo", "params": {"system": {"name": ["last_alarm_info"]}}}
+_HD_QUALITIES = (StreamQuality.HD, StreamQuality.TELE_HD)
+_TELE_QUALITIES = (StreamQuality.TELE_HD, StreamQuality.TELE_SD)
+
+
+def local_resolution(quality: StreamQuality) -> str:
+    """:8800 preview resolution for ``quality``: ``"HD"`` (main stream) or ``"VGA"`` (minor stream)
+    [spec:stream.control.preview, spec:lan.live_view_selection]."""
+    return "HD" if StreamQuality(quality) in _HD_QUALITIES else "VGA"
+
+
+def local_channel(quality: StreamQuality) -> int:
+    """:8800 preview channel: 1 for the second (tele) lens of dual-lens models, else 0."""
+    return 1 if StreamQuality(quality) in _TELE_QUALITIES else 0
 
 
 class CameraService(abc.ABC):
@@ -161,9 +177,14 @@ def _local_tz():
 
 
 class TapoCameraService(CameraService):
-    """Real wiring: TapoControlClient (HTTPS :443, cloud password, user "admin"), StreamSupervisor
-    (RTSP :554, camera account), OnvifClient/PullPoint (:2020, camera account) and
-    RecordingDownloader (:8800, cloud password).
+    """Real wiring: TapoControlClient (HTTPS :443, cloud password, user "admin"), live view over
+    LocalStreamSupervisor (:8800, cloud password, like the Tapo app) or StreamSupervisor (RTSP :554,
+    camera account; see :meth:`live_transport`), motion from OnvifClient/PullPoint (:2020, camera
+    account) or ``getLastAlarmInfo`` polling (no camera account) and RecordingDownloader (:8800,
+    cloud password). Cameras with ``lan_found=False`` or no host fail fast with
+    :data:`NOT_ON_NETWORK` and do no network I/O.
+
+    The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
 
     Credentials are read from ``vault.get(config.id, CredentialKind.CLOUD | CAMERA_ACCOUNT)``.
     Construction performs no network I/O. Core modules are imported lazily so that this module
@@ -176,12 +197,20 @@ class TapoCameraService(CameraService):
 
     def __init__(self, config: CameraConfig, vault: CredentialVault, *,
                  limiter: StreamLimiter | None = None, pin_store: PinStore | None = None,
-                 local_stream_factory=None, stream_factory=None, control_factory=None,
-                 alarm_poll_interval: float = 5.0):
+                 local_stream_factory: Callable[..., Any] | None = None,
+                 stream_factory: Callable[..., Any] | None = None,
+                 control_factory: Callable[..., Any] | None = None,
+                 alarm_poll_interval: float = ALARM_POLL_INTERVAL_S):
         self.config = config
         self._vault = vault
         self._limiter = limiter
         self._pin_store = pin_store
+        self._local_stream_factory = local_stream_factory
+        self._stream_factory = stream_factory
+        self._control_factory = control_factory
+        self._alarm_poll_interval = float(alarm_poll_interval)
+        self._transport: str | None = None  # "local" | "rtsp" of the running supervisor
+        self._poller: _AlarmPoller | None = None
         self._lock = threading.RLock()
         self._client: Any = None
         self._device_info: DeviceInfo | None = None
@@ -214,16 +243,42 @@ class TapoCameraService(CameraService):
         with self._lock:
             self._check_open()
             if self._client is None:
-                from tapo_desktop.core.control_client.client import TapoControlClient
-
+                self._check_on_network()
+                factory = self._control_factory
+                if factory is None:
+                    from tapo_desktop.core.control_client.client import TapoControlClient as factory
                 cloud = self._creds(CredentialKind.CLOUD)
-                self._client = TapoControlClient(self.config.host, cloud.password,
-                                                 username=cloud.username or "admin",
-                                                 port=self.config.https_port, pin_store=self._pin_store)
+                self._client = factory(host=self.config.host, password=cloud.password,
+                                       username=cloud.username or "admin",
+                                       port=self.config.https_port, pin_store=self._pin_store)
             return self._client
+
+    def _on_network(self) -> bool:
+        """False when the camera was not found on the LAN (cloud camera without a usable host)."""
+        return bool(self.config.lan_found and self.config.host.strip())
+
+    def _check_on_network(self) -> None:
+        if not self._on_network():
+            raise TapoConnectionError(NOT_ON_NETWORK)
+
+    def _has_camera_account(self) -> bool:
+        return self._vault.get(self.config.id, CredentialKind.CAMERA_ACCOUNT) is not None
+
+    def live_transport(self) -> str:
+        """Transport the next ``start_stream`` uses: ``"local"`` (:8800, like the Tapo app) or
+        ``"rtsp"`` (:554, needs a camera account).
+
+        ``"local"`` -> local; ``"rtsp"`` -> RTSP when a camera account exists (else local);
+        ``"auto"`` -> RTSP when a camera account exists (Phase 1 manual cameras), else local.
+        """
+        mode = (self.config.live_transport or "auto").lower()
+        if mode == "local":
+            return "local"
+        return "rtsp" if self._has_camera_account() else "local"
 
     # ------------------------------------------------------------------ control
     def connect(self) -> DeviceInfo:
+        self._check_on_network()
         client = self._control()
         if not client.logged_in:
             client.login()
@@ -307,18 +362,29 @@ class TapoCameraService(CameraService):
     def start_stream(self, quality: StreamQuality, width: int, height: int,
                      on_frame: Callable[[Frame], None],
                      on_state: Callable[[StreamState, str | None], None]) -> None:
-        from tapo_desktop.core.media_engine.profiles import build_rtsp_url
-        from tapo_desktop.core.media_engine.supervisor import StreamState, StreamSupervisor
+        from tapo_desktop.core.media_engine.supervisor import StreamState
 
-        account = self._creds(CredentialKind.CAMERA_ACCOUNT)
-        url = build_rtsp_url(self.config.host, account.username, account.password,
-                             StreamQuality(quality), port=self.config.rtsp_port)
+        quality, width, height = StreamQuality(quality), int(width), int(height)
+        if not self._on_network():
+            self.stop_stream()
+            on_state(StreamState.FAILED, NOT_ON_NETWORK)
+            return
+        transport = self.live_transport()
+        if transport == "rtsp":
+            from tapo_desktop.core.media_engine.profiles import build_rtsp_url
+
+            account = self._creds(CredentialKind.CAMERA_ACCOUNT)
+            target: Any = build_rtsp_url(self.config.host, account.username, account.password,
+                                         quality, port=self.config.rtsp_port)
+        else:
+            target = local_resolution(quality)
         with self._lock:
             self._check_open()
             self._on_frame, self._on_state = on_frame, on_state
             current = self._supervisor
-            if current is not None and current.state not in (StreamState.FAILED, StreamState.STOPPED):
-                current.switch(url, int(width), int(height))
+            if (current is not None and self._transport == transport
+                    and current.state not in (StreamState.FAILED, StreamState.STOPPED)):
+                current.switch(target, width, height)
                 return
             self._supervisor = None
             self._stream_gen += 1  # the old supervisor's STOPPED must not reach the UI
@@ -327,12 +393,31 @@ class TapoCameraService(CameraService):
         with self._lock:
             self._check_open()
             gen = self._stream_gen
-            sup = StreamSupervisor(url, int(width), int(height),
-                                   on_frame=lambda f: self._forward_frame(gen, f),
-                                   on_state=lambda s, r: self._forward_state(gen, s, r),
-                                   limiter=self._limiter, limiter_key=self.config.host)
-            self._supervisor = sup
+            callbacks = dict(on_frame=lambda f: self._forward_frame(gen, f),
+                             on_state=lambda s, r: self._forward_state(gen, s, r),
+                             limiter=self._limiter, limiter_key=self.config.host)
+            if transport == "rtsp":
+                sup = self._new_rtsp_supervisor(target, width, height, callbacks)
+            else:
+                sup = self._new_local_supervisor(quality, width, height, callbacks)
+            self._supervisor, self._transport = sup, transport
         sup.start()
+
+    def _new_rtsp_supervisor(self, url: str, width: int, height: int, callbacks: dict) -> Any:
+        factory = self._stream_factory
+        if factory is None:
+            from tapo_desktop.core.media_engine.supervisor import StreamSupervisor as factory
+        return factory(url, width, height, **callbacks)
+
+    def _new_local_supervisor(self, quality: StreamQuality, width: int, height: int, callbacks: dict) -> Any:
+        """Local :8800 preview, user ``admin`` + the TP-Link ID password [spec:lan.live_view_selection]."""
+        factory = self._local_stream_factory
+        if factory is None:
+            from tapo_desktop.core.media_engine.local_stream import LocalStreamSupervisor as factory
+        cloud = self._creds(CredentialKind.CLOUD)
+        return factory(self.config.host, cloud.password, width, height,
+                       resolution=local_resolution(quality), port=self.config.media_port,
+                       channel=local_channel(quality), **callbacks)
 
     def stop_stream(self) -> None:
         with self._lock:
@@ -352,16 +437,27 @@ class TapoCameraService(CameraService):
         if gen == self._stream_gen and cb is not None:
             cb(state, reason)
 
-    # ------------------------------------------------------------------ ONVIF events
+    # ------------------------------------------------------------------ motion events
     def start_events(self, on_event: Callable[[MotionEvent], None]) -> None:
-        from tapo_desktop.core.onvif_service.events import PullPointSubscriber
-        from tapo_desktop.core.onvif_service.soap import OnvifClient
-
+        """ONVIF pull-point events when a camera account exists; otherwise poll
+        ``getLastAlarmInfo`` every ``alarm_poll_interval`` seconds [spec:events.last_alarm_info]
+        (the Tapo app's LAN behaviour: it needs only the TP-Link ID password)."""
         with self._lock:
             self._check_open()
             self._on_event = on_event
-            if self._subscriber is not None:
+            if self._subscriber is not None or self._poller is not None:
                 return
+        if not self._has_camera_account():
+            self._check_on_network()
+            poller = _AlarmPoller(self, self._alarm_poll_interval)
+            with self._lock:
+                self._check_open()
+                self._poller = poller
+            poller.start()
+            return
+        from tapo_desktop.core.onvif_service.events import PullPointSubscriber
+        from tapo_desktop.core.onvif_service.soap import OnvifClient
+
         account = self._creds(CredentialKind.CAMERA_ACCOUNT)
         client = OnvifClient(self.config.host, account.username, account.password, port=self.config.onvif_port)
         sub = PullPointSubscriber(client, self._forward_event)
@@ -372,8 +468,19 @@ class TapoCameraService(CameraService):
     def stop_events(self) -> None:
         with self._lock:
             sub, self._subscriber = self._subscriber, None
+            poller, self._poller = self._poller, None
+        if poller is not None:
+            poller.stop()
         if sub is not None:
             sub.stop()
+
+    def last_alarm_info(self) -> tuple[str, str]:
+        """``(last_alarm_time, last_alarm_type)`` from ``getLastAlarmInfo`` (strings, may be empty)."""
+        result = self._control().request(LAST_ALARM_INFO_REQUEST)
+        info = result.get("system", {}).get("last_alarm_info", {}) if isinstance(result, dict) else {}
+        if not isinstance(info, dict):
+            info = {}
+        return str(info.get("last_alarm_time") or ""), str(info.get("last_alarm_type") or "")
 
     def _forward_event(self, event: MotionEvent) -> None:
         cb = self._on_event
@@ -398,3 +505,55 @@ class TapoCameraService(CameraService):
                 client.close()
             except Exception as exc:
                 log.warning("closing the control client of camera %s failed: %s", self.config.id, exc)
+
+
+class _AlarmPoller:
+    """Background ``getLastAlarmInfo`` poller: emits one active :class:`MotionEvent` each time
+    ``last_alarm_time`` changes after the first (baseline) reading. Errors are logged and polling
+    continues; :meth:`stop` joins the thread (bounded)."""
+
+    def __init__(self, service: TapoCameraService, interval: float):
+        self._service = service
+        self._interval = max(0.01, float(interval))
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name=f"tapo-alarm-{service.config.id}", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self, timeout: float = 3.0) -> None:
+        self._stop.set()
+        if self._thread.is_alive() and self._thread is not threading.current_thread():
+            self._thread.join(timeout)
+
+    def _run(self) -> None:
+        svc = self._service
+        baseline: str | None = None
+        failures = 0
+        while not self._stop.is_set():
+            try:
+                when, kind = svc.last_alarm_info()
+                failures = 0
+            except Exception as exc:  # the camera may be rebooting / briefly unreachable
+                failures += 1
+                if failures in (1, 10) or failures % 60 == 0:
+                    log.info("getLastAlarmInfo failed for camera %s (%d in a row): %s",
+                             svc.config.id, failures, exc)
+            else:
+                if baseline is None:
+                    baseline = when
+                elif when and when != baseline:
+                    baseline = when
+                    if not self._stop.is_set():
+                        svc._forward_event(_alarm_event(svc.config.host, when, kind))
+            self._stop.wait(self._interval)
+
+
+def _alarm_event(host: str, when: str, kind: str) -> MotionEvent:
+    try:
+        stamp = datetime.fromtimestamp(int(when), tz=timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        stamp = datetime.now(timezone.utc)
+    return MotionEvent(camera_host=host, topic=f"tapo:LastAlarmInfo/{kind or 'motion'}", active=True,
+                       timestamp=stamp, source="last_alarm_info",
+                       data={"last_alarm_time": when, "last_alarm_type": kind})

@@ -12,6 +12,7 @@ from PyQt6.QtGui import QImage  # noqa: E402
 from PyQt6.QtWidgets import QAbstractButton, QListWidget, QToolButton, QWidget  # noqa: E402
 
 from tests.e2e.fakes import DEFAULT_COLOR  # noqa: E402
+from tapo_desktop.core.errors import TapoConnectionError  # noqa: E402
 from tests.phase2._app_helpers import app_env, show_main_window, sign_in  # noqa: E402,F401
 from tests.phase2.app_fakes import EMAIL, PASSWORD, cloud_device, lan_for  # noqa: E402
 
@@ -115,6 +116,7 @@ def test_snapshot_without_frame_reports_and_writes_nothing(app_env, qtbot, tmp_p
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
     dev = cloud_device(0)
     env = app_env(devices=[dev])  # not on the LAN -> never a frame
+    env.factory.fail(dev.device_id, "start_stream", TapoConnectionError("Not on this network"))
     w = show_main_window(env, qtbot)
     sign_in(env, qtbot, EMAIL, PASSWORD)
     w.findChild(QWidget, "cameraGrid").select_camera(dev.device_id)
