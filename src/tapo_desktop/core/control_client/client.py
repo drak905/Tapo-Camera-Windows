@@ -1,4 +1,7 @@
-"""Session-managing control client for the camera's HTTPS API (secure v3 and legacy login).
+"""Session-managing control client for the camera's HTTPS API (TPAP, secure v3 and legacy login).
+
+TPAP (SPAKE2+ + AES-128-CCM ``/ds``, see :mod:`.tpap`) is used when the TDP hints ask for it or when
+the v3 step 1 answers -40211 [spec:tpap.selection].
 
 Credentials never appear in logs, exception messages or ``repr``.
 """
@@ -151,9 +154,11 @@ class TapoControlClient:
 
     # ================================================================== login
     def login(self) -> None:
-        """Secure login (encrypt_type "3") if step 1 returns -40413 with a nonce, else legacy MD5 login.
+        """TPAP login if hinted or if step 1 returns -40211; secure login (encrypt_type "3") if step 1
+        returns -40413 with a nonce; else legacy MD5 login.
 
         Bad device_confirm / bad password -> TapoAuthError; -40404 / lock codes -> TapoLockedError.
+        TPAP makes at most ``tpap.MAX_ATTEMPTS`` password attempts per call.
         """
         with self._lock:
             self._login_locked()
