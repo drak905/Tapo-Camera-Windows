@@ -1,0 +1,5193 @@
+{
+  "spec_id": "camera_control_dtos",
+  "apk": {
+    "package": "com.tplink.iot",
+    "version_name": "3.22.806",
+    "version_code": "7276"
+  },
+  "summary": "Camera-local JSON-RPC command catalog (HTTPS :443, POST /stok={token}/ds). Every call is {method, params}; params = {module: {section: data}} built from Module/Section enum strings (section 'null' collapses to {module: data}). Reads select sections via 'name' or 'table' lists. The app always batches calls in multipleRequest {params:{requests:[...]}} and gets result.responses[] with per-item error_code. Feature support is discovered via getAppComponentList (name/version). Covers device info, PTZ (move/step/stop/cruise/calibrate/info), presets, privacy (lens mask), day/night and night-vision modes, LED, manual alarm/siren/alarm config, motion/person/vehicle/pet detection, flip/rotation, audio volume, reboot, time/timezone, SD card, record plan, connection type, and error codes.",
+  "items": [
+    {
+      "id": "envelope.transport_endpoint",
+      "kind": "endpoint",
+      "description": "All camera-local JSON-RPC calls are HTTPS POSTs to /stok={token}/ds on port 443. When the secure (encrypted) session is active, the JSON-RPC body below is itself wrapped in a 'securePassthrough' request; see the auth/secure-session spec for the token, encryption and Seq/Tapo_Tag headers.",
+      "value": {
+        "http_method": "POST",
+        "path": "/stok={token}/ds",
+        "port": 443,
+        "scheme": "https",
+        "secure_wrapper_method": "securePassthrough",
+        "secure_wrapper_template": {
+          "method": "securePassthrough",
+          "params": {
+            "request": "<base64 AES ciphertext of the inner JSON-RPC body>"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalAccessApi.java",
+          "line": 22,
+          "snippet": "@vx1.o(\"/stok={token}/ds\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureAccessApi.java",
+          "line": 11,
+          "snippet": "@vx1.o(\"/stok={token}/ds\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 179,
+          "snippet": "return new Request(\"securePassthrough\", new SecureRequest(strD, null, 2, null));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.request",
+      "kind": "request",
+      "description": "Single JSON-RPC request object. 'method' is the camelCase string from Method.java; 'params' is the Gson-serialized params object (normally a Wrappers object, see envelope.params_wrapper_serialization).",
+      "value": {
+        "template": {
+          "method": "<Method.value>",
+          "params": {
+            "<module>": {
+              "<section>": "<data>"
+            }
+          }
+        },
+        "fields": {
+          "method": "string",
+          "params": "object (omitted when null)"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Request.java",
+          "line": 13,
+          "snippet": "private final String method;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Request.java",
+          "line": 14,
+          "snippet": "private final T params;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Request.java",
+          "line": 78,
+          "snippet": "this(method.getValue(), t12);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.multiple_request",
+      "kind": "request",
+      "description": "The app ALWAYS sends commands batched inside multipleRequest, even single commands: i6(req) wraps the Wrapper in a Wrappers list, j6(req) wraps one request in a list, k6(list) builds the multipleRequest. A desktop client can batch any number of the sub-requests below into one call. MultipleRequest also has an optional 'emptyProperty' Boolean (null in all observed builders, so it is omitted).",
+      "value": {
+        "template": {
+          "method": "multipleRequest",
+          "params": {
+            "requests": [
+              {
+                "method": "getDeviceInfo",
+                "params": {
+                  "device_info": {
+                    "name": [
+                      "basic_info"
+                    ]
+                  }
+                }
+              },
+              {
+                "method": "getAppComponentList",
+                "params": {
+                  "app_component": {
+                    "name": [
+                      "app_component_list"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "builder_chain": [
+          "i6(Request<Wrapper>) -> j6(Request<Wrappers>)",
+          "j6(r) -> k6([r])",
+          "k6(list) -> Request('multipleRequest', MultipleRequest(list))"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 19,
+          "snippet": "MULTIPLE_REQUEST(\"multipleRequest\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3855,
+          "snippet": "public Request k6(List list) {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3856,
+          "snippet": "return new Request(Method.MULTIPLE_REQUEST, new MultipleRequest(list));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3680,
+          "snippet": "return j6(new Request(request.getMethod(), new Wrappers(Collections.singletonList((Wrapper) request.getParams()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3782,
+          "snippet": "return k6(Collections.singletonList(request));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MultipleRequest.java",
+          "line": 13,
+          "snippet": "private final List<Request<?>> requests;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MultipleRequest.java",
+          "line": 12,
+          "snippet": "private final Boolean emptyProperty;"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 700",
+          "summary": "format=apk, sha256=78aac1692521cfc19645f659f5ae89abd888794c39c47e366ecac3204034bf3c (evidence ev_2cf1feccdcb1...); confirms the analysed base APK."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.response",
+      "kind": "response",
+      "description": "Response object. error_code 0 == success (Response.isSuccess()). 'method' echoes the request method. 'result' holds the payload (for get* calls it mirrors the request's {module:{section:...}} nesting).",
+      "value": {
+        "template": {
+          "error_code": 0,
+          "method": "<echoed method>",
+          "result": {
+            "<module>": {
+              "<section>": {}
+            }
+          }
+        },
+        "fields": {
+          "error_code": "int (0 = success, negative = error)",
+          "method": "string",
+          "result": "object"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Response.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"error_code\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Response.java",
+          "line": 89,
+          "snippet": "return this.errorCode == 0;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Response.java",
+          "line": 17,
+          "snippet": "private final T result;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.multiple_response",
+      "kind": "response",
+      "description": "Response to multipleRequest: top-level result.responses[] is a list of per-request Response objects (each with its own method/result/error_code). Order follows the request list; match by 'method'. The local transport unwraps result.responses and emits each element.",
+      "value": {
+        "template": {
+          "error_code": 0,
+          "result": {
+            "responses": [
+              {
+                "method": "getDeviceInfo",
+                "result": {
+                  "device_info": {
+                    "basic_info": {
+                      "device_model": "C200"
+                    }
+                  }
+                },
+                "error_code": 0
+              },
+              {
+                "method": "motorMove",
+                "result": {},
+                "error_code": -64304
+              }
+            ]
+          }
+        },
+        "per_item_fields": {
+          "method": "string",
+          "result": "object",
+          "error_code": "int"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MultipleResponse.java",
+          "line": 12,
+          "snippet": "private final List<Response<Wrappers>> responses;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/g1.java",
+          "line": 124,
+          "snippet": "return vr1.r.u0(((MultipleResponse) obj).getResponses());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/g1.java",
+          "line": 34,
+          "snippet": "return response.getResult() != null ? vr1.r.D0(response) : vr1.r.c0(new Throwable(\"Result type error or null: not MultipleResponse.\"));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.params_wrapper_serialization",
+      "kind": "algorithm",
+      "description": "How Method + Module + Section combine. A Request's params is a Wrappers (list of Wrapper(module, section, data)). Serializer: for each Wrapper, if section == 'null' (Section.EMPTY) then params[module] = data; otherwise params[module][section] = data, merging several Wrappers of the same module into one object. Module and Section strings are the enum .value strings (Module.java / Section.java). So: {'method': Method.value, 'params': {Module.value: {Section.value: data}}}.",
+      "value": {
+        "rules": [
+          "params[module][section] = data",
+          "section == 'null' -> params[module] = data",
+          "same module -> sections merged into one object"
+        ],
+        "examples": {
+          "get": {
+            "method": "getLensMaskConfig",
+            "params": {
+              "lens_mask": {
+                "name": [
+                  "lens_mask_info"
+                ]
+              }
+            }
+          },
+          "set": {
+            "method": "setLensMaskConfig",
+            "params": {
+              "lens_mask": {
+                "lens_mask_info": {
+                  "enabled": "on"
+                }
+              }
+            }
+          },
+          "empty_section": {
+            "method": "getAlarmConfig",
+            "params": {
+              "msg_alarm": {}
+            }
+          },
+          "null_string_data": {
+            "method": "stopMove",
+            "params": {
+              "motor": {
+                "stop": "null"
+              }
+            }
+          }
+        },
+        "section_empty_value": "null",
+        "module_empty_value": "null"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 40,
+          "snippet": "return TypeAdapter__TypeAdaptersKt.wrapperListSerializer$lambda$2$TypeAdapter__TypeAdaptersKt((Wrappers) obj, type, lVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 215,
+          "snippet": "if (Intrinsics.d(wrapper.getSection(), Section.EMPTY.getValue())) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 224,
+          "snippet": "iVar.o(wrapper.getSection(), lVar.c(wrapper.getData()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Wrapper.java",
+          "line": 93,
+          "snippet": "this(module.getValue(), section.getValue(), t12);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 206,
+          "snippet": "EMPTY(\"null\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 76,
+          "snippet": "EMPTY(\"null\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 677,
+          "snippet": "protected Request D0(Method method, Module module, Section section, Object obj) {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 678,
+          "snippet": "return new Request(method, E0(new Wrapper(module, section, obj)));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 812,
+          "snippet": "protected Wrappers E0(Wrapper wrapper) {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 813,
+          "snippet": "return new Wrappers(Collections.singletonList(wrapper));"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 700",
+          "summary": "format=apk, sha256=78aac1692521cfc19645f659f5ae89abd888794c39c47e366ecac3204034bf3c (evidence ev_2cf1feccdcb1...); confirms the analysed base APK."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.get_selector_forms",
+      "kind": "constant",
+      "description": "Read requests select sections with the pseudo-section 'name' (Section.NAME) or 'table' (Section.TABLE) whose data is a list (or, in some builders, a bare string) of section names. Both list and scalar forms are emitted by the app (e.g. getAppComponentList uses a bare string in one builder and a list in another), so firmware accepts both.",
+      "value": {
+        "name_selector": {
+          "<module>": {
+            "name": [
+              "<section>",
+              "..."
+            ]
+          }
+        },
+        "name_selector_scalar": {
+          "<module>": {
+            "name": "<section>"
+          }
+        },
+        "table_selector": {
+          "<module>": {
+            "table": [
+              "<section>"
+            ]
+          }
+        },
+        "section_name_value": "name",
+        "section_table_value": "table"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 31,
+          "snippet": "NAME(AppMeasurementSdk.ConditionalUserProperty.NAME),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 35,
+          "snippet": "TABLE(\"table\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/google/android/gms/measurement/api/AppMeasurementSdk.java",
+          "line": 48,
+          "snippet": "public static final String NAME = \"name\";"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1065,
+          "snippet": "return i6(new Request(Method.GET_APP_COMPONENT_LIST, new Wrapper(Module.APP_COMPONENT, Section.NAME, Section.APP_COMPONENT_LIST.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1142,
+          "snippet": "arrayList.add(new Request(Method.GET_APP_COMPONENT_LIST, E0(new Wrapper(Module.APP_COMPONENT, section, Collections.singletonList(Section.APP_COMPON..."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.response_deserialization",
+      "kind": "algorithm",
+      "description": "Response 'result' parsing (wrapperListDeserializer): if result has no 'data' key and ANY top-level value is a primitive, the whole result is treated as one flat object (Wrapper(EMPTY,EMPTY,result)); if it contains 'responseData'/'forward' it is also kept flat; if it has a single key in Module.Singles it is wrapped as (key,key); otherwise every result[module][section] becomes a Wrapper whose type is looked up in TypeDispatcher(module,section). Practical rule for a client: try result[module][section] first, else treat result as flat.",
+      "value": {
+        "flat_when": [
+          "any top-level primitive value",
+          "key 'responseData' or 'forward' present"
+        ],
+        "singles": [
+          "clips",
+          "pir_verify",
+          "download_state",
+          "protocol",
+          "general_camera_manage",
+          "usbshare_manage",
+          "mirrorscreen",
+          "usr_def_audio",
+          "responseData",
+          "dual_cam_linkage"
+        ],
+        "nested_default": "result[module][section] -> TypeDispatcher type"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 46,
+          "snippet": "return TypeAdapter__TypeAdaptersKt.wrapperListDeserializer$lambda$4$TypeAdapter__TypeAdaptersKt(gVar, type, fVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 164,
+          "snippet": "arrayList.add(new Wrapper(Module.EMPTY, Section.EMPTY, iVarG));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 172,
+          "snippet": "String[] singles = Module.INSTANCE.getSingles();"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 238,
+          "snippet": "Singles = new String[]{new Module(\"clips\").value, new Module(\"pir_verify\").value, new Module(\"download_state\").value, new Module(\"protocol\").value,..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 615,
+          "snippet": "public final Type getRawType(String module, String section) {"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.channel_addressing",
+      "kind": "constant",
+      "description": "Multi-lens / dual-channel cameras address a channel by adding 'chn_id':[ids] next to a '<section>_chn' map keyed by channel id string. Single-lens cameras use the plain section. ChannelType CHN_1=1, CHN_2=2.",
+      "value": {
+        "get_template": {
+          "image": {
+            "name": [
+              "switch"
+            ],
+            "chn_id": [
+              1,
+              2
+            ]
+          }
+        },
+        "set_template": {
+          "image": {
+            "chn_id": [
+              1
+            ],
+            "switch_chn": {
+              "1": {
+                "night_vision_mode": "inf_night_vision"
+              }
+            }
+          }
+        },
+        "channel_ids": {
+          "CHN_1": 1,
+          "CHN_2": 2
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5099,
+          "snippet": "return new Request(Method.GET_NIGHT_VISION_MODE_CONFIG, new Wrappers(Arrays.asList(new Wrapper(module, Section.NAME, Collections.singletonList(Sect..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1409,
+          "snippet": "arrayList.add(new Request(Method.SET_NIGHT_VISION_MODE_CONFIG, new Wrappers(Arrays.asList(new Wrapper(module, Section.CHN_ID, Collections.singleton..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ChannelType.java",
+          "line": 14,
+          "snippet": "CHN_1(1),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 280,
+          "snippet": "CHN_ID(\"chn_id\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 188,
+          "snippet": "SWITCH_CHN(\"switch_chn\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "envelope.generic_get_set_do",
+      "kind": "request",
+      "description": "Older public clients (pytapo) use generic method names 'get', 'set', 'do' with the module object at the top level (e.g. {'method':'get','device_info':{'name':['basic_info']}}). The 3.22.806 app never uses these: the Method enum has no 'get'/'set'/'do' entries; every call uses a specific camelCase method plus params. A new client should use the specific method names; the generic forms are listed only for compatibility with older firmware.",
+      "value": {
+        "legacy_examples": {
+          "get": {
+            "method": "get",
+            "device_info": {
+              "name": [
+                "basic_info"
+              ]
+            }
+          },
+          "do": {
+            "method": "do",
+            "motor": {
+              "move": {
+                "x_coord": "10",
+                "y_coord": "0"
+              }
+            }
+          }
+        },
+        "app_uses_generic_forms": false
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 18,
+          "snippet": "PASS_THROUGH(\"passthrough\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 96,
+          "snippet": "LOGIN(\"login\"),"
+        }
+      ],
+      "confidence": "external"
+    },
+    {
+      "id": "constant.enum_inventory",
+      "kind": "constant",
+      "description": "Size of the command vocabulary in the app: Method enum 807 method strings, Module enum 179 module keys, Section enum 600 section keys, ComponentType 212 component names. Only the subset a desktop client needs is specified in this file.",
+      "value": {
+        "method_count": 807,
+        "module_count": 179,
+        "section_count": 600,
+        "component_type_count": 212,
+        "method_file": "com/tplink/libtapocameranetwork/model/Method.java",
+        "module_file": "com/tplink/libtapocameranetwork/model/Module.java",
+        "section_file": "com/tplink/libtapocameranetwork/model/Section.java"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 18,
+          "snippet": "PASS_THROUGH(\"passthrough\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 837,
+          "snippet": "public final String getValue() {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 35,
+          "snippet": "DATA(\"data\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 630,
+          "snippet": "SNOOZE_STATUS(\"snooze_status\");"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 700",
+          "summary": "format=apk, sha256=78aac1692521cfc19645f659f5ae89abd888794c39c47e366ecac3204034bf3c (evidence ev_2cf1feccdcb1...); confirms the analysed base APK."
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.Method --token-limit 300",
+          "summary": "capability_unavailable: jadx provider needs REA_JADX_MCP_JAR (jadx-headless-mcp 0.7.1), not present; class facts taken from JADX 1.5.6 output instead."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.device_info.get",
+      "kind": "request",
+      "description": "Read device identity / basic info.",
+      "value": {
+        "method": "getDeviceInfo",
+        "module": "device_info",
+        "section": "name",
+        "data": [
+          "basic_info"
+        ],
+        "params": {
+          "device_info": {
+            "name": [
+              "basic_info"
+            ]
+          }
+        },
+        "response_path": "result.device_info.basic_info"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 37,
+          "snippet": "GET_DEVICE_INFO(AbstractDevice.getDeviceInfo),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/iot/device/AbstractDevice.java",
+          "line": 119,
+          "snippet": "public static final String getDeviceInfo = \"getDeviceInfo\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 38,
+          "snippet": "DEVICE_INFO(\"device_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 38,
+          "snippet": "BASIC_INFO(\"basic_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2864,
+          "snippet": "return i6(new Request(Method.GET_DEVICE_INFO, new Wrapper(Module.DEVICE_INFO, Section.NAME, Collections.singletonList(Section.BASIC_INFO.getValue()..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 72,
+          "snippet": "typeDispatcher.registerType(module, section, BasicInfo.class);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.device_info.basic_info_fields",
+      "kind": "response",
+      "description": "Fields of result.device_info.basic_info (BasicInfo). Most values are strings. Notable: device_model, device_alias, sw_version, hw_version, mac, dev_id, device_type, oem_id, hw_desc, device_info, features, region, latitude/longitude, local_ip, led_status, power, battery_* (battery cams), status, ffs, no_rtsp_constrain.",
+      "value": {
+        "fields": {
+          "device_alias": "string",
+          "device_model": "string",
+          "device_name": "string",
+          "device_type": "string",
+          "device_info": "string",
+          "sw_version": "string",
+          "hw_version": "string",
+          "hw_desc": "string",
+          "mac": "string",
+          "dev_id": "string",
+          "oem_id": "string",
+          "oem_name": "string",
+          "barcode": "string",
+          "features": "string",
+          "region": "string",
+          "latitude": "int",
+          "longitude": "int",
+          "has_set_location_info": "int",
+          "local_ip": "string",
+          "led_status": "string",
+          "power": "string",
+          "power_save_mode": "string",
+          "power_save_status": "string",
+          "battery_percent": "int",
+          "battery_charging": "string",
+          "low_battery": "bool",
+          "status": "string",
+          "online": "bool",
+          "ffs": "bool",
+          "tss": "bool",
+          "no_rtsp_constrain": "int",
+          "need_sync_sha1_password": "int",
+          "rssi": "int",
+          "system_time": "long",
+          "updating": "bool",
+          "avatar": "string",
+          "parent_device_id": "string",
+          "parent_link_type": "string",
+          "anti_theft_status": "int",
+          "migrate_status": "int",
+          "imei": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/BasicInfo.java",
+          "line": 39,
+          "snippet": "@SerializedName(\"device_alias\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/BasicInfo.java",
+          "line": 91,
+          "snippet": "@SerializedName(\"device_model\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/BasicInfo.java",
+          "line": 125,
+          "snippet": "@SerializedName(\"sw_version\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/BasicInfo.java",
+          "line": 54,
+          "snippet": "@SerializedName(\"hw_version\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/BasicInfo.java",
+          "line": 80,
+          "snippet": "private final String mac;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/BasicInfo.java",
+          "line": 42,
+          "snippet": "@SerializedName(\"dev_id\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "capability.component_list",
+      "kind": "request",
+      "description": "Capability discovery. Returns the list of {name, version} components; the client decides which features exist (and which request variant to use) from component name and version. Call once after login, together with getDeviceInfo.",
+      "value": {
+        "method": "getAppComponentList",
+        "module": "app_component",
+        "section": "name",
+        "data": [
+          "app_component_list"
+        ],
+        "params": {
+          "app_component": {
+            "name": [
+              "app_component_list"
+            ]
+          }
+        },
+        "response_path": "result.app_component.app_component_list",
+        "response_template": {
+          "app_component": {
+            "app_component_list": [
+              {
+                "name": "ptz",
+                "version": 1
+              },
+              {
+                "name": "lensMask",
+                "version": 2
+              }
+            ]
+          }
+        },
+        "item_fields": {
+          "name": "string (ComponentType value)",
+          "version": "int"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 196,
+          "snippet": "GET_APP_COMPONENT_LIST(\"getAppComponentList\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 69,
+          "snippet": "APP_COMPONENT(\"app_component\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 186,
+          "snippet": "APP_COMPONENT_LIST(\"app_component_list\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1142,
+          "snippet": "arrayList.add(new Request(Method.GET_APP_COMPONENT_LIST, E0(new Wrapper(Module.APP_COMPONENT, section, Collections.singletonList(Section.APP_COMPON..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"app_component_list\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ComponentBean.java",
+          "line": 16,
+          "snippet": "Intrinsics.i(name, \"name\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 211,
+          "snippet": "typeDispatcher.registerType(Module.APP_COMPONENT, Section.APP_COMPONENT_LIST, CameraComponent.class);"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 700",
+          "summary": "format=apk, sha256=78aac1692521cfc19645f659f5ae89abd888794c39c47e366ecac3204034bf3c (evidence ev_2cf1feccdcb1...); confirms the analysed base APK."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "capability.component_names",
+      "kind": "enum",
+      "description": "Component name strings (ComponentType) relevant to a desktop client. 'version' 0 / absent = unsupported.",
+      "value": {
+        "names": {
+          "SD_CARD": "sdCard",
+          "TIME_ZONE": "timezone",
+          "SYSTEM": "system",
+          "LED": "led",
+          "PLAYBACK": "playback",
+          "DETECTION": "detection",
+          "ALERT": "alert",
+          "FIRMWARE": "firmware",
+          "ACCOUNT": "account",
+          "PTZ": "ptz",
+          "VIDEO": "video",
+          "LEN_MASK": "lensMask",
+          "LIGHT_FREQUENCY": "lightFrequency",
+          "DAY_NIGHT_MODE": "dayNightMode",
+          "OSD": "osd",
+          "RECORD": "record",
+          "VIDEO_ROTATION": "videoRotation",
+          "AUDIO": "audio",
+          "AUDIO_CAPABILITY": "audioCapability",
+          "LDC": "ldc",
+          "MSG_PUSH": "msgPush",
+          "TAMPER_DETECTION": "tamperDetection",
+          "INTRUSION_DETECTION": "intrusionDetection",
+          "LINE_CROSSING_DETECTION": "linecrossingDetection",
+          "PERSON_DETECTION": "personDetection",
+          "BABY_CRYING_DETECTION": "babyCryDetection",
+          "BLOCK_ZONE": "blockZone",
+          "TARGET_TRACK": "targetTrack",
+          "SMART_TRACK": "smartTrack",
+          "AI_DETECTION": "aiDetection",
+          "NIGHT_VISION_MODE": "nightVisionMode",
+          "PATROL": "patrol",
+          "SIREN": "siren",
+          "PET_DETECTION": "petDetection",
+          "VEHICLE_DETECTION": "vehicleDetection",
+          "PACKAGE_DETECTION": "packageDetection",
+          "REBOOT": "reboot",
+          "WHITE_LAMP": "whiteLamp",
+          "INF_LAMP": "infLamp",
+          "PANORAMIC_VIEW": "panoramicView",
+          "MANUAL_ALARM": "manualAlarm",
+          "DN_SWITCH_MODE": "dnSwitchMode",
+          "FLOOD_LIGHT": "floodlight",
+          "PRIVACY_ZONE": "privacyzone",
+          "IMAGE_STYLE": "imageStyle",
+          "DETECTION_REGION": "detectionRegion",
+          "BATTERY": "battery",
+          "DUAL_CAM": "dualCam",
+          "MULTI_LENS_CAM": "multiLensCam",
+          "STREAM_CAPABILITY": "streamCapability",
+          "WEBRTC": "webrtc",
+          "ENCRYPTION": "encryption",
+          "HARD_DISK": "hardDisk",
+          "LOCAL_ACCOUNT": "localAccount",
+          "THIRD_ACCOUNT_SECURITY": "thirdAccountSecurity",
+          "UN_SUPPORT_HTTP": "unSupportHttp",
+          "DATE_TIME": "dateTime"
+        },
+        "app_known_versions": {
+          "sdCard": [
+            1,
+            2
+          ],
+          "system": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "led": [
+            1,
+            2
+          ],
+          "playback": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "detection": [
+            1,
+            2,
+            3
+          ],
+          "alert": [
+            1,
+            2
+          ],
+          "ptz": [
+            1,
+            2
+          ],
+          "video": [
+            1,
+            2,
+            3
+          ],
+          "lensMask": [
+            1,
+            2
+          ],
+          "lightFrequency": [
+            1,
+            2,
+            3
+          ],
+          "dayNightMode": [
+            1,
+            2
+          ],
+          "osd": [
+            1,
+            2,
+            3
+          ],
+          "videoRotation": [
+            1,
+            2,
+            3
+          ],
+          "audio": [
+            1,
+            2,
+            3
+          ],
+          "personDetection": [
+            1,
+            2
+          ],
+          "blockZone": [
+            1,
+            2
+          ],
+          "targetTrack": [
+            1,
+            2
+          ],
+          "nightVisionMode": [
+            1,
+            2,
+            3
+          ],
+          "dateTime": [
+            1,
+            2
+          ],
+          "siren": [
+            1,
+            2
+          ],
+          "petDetection": [
+            1,
+            2
+          ],
+          "packageDetection": [
+            1,
+            2,
+            3
+          ],
+          "infLamp": [
+            1,
+            2
+          ],
+          "panoramicView": [
+            1,
+            2
+          ],
+          "manualAlarm": [
+            1,
+            2
+          ],
+          "floodlight": [
+            1,
+            2,
+            3
+          ],
+          "imageStyle": [
+            1,
+            2,
+            3
+          ],
+          "detectionRegion": [
+            1,
+            2
+          ],
+          "encryption": [
+            3,
+            4
+          ],
+          "battery": [
+            1,
+            2,
+            3
+          ]
+        },
+        "app_known_versions_note": "ComponentType second constructor arg = list of versions this app build understands"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ComponentType.java",
+          "line": 32,
+          "snippet": "PTZ(\"ptz\", Arrays.asList(1, 2)),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ComponentType.java",
+          "line": 34,
+          "snippet": "LEN_MASK(\"lensMask\", Arrays.asList(1, 2)),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ComponentType.java",
+          "line": 59,
+          "snippet": "NIGHT_VISION_MODE(\"nightVisionMode\", Arrays.asList(1, 2, 3)),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ComponentType.java",
+          "line": 21,
+          "snippet": "SD_CARD(\"sdCard\", Arrays.asList(1, 2)),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ComponentType.java",
+          "line": 39,
+          "snippet": "VIDEO_ROTATION(\"videoRotation\", Arrays.asList(1, 2, 3)),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "capability.version_gates",
+      "kind": "constant",
+      "description": "Component-version checks the app uses to pick request variants (CameraComponent helpers).",
+      "value": {
+        "gates": {
+          "ptz>=1": "PTZ supported; ptz>=2 = isSupportPtzV2",
+          "lensMask==2": "privacy set sends only setLensMaskConfig; otherwise app also sends setLedStatus with the inverse value in the same batch",
+          "led==1 / led==2": "isSupportLedV1 / isSupportLedV2",
+          "videoRotation==1": "flip only (isSupportVideoInvert); ==2 adds rotate_type_by_app (isSupportVideoRotationV2)",
+          "nightVisionMode>=1": "use getNightVisionModeConfig/setNightVisionModeConfig (image.switch.night_vision_mode); >=2 white-lamp config v2",
+          "audio>=3": "isSupportAudioV3",
+          "detection>=3": "motion sensitivity range supported (isSupportDetectionSensitivityRange); detection==2 = person enhanced",
+          "personDetection>=2": "person sensitivity range",
+          "petDetection==2": "isSupportAnimalDetection",
+          "manualAlarm>=2": "isSupportManualAlarmV2",
+          "alert>=2": "isSupportCameraAlarmV2",
+          "system>=5": "isSupportSystemV5"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 828,
+          "snippet": "return getComponent(ComponentType.PTZ) >= 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 616,
+          "snippet": "return getComponent(ComponentType.LED) == 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 1020,
+          "snippet": "return getComponent(ComponentType.VIDEO_ROTATION) == 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 1085,
+          "snippet": "return getComponent(ComponentType.NIGHT_VISION_MODE) >= 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 463,
+          "snippet": "return getComponent(ComponentType.DETECTION) >= 3;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraComponent.java",
+          "line": 672,
+          "snippet": "return getComponent(ComponentType.MANUAL_ALARM) >= 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "eu0/c.java",
+          "line": 49,
+          "snippet": "return cameraComponent.getComponent(ComponentType.LEN_MASK) == 2 ? lensMaskRepository.l1(Boolean.valueOf(!z12)) : lensMaskRepository.x1(Boolean.val..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4943,
+          "snippet": "if (i12 == 2) {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4946,
+          "snippet": "Request request2 = new Request(Method.SET_LED_STATUS, E0(new Wrapper(Module.LED, Section.CONFIG, new LedStatus(lensMaskInfo.getEnabled().equals(\"on..."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.move",
+      "kind": "request",
+      "description": "Relative PTZ move (pan x, tilt y). Values are integer strings, signed: +x = right, -x = left, +y = up, -y = down (inferred from the click counters, see control.ptz.click_offset_algorithm). The response result is a PtzMoveResult.",
+      "value": {
+        "method": "motorMove",
+        "module": "motor",
+        "section": "move",
+        "params": {
+          "motor": {
+            "move": {
+              "x_coord": "10",
+              "y_coord": "0"
+            }
+          }
+        },
+        "data_fields": {
+          "x_coord": "string(int)",
+          "y_coord": "string(int)"
+        },
+        "response_fields": {
+          "move_time": "double",
+          "timestamp": "long",
+          "x_curpos": "float",
+          "x_destpos": "float",
+          "x_speed": "float",
+          "y_curpos": "float",
+          "y_destpos": "float",
+          "y_speed": "float"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 154,
+          "snippet": "MOTOR_MOVE(\"motorMove\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 64,
+          "snippet": "MOTOR(\"motor\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 156,
+          "snippet": "MOVE(\"move\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3886,
+          "snippet": "return i6(new Request(Method.MOTOR_MOVE, new Wrapper(Module.MOTOR, Section.MOVE, cloudTerraceMoveInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerraceMoveInfo.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"x_coord\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerraceMoveInfo.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"y_coord\")"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/qk.java",
+          "line": 1292,
+          "snippet": "return response.repack((PtzMoveResult) Model.typeCastFromWrappers((Wrappers) response.getResult(), PtzMoveResult.class));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 176,
+          "snippet": "typeDispatcher.registerType(module17, Section.MOVE, CloudTerraceMoveInfo.class);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.click_offset_algorithm",
+      "kind": "algorithm",
+      "description": "How the app turns arrow taps into motorMove: per-direction tap counters [0..3] are merged for 500 ms, then x = (taps[0]-taps[2])*step and y = (taps[3]-taps[1])*step, where step is the user 'PTZ sensitivity': low=5, medium=10 (default), high=15. If the image is rotated 90/180/270 the app rotates (x,y) before sending.",
+      "value": {
+        "step_by_sensitivity": {
+          "low(0)": 5,
+          "medium(50)": 10,
+          "high(100)": 15
+        },
+        "default_step": 10,
+        "merge_window_ms": 500,
+        "formula": "x=(t0-t2)*step, y=(t3-t1)*step",
+        "rotation_transform": {
+          "90": "(x,y)->(-y,x)",
+          "180": "(x,y)->(-x,-y)",
+          "270": "(x,y)->(y,-x)"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 835,
+          "snippet": "CloudTerraceMoveInfo cloudTerraceMoveInfo = new CloudTerraceMoveInfo(String.valueOf(i13 * i14), String.valueOf(i12 * i14));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 826,
+          "snippet": "int i12 = iArr[3] - iArr[1];"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 311,
+          "snippet": "a3(10);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 317,
+          "snippet": "a3(15);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 373,
+          "snippet": "this.E.sendEmptyMessageDelayed(3, 500L);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/camera/live/util/TerraceControlUtil.java",
+          "line": 127,
+          "snippet": "iIntValue = -iIntValue2;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.move_step",
+      "kind": "request",
+      "description": "Continuous/step move in one direction (used for press-and-hold). 'direction' is an angle string in degrees. App mapping of arrow index -> direction: 0->'0', 1->'270', 2->'180', 3->'90' (0=right, 90=up, 180=left, 270=down, inferred from the motorMove sign convention). With image rotation the app adds the rotation angle mod 360. Stop with control.ptz.stop.",
+      "value": {
+        "method": "singalMove",
+        "module": "motor",
+        "section": "movestep",
+        "params": {
+          "motor": {
+            "movestep": {
+              "direction": "90"
+            }
+          }
+        },
+        "direction_values": [
+          "0",
+          "90",
+          "180",
+          "270"
+        ],
+        "note": "method string is spelled 'singalMove' in the app"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 158,
+          "snippet": "SIGNAL_MOVE(\"singalMove\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 157,
+          "snippet": "MOVE_STEP(\"movestep\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3971,
+          "snippet": "return i6(new Request(Method.SIGNAL_MOVE, new Wrapper(Module.MOTOR, Section.MOVE_STEP, new CloudTerraceMoveStepInfo(str))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerraceMoveStepInfo.java",
+          "line": 11,
+          "snippet": "private final String direction;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 811,
+          "snippet": "return \"270\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 814,
+          "snippet": "return i12 != 3 ? \"0\" : \"90\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/camera/live/util/TerraceControlUtil.java",
+          "line": 111,
+          "snippet": "return String.valueOf(((numS != null ? numS.intValue() : 0) + iJ0) % BR.showDualShotContainer);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.stop",
+      "kind": "request",
+      "description": "Stop PTZ motion. Data is the literal string 'null'. Response result: StopMoveResult.",
+      "value": {
+        "method": "stopMove",
+        "module": "motor",
+        "section": "stop",
+        "params": {
+          "motor": {
+            "stop": "null"
+          }
+        },
+        "response_fields": {
+          "status_pan": "string",
+          "status_tilt": "string",
+          "timestamp": "long",
+          "x_curpos": "float",
+          "y_curpos": "float"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 159,
+          "snippet": "STOP_MOVE(\"stopMove\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 160,
+          "snippet": "STOP(\"stop\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5333,
+          "snippet": "return i6(new Request(Method.STOP_MOVE, new Wrapper(Module.MOTOR, Section.STOP, Section.EMPTY.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/qk.java",
+          "line": 2233,
+          "snippet": "return response.repack((StopMoveResult) Model.typeCastFromWrappers((Wrappers) response.getResult(), StopMoveResult.class));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.cruise",
+      "kind": "request",
+      "description": "Start horizontal or vertical cruise (auto sweep) and stop it.",
+      "value": {
+        "start": {
+          "method": "cruiseMove",
+          "params": {
+            "motor": {
+              "cruise": {
+                "coord": "x"
+              }
+            }
+          },
+          "coord_values": {
+            "x": "horizontal",
+            "y": "vertical"
+          },
+          "response": {
+            "motor": {
+              "cruise": {
+                "time": "int"
+              }
+            }
+          }
+        },
+        "stop": {
+          "method": "cruiseStop",
+          "params": {
+            "motor": {
+              "cruise_stop": "null"
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 161,
+          "snippet": "CRUISE_MOVE(\"cruiseMove\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 162,
+          "snippet": "CRUISE_STOP(\"cruiseStop\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 158,
+          "snippet": "CRUISE(\"cruise\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3817,
+          "snippet": "return i6(new Request(Method.CRUISE_MOVE, new Wrapper(Module.MOTOR, Section.CRUISE, new CloudTerraceCruiseInfo(z12 ? \"y\" : \"x\"))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5085,
+          "snippet": "return i6(new Request(Method.CRUISE_STOP, new Wrapper(Module.MOTOR, Section.CRUISE_STOP, Section.EMPTY.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerraceCruiseInfo.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"coord\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 579,
+          "snippet": "typeDispatcher.registerType(module17, Section.CRUISE, CloudTerraceCruiseResult.class);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.calibrate",
+      "kind": "request",
+      "description": "Motor calibration. cal_to_resume '0' = return to factory default position after calibration, '1' = return to the user-set position. Response may contain motor.cali.time (seconds).",
+      "value": {
+        "method": "manualCalibrate",
+        "module": "motor",
+        "section": "manual_cali",
+        "params": {
+          "motor": {
+            "manual_cali": {
+              "cal_to_resume": "0"
+            }
+          }
+        },
+        "cal_to_resume_values": {
+          "FACTORY_DEFAULT_LOCATION": "0",
+          "USER_SET_LOCATION": "1"
+        },
+        "response_template": {
+          "motor": {
+            "cali": {
+              "time": 30
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 160,
+          "snippet": "MANUAL_CALIBRATE(\"manualCalibrate\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 174,
+          "snippet": "MANUAL_CALI(\"manual_cali\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4259,
+          "snippet": "return i6(new Request(Method.MANUAL_CALIBRATE, new Wrapper(Module.MOTOR, Section.MANUAL_CALI, new ResetCloudTerraceMode(resetCloudTerraceModeEnum.g..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ResetCloudTerraceModeEnum.java",
+          "line": 11,
+          "snippet": "FACTORY_DEFAULT_LOCATION(\"0\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ResetCloudTerraceModeEnum.java",
+          "line": 12,
+          "snippet": "USER_SET_LOCATION(\"1\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ResetCloudTerraceMode.java",
+          "line": 15,
+          "snippet": "@SerializedName(\"cal_to_resume\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 580,
+          "snippet": "typeDispatcher.registerType(module17, Section.CALI, ResetCloudTerraceResult.class);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.get_info",
+      "kind": "request",
+      "description": "Read current PTZ position, angle limits and speed. Data is an empty object. Result parsed with typeCastFromWrappers (first wrapper), so fields may sit directly under result or under result.motor.get_ptz_info.",
+      "value": {
+        "method": "getPtzInfo",
+        "module": "motor",
+        "section": "get_ptz_info",
+        "params": {
+          "motor": {
+            "get_ptz_info": {}
+          }
+        },
+        "response_fields": {
+          "x_curpos": "float",
+          "y_curpos": "float",
+          "x_start_angle": "float",
+          "x_end_angle": "float",
+          "y_start_angle": "float",
+          "y_end_angle": "float",
+          "x_speed": "float",
+          "y_speed": "float",
+          "x_flipcurpos": "float",
+          "y_flipcurpos": "float",
+          "status_pan": "string",
+          "status_tilt": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 153,
+          "snippet": "GET_PTZ_INFO(\"getPtzInfo\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 155,
+          "snippet": "GET_PTZ_INFO(\"get_ptz_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3842,
+          "snippet": "return i6(new Request(Method.GET_PTZ_INFO, new Wrapper(Module.MOTOR, Section.GET_PTZ_INFO, Collections.EMPTY_MAP)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/PtzInfo.java",
+          "line": 33,
+          "snippet": "@SerializedName(\"x_start_angle\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/PtzInfo.java",
+          "line": 21,
+          "snippet": "@SerializedName(\"x_curpos\")"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/qk.java",
+          "line": 1122,
+          "snippet": "return response.repack((PtzInfo) Model.typeCastFromWrappers((Wrappers) response.getResult(), PtzInfo.class));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.ptz.panoramic_absolute",
+      "kind": "request",
+      "description": "Panoramic-view models (component panoramicView): absolute goto, start/stop panorama capture, and read angle range / FOV / calibration.",
+      "value": {
+        "goto": {
+          "method": "gotoPanoramicPosition",
+          "params": {
+            "panoramic_view": {
+              "goto_position": {
+                "position_pan": "0.5",
+                "position_tilt": "0.3"
+              }
+            }
+          }
+        },
+        "start": {
+          "method": "startPanoramicView",
+          "params": {
+            "panoramic_view": {
+              "move_start": {}
+            }
+          }
+        },
+        "stop": {
+          "method": "stopPanoramicView",
+          "params": {
+            "panoramic_view": {
+              "move_stop": {}
+            }
+          }
+        },
+        "angle_range": {
+          "method": "getMotorAngleRange",
+          "params": {
+            "panoramic_view": {
+              "get_angle_range": {}
+            }
+          },
+          "response_fields": {
+            "x_angle_range": "int",
+            "y_angle_range": "int"
+          }
+        },
+        "fov": {
+          "method": "getMotorFov",
+          "params": {
+            "panoramic_view": {
+              "get_fov": {}
+            }
+          },
+          "response_fields": {
+            "h_fov": "int",
+            "v_fov": "int",
+            "d_fov": "int"
+          }
+        },
+        "calibrated_params": {
+          "method": "getCalibratedParams",
+          "params": {
+            "panoramic_view": {
+              "get_calibrated_params": {}
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 322,
+          "snippet": "PANORAMIC_POSITION(\"gotoPanoramicPosition\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 103,
+          "snippet": "PANORAMA_VIEW(\"panoramic_view\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2401,
+          "snippet": "return i6(new Request(Method.PANORAMIC_POSITION, new Wrapper(Module.PANORAMA_VIEW, Section.GOTO_POSITION, absoluteMoveInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4617,
+          "snippet": "return i6(new Request(Method.START_PANORAMA_VIEW, new Wrapper(Module.PANORAMA_VIEW, Section.MOVE_START, Collections.EMPTY_MAP)));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 497,
+          "snippet": "return i6(new Request(Method.STOP_PANORAMA_VIEW, new Wrapper(Module.PANORAMA_VIEW, Section.MOVE_STOP, Collections.EMPTY_MAP)));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5114,
+          "snippet": "arrayList.add(D0(Method.GET_MOTOR_ANGLE_RANGE, Module.PANORAMA_VIEW, Section.GET_ANGLE_RANGE, Collections.EMPTY_MAP));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4846,
+          "snippet": "arrayList.add(D0(Method.GET_MOTOR_FOV, Module.PANORAMA_VIEW, Section.GET_FOV, Collections.EMPTY_MAP));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4558,
+          "snippet": "arrayList.add(D0(Method.GET_CALIBRATED_PARAM, Module.PANORAMA_VIEW, Section.GET_CALIBRATED_PARAMS, Collections.EMPTY_MAP));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/AbsoluteMoveInfo.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"position_pan\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MotorAngleRange.java",
+          "line": 19,
+          "snippet": "@SerializedName(\"x_angle_range\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.preset.list",
+      "kind": "request",
+      "description": "List PTZ presets. Response is parallel arrays (index i describes preset i).",
+      "value": {
+        "method": "getPresetConfig",
+        "module": "preset",
+        "section": "name",
+        "data": [
+          "preset"
+        ],
+        "params": {
+          "preset": {
+            "name": [
+              "preset"
+            ]
+          }
+        },
+        "response_path": "result.preset.preset",
+        "response_template": {
+          "preset": {
+            "preset": {
+              "id": [
+                "1",
+                "2"
+              ],
+              "name": [
+                "Door",
+                "Gate"
+              ],
+              "position_pan": [
+                "0.1",
+                "-0.4"
+              ],
+              "position_tilt": [
+                "0.0",
+                "0.2"
+              ],
+              "read_only": [
+                "0",
+                "0"
+              ]
+            }
+          }
+        },
+        "response_fields": {
+          "id": "int[] (string-encoded in JSON)",
+          "name": "string[]",
+          "position_pan": "double[]",
+          "position_tilt": "double[]",
+          "read_only": "int[]"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 163,
+          "snippet": "GET_PRESET_CONFIG(\"getPresetConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 65,
+          "snippet": "PRESET(\"preset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 161,
+          "snippet": "PRESET(\"preset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1001,
+          "snippet": "return i6(new Request(Method.GET_PRESET_CONFIG, new Wrapper(Module.PRESET, Section.NAME, new String[]{Section.PRESET.getValue()})));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 194,
+          "snippet": "typeDispatcher.registerType(module18, Section.PRESET, MarkedPositionListInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MarkedPositionListInfo.java",
+          "line": 21,
+          "snippet": "@SerializedName(\"position_pan\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MarkedPositionListInfo.java",
+          "line": 27,
+          "snippet": "@SerializedName(\"read_only\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.preset.goto",
+      "kind": "request",
+      "description": "Move to a preset by id.",
+      "value": {
+        "method": "motorMoveToPreset",
+        "module": "preset",
+        "section": "goto_preset",
+        "params": {
+          "preset": {
+            "goto_preset": {
+              "id": "1"
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 156,
+          "snippet": "MOTOR_MOVE_TO_PRESET(\"motorMoveToPreset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 163,
+          "snippet": "GOTO_PRESET(\"goto_preset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4071,
+          "snippet": "return i6(new Request(Method.MOTOR_MOVE_TO_PRESET, new Wrapper(Module.PRESET, Section.GOTO_PRESET, new CloudTerraceId(String.valueOf(i12)))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerraceId.java",
+          "line": 11,
+          "snippet": "private final String id;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.preset.add",
+      "kind": "request",
+      "description": "Save the current position as a preset. save_ptz '1' = store current PTZ position. The newer UI sends no id (camera assigns it); the older UI sends an explicit id. Error -64306 = preset limit reached.",
+      "value": {
+        "method": "addMotorPostion",
+        "module": "preset",
+        "section": "set_preset",
+        "params": {
+          "preset": {
+            "set_preset": {
+              "name": "Door",
+              "save_ptz": "1"
+            }
+          }
+        },
+        "params_with_id": {
+          "preset": {
+            "set_preset": {
+              "id": "3",
+              "name": "Door",
+              "save_ptz": "1"
+            }
+          }
+        },
+        "note": "method string is spelled 'addMotorPostion' in the app"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 155,
+          "snippet": "ADD_MOTOR_POSITION(\"addMotorPostion\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 162,
+          "snippet": "SET_PRESET(\"set_preset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3751,
+          "snippet": "return i6(new Request(Method.ADD_MOTOR_POSITION, new Wrapper(Module.PRESET, Section.SET_PRESET, cloudTerracePoint)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerracePoint.java",
+          "line": 17,
+          "snippet": "@SerializedName(\"save_ptz\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerracePresetViewModelV3.java",
+          "line": 800,
+          "snippet": "vr1.r rVarM0 = markPositionRepository.b1(new CloudTerracePoint(null, str, \"1\", 1, null)).M0(xr1.a.a());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/PresetViewModelV3.java",
+          "line": 683,
+          "snippet": "vr1.r rVarM0 = markPositionRepository.b1(new CloudTerracePoint(String.valueOf(iU2), str, \"1\")).M0(xr1.a.a());"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.preset.delete",
+      "kind": "request",
+      "description": "Delete one or more presets by id (array of id strings).",
+      "value": {
+        "method": "deletePreset",
+        "module": "preset",
+        "section": "remove_preset",
+        "params": {
+          "preset": {
+            "remove_preset": {
+              "id": [
+                "1"
+              ]
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 164,
+          "snippet": "DELETE_PRESET(\"deletePreset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 164,
+          "snippet": "REMOVE_PRESET(\"remove_preset\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4390,
+          "snippet": "return i6(new Request(Method.DELETE_PRESET, new Wrapper(Module.PRESET, Section.REMOVE_PRESET, cloudTerraceResetInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CloudTerraceResetInfo.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"id\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerracePresetViewModelV3.java",
+          "line": 630,
+          "snippet": "vr1.r rVarM0 = markPositionRepository.d1(new CloudTerraceResetInfo(new String[]{String.valueOf(id2)})).M0(xr1.a.a());"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "error_code.ptz",
+      "kind": "error_code",
+      "description": "PTZ / preset error codes handled by the UI.",
+      "value": {
+        "-64303": "motor busy",
+        "-64305": "motor busy",
+        "-64304": "reached boundary (cannot move further)",
+        "-64306": "preset limit reached"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 334,
+          "snippet": "case -64303:"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/CloudTerraceControlViewModelV3.java",
+          "line": 337,
+          "snippet": "case -64304:"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamerav3/play/PresetViewModelV3.java",
+          "line": 145,
+          "snippet": "case -64306:"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.privacy.get",
+      "kind": "request",
+      "description": "Read privacy mode (lens mask). enabled 'on' = privacy on (video blocked).",
+      "value": {
+        "method": "getLensMaskConfig",
+        "module": "lens_mask",
+        "section": "name",
+        "data": [
+          "lens_mask_info"
+        ],
+        "params": {
+          "lens_mask": {
+            "name": [
+              "lens_mask_info"
+            ]
+          }
+        },
+        "response_path": "result.lens_mask.lens_mask_info.enabled",
+        "values": [
+          "on",
+          "off"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 174,
+          "snippet": "GET_LENS_MASK_CONFIG(\"getLensMaskConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 58,
+          "snippet": "LENS_MASK(\"lens_mask\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 100,
+          "snippet": "LENS_MASK_INFO(\"lens_mask_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3838,
+          "snippet": "return i6(new Request(Method.GET_LENS_MASK_CONFIG, new Wrapper(Module.LENS_MASK, Section.NAME, Collections.singletonList(Section.LENS_MASK_INFO.get..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 132,
+          "snippet": "typeDispatcher.registerType(Module.LENS_MASK, Section.LENS_MASK_INFO, LensMaskInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LensMaskInfo.java",
+          "line": 11,
+          "snippet": "private String enabled;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.privacy.set",
+      "kind": "request",
+      "description": "Set privacy mode. If component lensMask version != 2, the app sends setLedStatus with the inverse value in the same multipleRequest (privacy on -> LED off). With lensMask == 2 only setLensMaskConfig is sent.",
+      "value": {
+        "method": "setLensMaskConfig",
+        "module": "lens_mask",
+        "section": "lens_mask_info",
+        "params": {
+          "lens_mask": {
+            "lens_mask_info": {
+              "enabled": "on"
+            }
+          }
+        },
+        "values": [
+          "on",
+          "off"
+        ],
+        "compound_template_lensmask_v1": {
+          "method": "multipleRequest",
+          "params": {
+            "requests": [
+              {
+                "method": "setLensMaskConfig",
+                "params": {
+                  "lens_mask": {
+                    "lens_mask_info": {
+                      "enabled": "on"
+                    }
+                  }
+                }
+              },
+              {
+                "method": "setLedStatus",
+                "params": {
+                  "led": {
+                    "config": {
+                      "enabled": "off"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 175,
+          "snippet": "SET_LENS_MASK_CONFIG(\"setLensMaskConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3934,
+          "snippet": "return k6(Collections.singletonList(new Request(Method.SET_LENS_MASK_CONFIG, E0(new Wrapper(Module.LENS_MASK, Section.LENS_MASK_INFO, lensMaskInfo)..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4037,
+          "snippet": "return k6(Arrays.asList(new Request(Method.SET_LENS_MASK_CONFIG, E0(new Wrapper(Module.LENS_MASK, Section.LENS_MASK_INFO, lensMaskInfo))), new Requ..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4943,
+          "snippet": "if (i12 == 2) {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4946,
+          "snippet": "Request request2 = new Request(Method.SET_LED_STATUS, E0(new Wrapper(Module.LED, Section.CONFIG, new LedStatus(lensMaskInfo.getEnabled().equals(\"on..."
+        },
+        {
+          "source": "jadx",
+          "file": "eu0/c.java",
+          "line": 49,
+          "snippet": "return cameraComponent.getComponent(ComponentType.LEN_MASK) == 2 ? lensMaskRepository.l1(Boolean.valueOf(!z12)) : lensMaskRepository.x1(Boolean.val..."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.privacy_zone.cover",
+      "kind": "request",
+      "description": "Privacy-zone (cover) masks, component 'privacyzone'. Enable flag at cover.cover.enabled; regions under cover.region_info.",
+      "value": {
+        "get": {
+          "method": "getPrivacyZoneConfig",
+          "params_hint": {
+            "cover": {
+              "name": [
+                "cover"
+              ]
+            }
+          }
+        },
+        "set": {
+          "method": "setPrivacyZoneConfig",
+          "params": {
+            "cover": {
+              "cover": {
+                "enabled": "on"
+              }
+            }
+          }
+        },
+        "get_regions": {
+          "method": "getPrivacyZoneRegion"
+        },
+        "add_regions": {
+          "method": "addPrivacyZoneRegion"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 208,
+          "snippet": "GET_TAPO_COVER_CONFIG(\"getPrivacyZoneConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 209,
+          "snippet": "SET_TAPO_COVER_CONFIG(\"setPrivacyZoneConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2130,
+          "snippet": "arrayList.add(D0(Method.SET_TAPO_COVER_CONFIG, Module.COVER, Section.COVER, new CoverConfig(z12)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 213,
+          "snippet": "typeDispatcher.registerType(module24, Section.COVER, CoverConfig.class);"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "control.day_night.get",
+      "kind": "request",
+      "description": "Read the classic day/night (IR-cut) mode.",
+      "value": {
+        "method": "getDayNightModeConfig",
+        "module": "image",
+        "section": "name",
+        "data": "common",
+        "params": {
+          "image": {
+            "name": "common"
+          }
+        },
+        "response_path": "result.image.common.inf_type",
+        "also": "result.image.common.light_freq_mode (anti-flicker)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 179,
+          "snippet": "GET_DAY_NIGHT_MODE_CONFIG(\"getDayNightModeConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 60,
+          "snippet": "IMAGE(\"image\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 111,
+          "snippet": "COMMON(\"common\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2441,
+          "snippet": "return i6(new Request(Method.GET_DAY_NIGHT_MODE_CONFIG, new Wrapper(Module.IMAGE, Section.NAME, Section.COMMON.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Light.java",
+          "line": 15,
+          "snippet": "@SerializedName(\"inf_type\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.day_night.set",
+      "kind": "request",
+      "description": "Set day/night mode via image.common.inf_type.",
+      "value": {
+        "method": "setDayNightModeConfig",
+        "module": "image",
+        "section": "common",
+        "params": {
+          "image": {
+            "common": {
+              "inf_type": "auto"
+            }
+          }
+        },
+        "multi_channel": {
+          "image": {
+            "chn_id": [
+              1
+            ],
+            "common_chn": {
+              "1": {
+                "inf_type": "auto"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 180,
+          "snippet": "SET_DAY_NIGHT_MODE_CONFIG(\"setDayNightModeConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1270,
+          "snippet": "return i6(new Request(Method.SET_DAY_NIGHT_MODE_CONFIG, new Wrapper(Module.IMAGE, Section.COMMON, new Light(null, nightMode.getRaw()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1273,
+          "snippet": "return j6(new Request(Method.SET_DAY_NIGHT_MODE_CONFIG, new Wrappers(Arrays.asList(new Wrapper(module, Section.CHN_ID, Collections.singletonList(In..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Light.java",
+          "line": 23,
+          "snippet": "this.infrared = str2;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "enum.inf_type",
+      "kind": "enum",
+      "description": "Values of image.common.inf_type (NightMode).",
+      "value": {
+        "auto": "AUTO (switch automatically)",
+        "on": "NIGHT (IR / night forced on)",
+        "off": "DAY (night vision off)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightMode.java",
+          "line": 16,
+          "snippet": "AUTO(\"auto\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightMode.java",
+          "line": 17,
+          "snippet": "NIGHT(\"on\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightMode.java",
+          "line": 18,
+          "snippet": "DAY(\"off\");"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.night_vision_mode.get",
+      "kind": "request",
+      "description": "Newer night-vision mode selector (component nightVisionMode). Use this instead of inf_type when the component is present.",
+      "value": {
+        "method": "getNightVisionModeConfig",
+        "module": "image",
+        "section": "name",
+        "data": "switch",
+        "params": {
+          "image": {
+            "name": "switch"
+          }
+        },
+        "response_path": "result.image.switch.night_vision_mode",
+        "other_fields_in_image.switch": [
+          "flip_type",
+          "rotate_type",
+          "rotate_type_by_app",
+          "ldc",
+          "switch_mode",
+          "schedule_start_time",
+          "schedule_end_time",
+          "wtl_intensity_level",
+          "wtl_force_time",
+          "force_wtl_state"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 243,
+          "snippet": "GET_NIGHT_VISION_MODE_CONFIG(\"getNightVisionModeConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 187,
+          "snippet": "SWITCH(\"switch\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5096,
+          "snippet": "return D0(Method.GET_NIGHT_VISION_MODE_CONFIG, Module.IMAGE, Section.NAME, Section.SWITCH.getValue());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVisionMode.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"night_vision_mode\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ImageFlip.java",
+          "line": 30,
+          "snippet": "@SerializedName(\"night_vision_mode\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.night_vision_mode.set",
+      "kind": "request",
+      "description": "Set night-vision mode. The app may append setDayNightModeConfig (inf_type) in the same batch.",
+      "value": {
+        "method": "setNightVisionModeConfig",
+        "module": "image",
+        "section": "switch",
+        "params": {
+          "image": {
+            "switch": {
+              "night_vision_mode": "inf_night_vision"
+            }
+          }
+        },
+        "compound_template": {
+          "method": "multipleRequest",
+          "params": {
+            "requests": [
+              {
+                "method": "setNightVisionModeConfig",
+                "params": {
+                  "image": {
+                    "switch": {
+                      "night_vision_mode": "md_night_vision"
+                    }
+                  }
+                }
+              },
+              {
+                "method": "setDayNightModeConfig",
+                "params": {
+                  "image": {
+                    "common": {
+                      "inf_type": "auto"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 244,
+          "snippet": "SET_NIGHT_VISION_MODE_CONFIG(\"setNightVisionModeConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1406,
+          "snippet": "arrayList.add(new Request(Method.SET_NIGHT_VISION_MODE_CONFIG, E0(new Wrapper(Module.IMAGE, Section.SWITCH, nightVisionMode))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1412,
+          "snippet": "arrayList.add(new Request(Method.SET_DAY_NIGHT_MODE_CONFIG, E0(new Wrapper(Module.IMAGE, Section.COMMON, new Light(null, nightMode.getRaw())))));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "enum.night_vision_mode",
+      "kind": "enum",
+      "description": "night_vision_mode values (NightVision enum strings). Supported values per model come from capability.night_vision (night_vision_mode_range).",
+      "value": {
+        "inf_night_vision": "infrared (black & white IR)",
+        "wtl_night_vision": "full colour (white light)",
+        "md_night_vision": "smart (IR, white light on motion)",
+        "shed_night_vision": "scheduled",
+        "dbl_night_vision": "doorbell night vision",
+        "lamp_closed_vision": "lamps off",
+        "app_custom_night_vision_close": "app-side 'off' marker",
+        "note": "NightVisionModeType enum (INFRARED, FULL_COLOR, SMART, SCHEDULE, DOORBELL, LAMP_CLOSED) carries the same raw strings; its raw values are set in enum subclasses that JADX does not emit, so that mapping is inferred."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVision.java",
+          "line": 18,
+          "snippet": "NIGHT_VISION_INFRARED(\"inf_night_vision\", 2),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVision.java",
+          "line": 20,
+          "snippet": "NIGHT_VISION_FULL_COLOR(\"wtl_night_vision\", 4),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVision.java",
+          "line": 22,
+          "snippet": "NIGHT_VISION_SMART(\"md_night_vision\", 6),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVision.java",
+          "line": 21,
+          "snippet": "NIGHT_VISION_SCHEDULE(\"shed_night_vision\", 5),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVision.java",
+          "line": 17,
+          "snippet": "LAMP_CLOSED_VISION(\"lamp_closed_vision\", 1),"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.Method --token-limit 300",
+          "summary": "capability_unavailable: jadx provider needs REA_JADX_MCP_JAR (jadx-headless-mcp 0.7.1), not present; class facts taken from JADX 1.5.6 output instead."
+        },
+        {
+          "source": "jadx",
+          "command": "jadx --single-class com.tplink.libtapocameranetwork.model.NightVisionModeType -m fallback",
+          "summary": "<clinit> only constructs INFRARED..LAMP_CLOSED subclasses with (name, ordinal); raw strings live in DONT_GENERATE inner classes, so NightVisionModeType raw values are not visible."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "capability.night_vision",
+      "kind": "request",
+      "description": "Night-vision capability.",
+      "value": {
+        "method": "getNightVisionCapability",
+        "module": "image_capability",
+        "section": "name",
+        "data": "supplement_lamp",
+        "params": {
+          "image_capability": {
+            "name": "supplement_lamp"
+          }
+        },
+        "response_path": "result.image_capability.supplement_lamp",
+        "response_fields": {
+          "night_vision_mode_range": "string[] (enum.night_vision_mode values)",
+          "supplement_lamp_type": "string[]",
+          "intelligent_mode": "string[] (e.g. intelligent_white_lamp)"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 245,
+          "snippet": "GET_NIGHT_VISION_CAPABILITY(\"getNightVisionCapability\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 82,
+          "snippet": "IMAGE_CAPABILITY(\"image_capability\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 235,
+          "snippet": "SUPPLEMENT_LAMP(\"supplement_lamp\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1379,
+          "snippet": "arrayList.add(D0(Method.GET_NIGHT_VISION_CAPABILITY, Module.IMAGE_CAPABILITY, Section.NAME, Section.SUPPLEMENT_LAMP.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 259,
+          "snippet": "typeDispatcher.registerType(module14, Section.SUPPLEMENT_LAMP, NightVisionCapability.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/NightVisionCapability.java",
+          "line": 19,
+          "snippet": "@SerializedName(\"night_vision_mode_range\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.dn_switch_mode",
+      "kind": "request",
+      "description": "Day/night switching strategy for starlight-type models (component dnSwitchMode).",
+      "value": {
+        "capability": {
+          "method": "getDnSwitchModeCapability",
+          "params": {
+            "image_capability": {
+              "name": "dn_switch_mode"
+            }
+          },
+          "response_path": "result.image_capability.dn_switch_mode.dn_switch_mode_range"
+        },
+        "get": {
+          "method": "getDnSwitchModeConfig",
+          "params": {
+            "image": {
+              "name": "dn_switch_mode"
+            }
+          },
+          "response_path": "result.image.dn_switch_mode.mode"
+        },
+        "set": {
+          "method": "setDnSwitchModeConfig",
+          "params": {
+            "image": {
+              "dn_switch_mode": {
+                "mode": "smart"
+              }
+            }
+          }
+        },
+        "values": [
+          "normal",
+          "starlight",
+          "color",
+          "smart",
+          "blacklight"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 442,
+          "snippet": "SET_DN_SWITCH_MODE_CONFIG(\"setDnSwitchModeConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 304,
+          "snippet": "DN_SWITCH_MODE(\"dn_switch_mode\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3438,
+          "snippet": "arrayList.add(D0(Method.GET_DN_SWITCH_MODE_CAPABILITY, Module.IMAGE_CAPABILITY, Section.NAME, Section.DN_SWITCH_MODE.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5320,
+          "snippet": "arrayList.add(D0(Method.SET_DN_SWITCH_MODE_CONFIG, Module.IMAGE, Section.DN_SWITCH_MODE, new DnSwitchModeConfig(dnSwitchMode.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DnSwitchModeConfig.java",
+          "line": 14,
+          "snippet": "@SerializedName(RtspHeaders.Values.MODE)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DnSwitchMode.java",
+          "line": 20,
+          "snippet": "BLACK_LIGHT(\"blacklight\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 305,
+          "snippet": "typeDispatcher.registerType(module13, section23, DnSwitchModeConfig.class);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.inf_lamp",
+      "kind": "request",
+      "description": "IR lamp type / intensity (component infLamp).",
+      "value": {
+        "capability": {
+          "method": "getInfLampCapability",
+          "params": {
+            "image_capability": {
+              "name": "infrared_lamp"
+            }
+          },
+          "response_fields": {
+            "inf_lamp_type_range": "string[]",
+            "inf_lamp_type_support": "string",
+            "intensity_range": "string",
+            "intensity_support": "string",
+            "smart_inf_lamp_support": "string"
+          }
+        },
+        "get_type": {
+          "method": "getInfLampType",
+          "params": {
+            "image": {
+              "name": "inf_lamp"
+            }
+          },
+          "response_path": "result.image.inf_lamp.inf_lamp_type"
+        },
+        "set_type": {
+          "method": "setInfLampType",
+          "params": {
+            "image": {
+              "inf_lamp": {
+                "inf_lamp_type": "far"
+              }
+            }
+          }
+        },
+        "inf_lamp_type_values": [
+          "far",
+          "near"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 261,
+          "snippet": "SET_INF_LAMP_TYPE(\"setInfLampType\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 261,
+          "snippet": "INF_LAMP(\"inf_lamp\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 292,
+          "snippet": "INFRARED_LAMP(\"infrared_lamp\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 726,
+          "snippet": "arrayList.add(D0(Method.GET_INF_LAMP_CAPABILITY, Module.IMAGE_CAPABILITY, Section.NAME, Section.INFRARED_LAMP.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 729,
+          "snippet": "arrayList.add(D0(Method.GET_INF_LAMP_TYPE, Module.IMAGE, Section.NAME, Section.INF_LAMP.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3180,
+          "snippet": "arrayList.add(D0(Method.SET_INF_LAMP_TYPE, Module.IMAGE, Section.INF_LAMP, new InfLampTypeBean(infLampType.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/InfLampType.java",
+          "line": 11,
+          "snippet": "FAR(\"far\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/InfLampTypeCapability.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"inf_lamp_type_range\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.led.get",
+      "kind": "request",
+      "description": "Read status LED on/off.",
+      "value": {
+        "method": "getLedStatus",
+        "module": "led",
+        "section": "name",
+        "data": [
+          "config"
+        ],
+        "params": {
+          "led": {
+            "name": [
+              "config"
+            ]
+          }
+        },
+        "response_path": "result.led.config.enabled",
+        "values": [
+          "on",
+          "off"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 56,
+          "snippet": "GET_LED_STATUS(\"getLedStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 39,
+          "snippet": "LED(\"led\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 60,
+          "snippet": "CONFIG(\"config\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3770,
+          "snippet": "return i6(new Request(Method.GET_LED_STATUS, new Wrapper(Module.LED, Section.NAME, Collections.singletonList(Section.CONFIG.getValue()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 93,
+          "snippet": "typeDispatcher.registerType(module4, section4, LedStatus.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LedStatus.java",
+          "line": 11,
+          "snippet": "private String enabled;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.led.set",
+      "kind": "request",
+      "description": "Set status LED on/off.",
+      "value": {
+        "method": "setLedStatus",
+        "module": "led",
+        "section": "config",
+        "params": {
+          "led": {
+            "config": {
+              "enabled": "off"
+            }
+          }
+        },
+        "values": [
+          "on",
+          "off"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 57,
+          "snippet": "SET_LED_STATUS(\"setLedStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3860,
+          "snippet": "return i6(new Request(Method.SET_LED_STATUS, new Wrapper(Module.LED, Section.CONFIG, new LedStatus(str))));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.led.color",
+      "kind": "request",
+      "description": "LED colour (models with led_capability.color).",
+      "value": {
+        "get": {
+          "method": "getLedColor",
+          "params": {
+            "led": {
+              "name": "color"
+            }
+          },
+          "response_path": "result.led.color.name"
+        },
+        "set": {
+          "method": "setLedColor",
+          "params": {
+            "led": {
+              "color": {
+                "name": "<colour name>"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 507,
+          "snippet": "GET_LED_COLOR(\"getLedColor\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 341,
+          "snippet": "COLOR(\"color\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3656,
+          "snippet": "arrayList.add(D0(Method.GET_LED_COLOR, Module.LED, Section.NAME, Section.COLOR.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3790,
+          "snippet": "return i6(new Request(Method.SET_LED_COLOR, new Wrapper(Module.LED, Section.COLOR, new ColorStatus(str))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ColorStatus.java",
+          "line": 12,
+          "snippet": "private String name;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.alarm.manual",
+      "kind": "request",
+      "description": "Start / stop the camera's manual alarm (siren and/or light) immediately. Component manualAlarm.",
+      "value": {
+        "method": "doManualAlarm",
+        "module": "msg_alarm",
+        "section": "manual_alarm",
+        "params": {
+          "msg_alarm": {
+            "manual_alarm": {
+              "action": "start"
+            }
+          }
+        },
+        "action_values": [
+          "start",
+          "stop"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 513,
+          "snippet": "DO_MANUAL_ALARM(\"doManualAlarm\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 52,
+          "snippet": "MSG_ALARM(\"msg_alarm\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 346,
+          "snippet": "MANUAL_ALARM(\"manual_alarm\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4186,
+          "snippet": "arrayList.add(D0(Method.DO_MANUAL_ALARM, Module.MSG_ALARM, Section.MANUAL_ALARM, new ManualAlarmAction(bool.booleanValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ManualAlarmAction.java",
+          "line": 55,
+          "snippet": "this(z12 ? \"start\" : \"stop\");"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.alarm.manual_config",
+      "kind": "request",
+      "description": "Manual-alarm settings (sound/light/duration/volume) and running status.",
+      "value": {
+        "get": {
+          "method": "getManualAlarm",
+          "params": {
+            "msg_alarm": {
+              "name": "manual_alarm_info"
+            }
+          },
+          "response_path": "result.msg_alarm.manual_alarm_info"
+        },
+        "set": {
+          "method": "setManualAlarm",
+          "params": {
+            "msg_alarm": {
+              "manual_alarm_info": {
+                "sound_alarm_enabled": "on",
+                "light_alarm_enabled": "on",
+                "alarm_type": "<siren type>",
+                "light_type": "flicker",
+                "alarm_volume": "high",
+                "alarm_duration": "30"
+              }
+            }
+          }
+        },
+        "status": {
+          "method": "getManualAlarmStatus",
+          "params": {
+            "msg_alarm": {
+              "get_manual_alarm_status": ""
+            }
+          },
+          "response_fields": {
+            "status": "int",
+            "rest_time": "int (seconds left)"
+          }
+        },
+        "manual_alarm_info_fields": {
+          "alarm_duration": "string",
+          "alarm_type": "string",
+          "alarm_volume": "string",
+          "light_alarm_enabled": "on|off",
+          "light_type": "string",
+          "sound_alarm_enabled": "on|off"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 516,
+          "snippet": "GET_MANUAL_ALARM(\"getManualAlarm\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 515,
+          "snippet": "SET_MANUAL_ALARM(\"setManualAlarm\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 514,
+          "snippet": "GET_MANUAL_ALARM_STATUS(\"getManualAlarmStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4641,
+          "snippet": "arrayList.add(D0(Method.GET_MANUAL_ALARM, Module.MSG_ALARM, Section.NAME, Section.MANUAL_ALARM_INFO.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4892,
+          "snippet": "arrayList.add(D0(Method.SET_MANUAL_ALARM, Module.MSG_ALARM, Section.MANUAL_ALARM_INFO, manualAlarmConfig));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2751,
+          "snippet": "arrayList.add(D0(Method.GET_MANUAL_ALARM_STATUS, Module.MSG_ALARM, Section.GET_MANUAL_STATUS, \"\"));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ManualAlarmConfig.java",
+          "line": 29,
+          "snippet": "@SerializedName(\"sound_alarm_enabled\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ManualAlarmStatus.java",
+          "line": 12,
+          "snippet": "@SerializedName(\"rest_time\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.alarm.config",
+      "kind": "request",
+      "description": "Camera alarm (siren/light on detection) configuration. getAlarmConfig sends an empty msg_alarm object; the response carries msg_alarm.chn1_msg_alarm_info. setAlertConfig writes msg_alarm.chn1_msg_alarm_info.",
+      "value": {
+        "get": {
+          "method": "getAlarmConfig",
+          "params": {
+            "msg_alarm": {}
+          },
+          "response_path": "result.msg_alarm.chn1_msg_alarm_info"
+        },
+        "set": {
+          "method": "setAlertConfig",
+          "params": {
+            "msg_alarm": {
+              "chn1_msg_alarm_info": {
+                "enabled": "on",
+                "alarm_type": "0",
+                "light_type": "0",
+                "alarm_mode": [
+                  "sound",
+                  "light"
+                ],
+                "alarm_volume": "high",
+                "alarm_duration": "0"
+              }
+            }
+          }
+        },
+        "set_battery_cam": {
+          "method": "setAlarmConfig",
+          "params": {
+            "msg_alarm": {
+              "<BatCamAlarmConfig fields>": "..."
+            }
+          }
+        },
+        "chn1_msg_alarm_info_fields": {
+          "enabled": "on|off",
+          "alarm_mode": "string[] (e.g. sound, light)",
+          "alarm_type": "string",
+          "light_type": "string",
+          "light_alarm_enabled": "on|off",
+          "sound_alarm_enabled": "on|off",
+          "alarm_volume": "string",
+          "alarm_duration": "string",
+          "light_rbl_enabled": "on|off (red/blue light)"
+        },
+        "capability": {
+          "path": "msg_alarm.capability",
+          "fields": [
+            "alarm_func",
+            "alarm_type",
+            "alarm_volume_support",
+            "alarm_duration_support",
+            "red_blue_light_alarm_support",
+            "usr_def_audio_alarm_support",
+            "usr_def_audio_max_duration",
+            "usr_def_audio_alarm_max_num"
+          ]
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 352,
+          "snippet": "GET_ALARM_CONFIG(\"getAlarmConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 75,
+          "snippet": "SET_ALERT_CONFIG(\"setAlertConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2744,
+          "snippet": "arrayList.add(D0(Method.GET_ALARM_CONFIG, Module.MSG_ALARM, Section.EMPTY, Collections.EMPTY_MAP));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1396,
+          "snippet": "return i6(new Request(Method.SET_ALERT_CONFIG, new Wrapper(Module.MSG_ALARM, Section.ALERT_INFO, alarmInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 141,
+          "snippet": "ALERT_INFO(\"chn1_msg_alarm_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 313,
+          "snippet": "typeDispatcher.registerType(module38, Section.MSG_ALARM_INFO, Chn1MsgAlarmInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Chn1MsgAlarmInfo.java",
+          "line": 18,
+          "snippet": "@SerializedName(\"alarm_mode\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/AlarmCapability.java",
+          "line": 27,
+          "snippet": "@SerializedName(\"alarm_func\")"
+        },
+        {
+          "source": "jadx",
+          "file": "iv0/p0.java",
+          "line": 267,
+          "snippet": "return i6(new Request(Method.SET_ALARM_CONFIG, new Wrapper(Module.MSG_ALARM, Section.EMPTY, batCamAlarmConfig)));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.alarm.type_lists",
+      "kind": "request",
+      "description": "Available siren sounds and light types for alarm configuration.",
+      "value": {
+        "siren_types": {
+          "method": "getSirenTypeList",
+          "params": {
+            "msg_alarm": {}
+          },
+          "response_field": "siren_type_list (string[])"
+        },
+        "light_types": {
+          "method": "getLightTypeList",
+          "params": {
+            "msg_alarm": {}
+          },
+          "response_field": "light_type_list (string[])"
+        },
+        "light_type_values_seen": [
+          "flicker",
+          "lighting"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 335,
+          "snippet": "GET_SIREN_TYPE_LIST(\"getSirenTypeList\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 356,
+          "snippet": "GET_LIGHT_TYPE_LIST(\"getLightTypeList\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "iv0/p0.java",
+          "line": 58,
+          "snippet": "arrayList.add(D0(Method.GET_SIREN_TYPE_LIST, module, section, map));"
+        },
+        {
+          "source": "jadx",
+          "file": "iv0/p0.java",
+          "line": 59,
+          "snippet": "arrayList.add(D0(Method.GET_LIGHT_TYPE_LIST, module, section, map));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SirenTypeList.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"siren_type_list\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LightTypeList.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"light_type_list\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/AlarmLightType.java",
+          "line": 12,
+          "snippet": "FLICKER(\"flicker\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.siren.status",
+      "kind": "request",
+      "description": "Siren on/off for models with the 'siren' component. Battery/standalone cameras (BatteryCam repo) send it under module msg_alarm; camera hubs under module siren. Response: status + time_left.",
+      "value": {
+        "set_camera": {
+          "method": "setSirenStatus",
+          "params": {
+            "msg_alarm": {
+              "status": "on",
+              "siren_type": "<optional>",
+              "volume": "<optional>",
+              "duration": 30
+            }
+          }
+        },
+        "set_hub": {
+          "method": "setSirenStatus",
+          "params": {
+            "siren": {
+              "status": "on"
+            }
+          }
+        },
+        "get_camera": {
+          "method": "getSirenStatus",
+          "params": {
+            "msg_alarm": {}
+          }
+        },
+        "get_hub": {
+          "method": "getSirenStatus",
+          "params": {
+            "siren": {}
+          }
+        },
+        "response_fields": {
+          "status": "on|off",
+          "time_left": "int"
+        },
+        "siren_config": {
+          "get": {
+            "method": "getSirenConfig",
+            "params": {
+              "siren": {}
+            }
+          },
+          "set": {
+            "method": "setSirenConfig",
+            "params": {
+              "siren": {
+                "<SirenConfig>": "..."
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 339,
+          "snippet": "SET_SIREN_STATUS(\"setSirenStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 338,
+          "snippet": "GET_SIREN_STATUS(\"getSirenStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "iv0/p0.java",
+          "line": 364,
+          "snippet": "return i6(new Request(Method.SET_SIREN_STATUS, new Wrapper(Module.MSG_ALARM, Section.EMPTY, sirenStatusParams)));"
+        },
+        {
+          "source": "jadx",
+          "file": "iv0/p0.java",
+          "line": 60,
+          "snippet": "arrayList.add(D0(Method.GET_SIREN_STATUS, module, section, map));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1144,
+          "snippet": "arrayList.add(D0(Method.GET_SIREN_STATUS, Module.SIREN, Section.EMPTY, Collections.EMPTY_MAP));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/protocol/camerahub/u3.java",
+          "line": 205,
+          "snippet": "return j6(D0(Method.SET_SIREN_STATUS, Module.SIREN, Section.EMPTY, sirenStatusParams));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SirenStatusParams.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"siren_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SirenStatusResult.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"time_left\")"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "control.alarm.plan",
+      "kind": "request",
+      "description": "Alarm schedule (msg_alarm_plan module).",
+      "value": {
+        "get": {
+          "method": "getAlarmPlan",
+          "params": {
+            "msg_alarm_plan": {}
+          },
+          "response_path": "result.msg_alarm_plan.chn1_msg_alarm_plan"
+        },
+        "set": {
+          "method": "setAlarmPlan",
+          "params": {
+            "msg_alarm_plan": {
+              "<plan fields>": "..."
+            }
+          }
+        },
+        "chn1_msg_alarm_plan_fields": {
+          "enabled": "on|off",
+          "alarm_plan_1": "string (time range encoding)"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 354,
+          "snippet": "GET_ALARM_PLAN(\"getAlarmPlan\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 53,
+          "snippet": "MSG_ALARM_PLAN(\"msg_alarm_plan\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "iv0/p0.java",
+          "line": 57,
+          "snippet": "arrayList.add(D0(Method.GET_ALARM_PLAN, Module.MSG_ALARM_PLAN, section, map));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5124,
+          "snippet": "arrayList.add(D0(Method.SET_ALARM_PLAN, Module.MSG_ALARM_PLAN, Section.EMPTY, batCamAlarmPlan));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 320,
+          "snippet": "typeDispatcher.registerType(Module.MSG_ALARM_PLAN, Section.MSG_ALARM_PLAN, AlarmPlanInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/AlarmPlanInfo.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"alarm_plan_1\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.motion_detection.get",
+      "kind": "request",
+      "description": "Read motion detection config (and optionally region table).",
+      "value": {
+        "method": "getDetectionConfig",
+        "module": "motion_detection",
+        "params": {
+          "motion_detection": {
+            "name": [
+              "motion_det"
+            ],
+            "table": [
+              "region_info"
+            ]
+          }
+        },
+        "response_path": "result.motion_detection.motion_det",
+        "fields": {
+          "enabled": "on|off",
+          "digital_sensitivity": "string(int)",
+          "sensitivity": "string (legacy: low|normal|high)",
+          "enhanced": "on|off",
+          "target": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 69,
+          "snippet": "GET_DETECTION_CONFIG(\"getDetectionConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 63,
+          "snippet": "MOTION_DETECTION(\"motion_detection\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 146,
+          "snippet": "MOTION_DET(\"motion_det\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4933,
+          "snippet": "return new Request(Method.GET_DETECTION_CONFIG, new Wrappers(Arrays.asList(new Wrapper(module, Section.NAME, Collections.singletonList(Section.MOTI..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 169,
+          "snippet": "typeDispatcher.registerType(module16, Section.MOTION_DET, MotionDetectConfig.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MotionDetectConfig.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"digital_sensitivity\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.motion_detection.set",
+      "kind": "request",
+      "description": "Enable/disable motion detection and set sensitivity. App UI snaps the slider to three levels and sends digital_sensitivity = level + 20: Low = 20, Normal = 60, High = 80.",
+      "value": {
+        "method": "setDetectionConfig",
+        "module": "motion_detection",
+        "section": "motion_det",
+        "params": {
+          "motion_detection": {
+            "motion_det": {
+              "enabled": "on",
+              "digital_sensitivity": "60"
+            }
+          }
+        },
+        "digital_sensitivity_levels": {
+          "low": "20",
+          "normal": "60",
+          "high": "80"
+        },
+        "multi_channel": {
+          "motion_detection": {
+            "chn_id": [
+              1,
+              2
+            ],
+            "motion_det_chn": {
+              "1": {
+                "enabled": "on"
+              },
+              "2": {
+                "enabled": "on"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 70,
+          "snippet": "SET_DETECTION_CONFIG(\"setDetectionConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 401,
+          "snippet": "return D0(Method.SET_DETECTION_CONFIG, Module.MOTION_DETECTION, Section.MOTION_DET, motionDetectConfig);"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1218,
+          "snippet": "return new Request(Method.SET_DETECTION_CONFIG, new Wrappers(Arrays.asList(new Wrapper(module, section, arrayList), new Wrapper(module, Section.MOT..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MotionDetectConfig.java",
+          "line": 152,
+          "snippet": "String strValueOf = String.valueOf(i12);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamera/setting/MotionDetectionViewModel.java",
+          "line": 930,
+          "snippet": "J4(\"High\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamera/setting/MotionDetectionViewModel.java",
+          "line": 948,
+          "snippet": "V4(i13 + 20);"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "control.ai_detection.person_vehicle_pet",
+      "kind": "request",
+      "description": "Person / vehicle / pet detection toggles (components personDetection, vehicleDetection, petDetection). Same shape for all three; sensitivity range from <module>.capability.sensitivity_range when supported.",
+      "value": {
+        "person": {
+          "get": {
+            "method": "getPersonDetectionConfig",
+            "params": {
+              "people_detection": {
+                "name": [
+                  "detection"
+                ]
+              }
+            },
+            "response_path": "result.people_detection.detection"
+          },
+          "set": {
+            "method": "setPersonDetectionConfig",
+            "params": {
+              "people_detection": {
+                "detection": {
+                  "enabled": "on",
+                  "sensitivity": "50"
+                }
+              }
+            }
+          }
+        },
+        "vehicle": {
+          "get": {
+            "method": "getVehicleDetectionConfig",
+            "params": {
+              "vehicle_detection": {
+                "name": [
+                  "detection"
+                ]
+              }
+            }
+          },
+          "set": {
+            "method": "setVehicleDetectionConfig",
+            "params": {
+              "vehicle_detection": {
+                "detection": {
+                  "enabled": "on",
+                  "sensitivity": "50"
+                }
+              }
+            }
+          }
+        },
+        "pet": {
+          "get": {
+            "method": "getPetDetectionConfig",
+            "params": {
+              "pet_detection": {
+                "name": [
+                  "detection"
+                ]
+              }
+            }
+          },
+          "set": {
+            "method": "setPetDetectionConfig",
+            "params": {
+              "pet_detection": {
+                "detection": {
+                  "enabled": "on",
+                  "sensitivity": "50"
+                }
+              }
+            }
+          }
+        },
+        "fields": {
+          "enabled": "on|off",
+          "sensitivity": "string(int)"
+        },
+        "capability_section": "capability -> {sensitivity_range}"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 227,
+          "snippet": "SET_PERSON_DETECTION_CONFIG(\"setPersonDetectionConfig\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 75,
+          "snippet": "PEOPLE_DETECTION(\"people_detection\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 99,
+          "snippet": "VEHICLE_DETECTION(\"vehicle_detection\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 100,
+          "snippet": "PET_DETECTION(\"pet_detection\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 191,
+          "snippet": "DETECTION(\"detection\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 393,
+          "snippet": "return D0(Method.SET_PERSON_DETECTION_CONFIG, Module.PEOPLE_DETECTION, Section.DETECTION, new HumanRecognitionInfo(z12, num));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2247,
+          "snippet": "return D0(Method.GET_PERSON_DETECTION_CONFIG, Module.PEOPLE_DETECTION, Section.NAME, arrayList);"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3117,
+          "snippet": "return D0(Method.SET_VEHICLE_DETECTION_CONFIG, Module.VEHICLE_DETECTION, Section.DETECTION, new DetectionBean(camDetectionSettingCommonBean.getConf..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3187,
+          "snippet": "return D0(Method.SET_PET_DETECTION_CONFIG, Module.PET_DETECTION, Section.DETECTION, new DetectionBean(camDetectionSettingCommonBean.getConfigA().ge..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/HumanRecognitionInfo.java",
+          "line": 13,
+          "snippet": "private final String sensitivity;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DetectionCapabilityBean.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"sensitivity_range\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.image.flip",
+      "kind": "request",
+      "description": "Image flip / rotation (component videoRotation). Read image.switch; flip_type 'center' = rotated 180 deg (upside-down mount), 'off' = normal. videoRotation==2 adds rotate_type_by_app for 90-degree rotation.",
+      "value": {
+        "get": {
+          "method": "getRotationStatus",
+          "params": {
+            "image": {
+              "name": [
+                "switch"
+              ]
+            }
+          },
+          "response_path": "result.image.switch.flip_type"
+        },
+        "set_flip": {
+          "method": "setRotationStatus",
+          "params": {
+            "image": {
+              "switch": {
+                "flip_type": "center"
+              }
+            }
+          }
+        },
+        "set_rotation_v2": {
+          "method": "setRotationStatus",
+          "params": {
+            "image": {
+              "switch": {
+                "flip_type": "off",
+                "rotate_type_by_app": "clockwise_90"
+              }
+            }
+          }
+        },
+        "flip_type_values": [
+          "off",
+          "center",
+          "left_and_right",
+          "up_and_down"
+        ],
+        "rotate_type_by_app_values": [
+          "off",
+          "clockwise_90",
+          "anticlockwise_90"
+        ],
+        "capability": {
+          "method": "getImageCapability",
+          "params": {
+            "image_capability": {
+              "name": "flip"
+            }
+          },
+          "response_path": "result.image_capability.flip",
+          "fields": {
+            "flip_type": "string[]",
+            "app_rotate_support": "bool"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 189,
+          "snippet": "GET_ROTATION_STATUS(\"getRotationStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 190,
+          "snippet": "SET_ROTATION_STATUS(\"setRotationStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 530,
+          "snippet": "FLIP(\"flip\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2321,
+          "snippet": "return i6(new Request(Method.GET_ROTATION_STATUS, new Wrapper(Module.IMAGE, Section.NAME, Collections.singletonList(Section.SWITCH.getValue()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2919,
+          "snippet": "return i6(new Request(Method.SET_ROTATION_STATUS, new Wrapper(Module.IMAGE, Section.SWITCH, new ImageFlip(z12))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2976,
+          "snippet": "return i6(new Request(Method.SET_ROTATION_STATUS, new Wrapper(Module.IMAGE, Section.SWITCH, new ImageRotation(str, str2))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 766,
+          "snippet": "arrayList.add(D0(Method.GET_IMAGE_CAPABILITY, Module.IMAGE_CAPABILITY, Section.NAME, Section.FLIP.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ImageFlip.java",
+          "line": 312,
+          "snippet": "this(null, null, null, z12 ? \"center\" : \"off\", null, null, null, null, null, null, null, 2039, null);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ImageFlipType.java",
+          "line": 20,
+          "snippet": "public static final String UP_AND_DOWN = \"up_and_down\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ImageRotateTypeByApp.java",
+          "line": 15,
+          "snippet": "public static final String CLOCKWISE_90 = \"clockwise_90\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ImageRotation.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"rotate_type_by_app\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.image.ldc",
+      "kind": "request",
+      "description": "Lens distortion correction (component ldc).",
+      "value": {
+        "get": {
+          "method": "getLdc",
+          "params": {
+            "image": {
+              "name": "switch"
+            }
+          },
+          "response_path": "result.image.switch.ldc"
+        },
+        "set": {
+          "method": "setLdc",
+          "params": {
+            "image": {
+              "switch": {
+                "ldc": "on"
+              }
+            }
+          }
+        },
+        "values": [
+          "on",
+          "off"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 197,
+          "snippet": "GET_LDC(\"getLdc\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 198,
+          "snippet": "SET_LDC(\"setLdc\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3531,
+          "snippet": "return i6(new Request(Method.GET_LDC, new Wrapper(Module.IMAGE, Section.NAME, Section.SWITCH.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3688,
+          "snippet": "return i6(new Request(Method.SET_LDC, new Wrapper(Module.IMAGE, Section.SWITCH, new ImageFlip(z12 ? \"on\" : \"off\"))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ImageFlip.java",
+          "line": 27,
+          "snippet": "@SerializedName(\"ldc\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.audio.get",
+      "kind": "request",
+      "description": "Read speaker / microphone config, plus microphone capability.",
+      "value": {
+        "method": "getAudioConfig",
+        "params": {
+          "audio_config": {
+            "name": [
+              "speaker",
+              "microphone"
+            ]
+          }
+        },
+        "params_with_capability": {
+          "audio_config": {
+            "name": [
+              "speaker",
+              "microphone"
+            ]
+          },
+          "audio_capability": {
+            "name": [
+              "device_microphone"
+            ]
+          }
+        },
+        "response_paths": {
+          "speaker_volume": "result.audio_config.speaker.volume",
+          "mic_volume": "result.audio_config.microphone.volume",
+          "mic_capability": "result.audio_capability.device_microphone"
+        },
+        "microphone_fields": {
+          "volume": "string(int)",
+          "bitrate": "string",
+          "channels": "string",
+          "encode_type": "string",
+          "sampling_rate": "string"
+        },
+        "capability_fields": {
+          "volume": "string",
+          "mute": "string",
+          "encode_type": "string[]",
+          "sampling_rate": "string[]",
+          "bitrate": "string[]",
+          "channels": "string"
+        },
+        "other_sections": {
+          "record_audio": "audio_config.record_audio.enabled (record audio on/off)",
+          "speaker_algo": "hs/ns/ns_mode",
+          "microphone_algo": "aec/hs/ns/sys_aec"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 192,
+          "snippet": "GET_AUDIO_CONFIG(AbstractHub.getAudioConfig),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 66,
+          "snippet": "AUDIO_CONFIG(\"audio_config\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 67,
+          "snippet": "AUDIO_CAPABILITY(\"audio_capability\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 179,
+          "snippet": "SPEAKER(\"speaker\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 180,
+          "snippet": "MICROPHONE(\"microphone\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3221,
+          "snippet": "return i6(new Request(Method.GET_AUDIO_CONFIG, new Wrapper(Module.AUDIO_CONFIG, Section.NAME, new String[]{Section.SPEAKER.getValue(), Section.MICR..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2941,
+          "snippet": "return j6(new Request(Method.GET_AUDIO_CONFIG, new Wrappers(Arrays.asList(new Wrapper(module, section, new String[]{Section.SPEAKER.getValue(), Sec..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 197,
+          "snippet": "typeDispatcher.registerType(module22, Section.MICROPHONE, MicroPhoneInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 198,
+          "snippet": "typeDispatcher.registerType(module22, Section.SPEAKER, SpeakerInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MicrophoneCapability.java",
+          "line": 23,
+          "snippet": "@SerializedName(\"encode_type\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.audio.set_volume",
+      "kind": "request",
+      "description": "Set speaker or microphone volume. Volume is an integer string (UI range 0-100, inferred). For the microphone the app sends back the full previously read microphone object with the new volume.",
+      "value": {
+        "speaker": {
+          "method": "setSpeakerVolume",
+          "params": {
+            "audio_config": {
+              "speaker": {
+                "volume": "80"
+              }
+            }
+          }
+        },
+        "microphone": {
+          "method": "setMicrophoneVolume",
+          "params": {
+            "audio_config": {
+              "microphone": {
+                "volume": "80"
+              }
+            }
+          }
+        },
+        "record_audio": {
+          "method": "setRecordAudio",
+          "params": {
+            "audio_config": {
+              "record_audio": {
+                "enabled": "on"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 195,
+          "snippet": "SET_SPEAKER_VOLUME(\"setSpeakerVolume\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 194,
+          "snippet": "SET_MICROPHONE_VOLUME(\"setMicrophoneVolume\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1350,
+          "snippet": "return i6(new Request(Method.SET_SPEAKER_VOLUME, new Wrapper(Module.AUDIO_CONFIG, Section.SPEAKER, speakerInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5325,
+          "snippet": "return i6(new Request(Method.SET_MICROPHONE_VOLUME, new Wrapper(Module.AUDIO_CONFIG, Section.MICROPHONE, microPhoneInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4375,
+          "snippet": "return i6(new Request(Method.SET_RECORD_AUDIO, new Wrapper(Module.AUDIO_CONFIG, Section.RECORD_AUDIO, new RecordAudioInfo(z12 ? \"on\" : \"off\"))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameraapi/repo/VolumeRepository.java",
+          "line": 368,
+          "snippet": "final SpeakerInfo speakerInfo = new SpeakerInfo(Integer.toString(i12));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SpeakerInfo.java",
+          "line": 11,
+          "snippet": "private String volume;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.system.reboot",
+      "kind": "request",
+      "description": "Reboot the camera now.",
+      "value": {
+        "method": "rebootDevice",
+        "module": "system",
+        "section": "reboot",
+        "params": {
+          "system": {
+            "reboot": {}
+          }
+        },
+        "legacy_external": {
+          "method": "rebootDevice",
+          "params": {
+            "system": {
+              "reboot": "null"
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 47,
+          "snippet": "REBOOT_DEVICE(\"rebootDevice\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 37,
+          "snippet": "SYSTEM(\"system\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 107,
+          "snippet": "REBOOT(AbstractSmartDevice.reboot),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4112,
+          "snippet": "return i6(new Request(Method.REBOOT_DEVICE, new Wrapper(Module.SYSTEM, Section.REBOOT, Collections.EMPTY_MAP)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/iot/devices/AbstractSmartDevice.java",
+          "line": 102,
+          "snippet": "public static final String reboot = \"reboot\";"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.system.timing_reboot",
+      "kind": "request",
+      "description": "Scheduled reboot.",
+      "value": {
+        "get": {
+          "method": "getReboot",
+          "params": {
+            "timing_reboot": {
+              "name": [
+                "reboot"
+              ]
+            }
+          },
+          "response_path": "result.timing_reboot.reboot"
+        },
+        "set": {
+          "method": "setReboot",
+          "params": {
+            "timing_reboot": {
+              "reboot": {
+                "enabled": "on",
+                "day": "7",
+                "time": "03:00:00",
+                "random_range": 30
+              }
+            }
+          }
+        },
+        "fields": {
+          "enabled": "on|off",
+          "day": "string",
+          "time": "string",
+          "now": "string",
+          "random_range": "int"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 45,
+          "snippet": "GET_REBOOT(\"getReboot\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 46,
+          "snippet": "SET_REBOOT(\"setReboot\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 59,
+          "snippet": "TIMING_REBOOT(\"timing_reboot\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4719,
+          "snippet": "return i6(new Request(Method.GET_REBOOT, new Wrapper(Module.TIMING_REBOOT, Section.NAME, Collections.singletonList(Section.REBOOT.getValue()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4251,
+          "snippet": "return i6(new Request(Method.SET_REBOOT, new Wrapper(Module.TIMING_REBOOT, Section.REBOOT, rebootInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 163,
+          "snippet": "typeDispatcher.registerType(Module.TIMING_REBOOT, Section.REBOOT, RebootInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/RebootInfo.java",
+          "line": 16,
+          "snippet": "private Integer random_range;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.time.get",
+      "kind": "request",
+      "description": "Read clock, timezone and DST (the app batches all three).",
+      "value": {
+        "method": "multipleRequest",
+        "params": {
+          "requests": [
+            {
+              "method": "getClockStatus",
+              "params": {
+                "system": {
+                  "name": "clock_status"
+                }
+              }
+            },
+            {
+              "method": "getTimezone",
+              "params": {
+                "system": {
+                  "name": "basic"
+                }
+              }
+            },
+            {
+              "method": "getDstRule",
+              "params": {
+                "system": {
+                  "name": "dst"
+                }
+              }
+            }
+          ]
+        },
+        "response_paths": {
+          "clock": "result.system.clock_status",
+          "timezone": "result.system.basic",
+          "dst": "result.system.dst"
+        },
+        "clock_status_fields": {
+          "seconds_from_1970": "long",
+          "local_time": "string"
+        },
+        "basic_fields": {
+          "timezone": "string (e.g. UTC+07:00)",
+          "timing_mode": "string (ntp|manual)",
+          "zone_id": "string (IANA id)",
+          "region": "string",
+          "offset": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 58,
+          "snippet": "GET_CLOCK_STATUS(\"getClockStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 35,
+          "snippet": "GET_TIMEZONE(\"getTimezone\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 64,
+          "snippet": "GET_DST_RULE(\"getDstRule\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 681,
+          "snippet": "public Request D1() {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 686,
+          "snippet": "arrayList.add(D0(method, module, section, Section.CLOCK_STATUS.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 687,
+          "snippet": "arrayList.add(D0(Method.GET_TIMEZONE, module, section, Section.BASIC.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 688,
+          "snippet": "arrayList.add(D0(Method.GET_DST_RULE, module, section, Section.DST.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 49,
+          "snippet": "CLOCK_STATUS(\"clock_status\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 50,
+          "snippet": "BASIC(\"basic\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 227,
+          "snippet": "DST(\"dst\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ClockStatus.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"seconds_from_1970\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Timezone.java",
+          "line": 30,
+          "snippet": "@SerializedName(\"zone_id\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Timezone.java",
+          "line": 20,
+          "snippet": "@SerializedName(\"timing_mode\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.time.set_timezone",
+      "kind": "request",
+      "description": "Set timezone. App always sends timing_mode 'ntp'.",
+      "value": {
+        "method": "setTimezone",
+        "module": "system",
+        "section": "basic",
+        "params": {
+          "system": {
+            "basic": {
+              "timezone": "UTC+07:00",
+              "timing_mode": "ntp",
+              "zone_id": "Asia/Ho_Chi_Minh"
+            }
+          }
+        },
+        "optional": {
+          "region": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 36,
+          "snippet": "SET_TIMEZONE(\"setTimezone\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2424,
+          "snippet": "return i6(new Request(Method.SET_TIMEZONE, new Wrapper(Module.SYSTEM, Section.BASIC, new Timezone(str, str2, str3))));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Timezone.java",
+          "line": 151,
+          "snippet": "this(zone, \"ntp\", region, null, null);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.sd.get_status",
+      "kind": "request",
+      "description": "SD card status/capacity. Response hd_info is a list of single-key maps; the value of each map is the disk info (key typically 'hd_info_1').",
+      "value": {
+        "method": "getSdCardStatus",
+        "module": "harddisk_manage",
+        "section": "table",
+        "data": [
+          "hd_info"
+        ],
+        "params": {
+          "harddisk_manage": {
+            "table": [
+              "hd_info"
+            ]
+          }
+        },
+        "response_path": "result.harddisk_manage.hd_info[0].<only key>",
+        "response_template": {
+          "harddisk_manage": {
+            "hd_info": [
+              {
+                "hd_info_1": {
+                  "status": "normal",
+                  "total_space": "29.7GB",
+                  "free_space": "10.1GB",
+                  "video_total_space": "28GB",
+                  "video_free_space": "9GB",
+                  "percent": 34,
+                  "disk_name": "1",
+                  "type": "local",
+                  "write_protect": "0",
+                  "record_duration": "...",
+                  "record_start_time": "..."
+                }
+              }
+            ]
+          }
+        },
+        "fields": [
+          "status",
+          "detect_status",
+          "type",
+          "disk_name",
+          "total_space",
+          "free_space",
+          "video_total_space",
+          "video_free_space",
+          "picture_total_space",
+          "picture_free_space",
+          "msg_push_total_space",
+          "msg_push_free_space",
+          "percent",
+          "record_duration",
+          "record_free_duration",
+          "record_start_time",
+          "write_protect",
+          "storage_version",
+          "security_status"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 22,
+          "snippet": "GET_SD_CARD_STATUS(\"getSdCardStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 46,
+          "snippet": "HARD_DISK_MANAGE(\"harddisk_manage\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 77,
+          "snippet": "HARD_DISK_INFO(\"hd_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2757,
+          "snippet": "arrayList.add(D0(Method.GET_SD_CARD_STATUS, Module.HARD_DISK_MANAGE, Section.TABLE, Collections.singletonList(Section.HARD_DISK_INFO.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/HardDiskInfo.java",
+          "line": 122,
+          "snippet": "arrayList.add((HardDiskInfo) CollectionsKt.y0(((Map) it.next()).values()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/HardDiskInfo.java",
+          "line": 40,
+          "snippet": "@SerializedName(\"video_free_space\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/HardDiskInfo.java",
+          "line": 84,
+          "snippet": "@SerializedName(\"total_space\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "enum.sd_status",
+      "kind": "enum",
+      "description": "hd_info.status values (SdCardStatus).",
+      "value": {
+        "values": [
+          "normal",
+          "unformatted",
+          "abnormal",
+          "formatting",
+          "offline",
+          "insufficient",
+          "full",
+          "DilatantSuspect",
+          "recognizing",
+          "mismatched"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SdCardStatus.java",
+          "line": 19,
+          "snippet": "NORMAL(\"normal\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SdCardStatus.java",
+          "line": 20,
+          "snippet": "UNFORMATTED(\"unformatted\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SdCardStatus.java",
+          "line": 28,
+          "snippet": "MISMATCHED(\"mismatched\");"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.sd.format",
+      "kind": "request",
+      "description": "Format SD card and poll progress.",
+      "value": {
+        "format": {
+          "method": "formatSdCard",
+          "params": {
+            "harddisk_manage": {
+              "format_hd": "1"
+            }
+          }
+        },
+        "status": {
+          "method": "getSdCardFormatStatus",
+          "params": {
+            "harddisk_manage": {
+              "get_format_status": {
+                "disk_name": "1"
+              }
+            }
+          },
+          "response_fields": {
+            "percent": "string",
+            "result": "string",
+            "status": "success|waiting|failed"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 23,
+          "snippet": "FORMAT_SD_CARD(\"formatSdCard\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 78,
+          "snippet": "HARD_DISK_FORMAT(\"format_hd\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 79,
+          "snippet": "HARD_DISK_FORMAT_STATUS(\"get_format_status\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4626,
+          "snippet": "return i6(new Request(Method.FORMAT_SD_CARD, new Wrapper(Module.HARD_DISK_MANAGE, Section.HARD_DISK_FORMAT, \"1\")));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1312,
+          "snippet": "return i6(new Request(Method.GET_SD_CARD_FORMAT_STATUS, new Wrapper(Module.HARD_DISK_MANAGE, Section.HARD_DISK_FORMAT_STATUS, DiskInfo.getSingleton..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SDCardFormatStatus.java",
+          "line": 13,
+          "snippet": "FAILED(\"failed\");"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "control.record_plan",
+      "kind": "request",
+      "description": "Recording schedule for channel 1.",
+      "value": {
+        "get": {
+          "method": "getRecordPlan",
+          "params": {
+            "record_plan": {
+              "name": [
+                "chn1_channel"
+              ]
+            }
+          },
+          "response_path": "result.record_plan.chn1_channel"
+        },
+        "set": {
+          "method": "setRecordPlan",
+          "params": {
+            "record_plan": {
+              "chn1_channel": {
+                "enabled": "on",
+                "monday": "[\"0000-2400:2\"]",
+                "tuesday": "...",
+                "wednesday": "...",
+                "thursday": "...",
+                "friday": "...",
+                "saturday": "...",
+                "sunday": "..."
+              }
+            }
+          }
+        },
+        "fields": {
+          "enabled": "on|off",
+          "monday..sunday": "string (encoded list of HHMM-HHMM:type entries; format external/inferred)"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 184,
+          "snippet": "GET_RECORD_PLAN(\"getRecordPlan\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 185,
+          "snippet": "SET_RECORD_PLAN(\"setRecordPlan\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 61,
+          "snippet": "RECORD_PLAN(\"record_plan\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 139,
+          "snippet": "CHN1_CHANNEL(\"chn1_channel\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4859,
+          "snippet": "return i6(new Request(Method.GET_RECORD_PLAN, new Wrapper(Module.RECORD_PLAN, Section.NAME, Collections.singletonList(Section.CHN1_CHANNEL.getValue..."
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4438,
+          "snippet": "return i6(new Request(Method.SET_RECORD_PLAN, new Wrapper(Module.RECORD_PLAN, Section.CHN1_CHANNEL, recordPlanInfo)));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 166,
+          "snippet": "typeDispatcher.registerType(Module.RECORD_PLAN, Section.CHN1_CHANNEL, RecordPlanInfo.class);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/RecordPlanInfo.java",
+          "line": 14,
+          "snippet": "private String monday;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.network.connection_type",
+      "kind": "request",
+      "description": "Read uplink type and Wi-Fi signal.",
+      "value": {
+        "method": "getConnectionType",
+        "params": {
+          "network": {
+            "get_connection_type": "null"
+          }
+        },
+        "params_list_form": {
+          "network": {
+            "get_connection_type": [
+              "null"
+            ]
+          }
+        },
+        "response_fields": {
+          "link_type": "string (wifi|ethernet|...)",
+          "rssi": "string",
+          "rssiValue": "int",
+          "signal_intensity": "int",
+          "isp": "string",
+          "limit_mode": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 43,
+          "snippet": "GET_CONNECTION_TYPE(\"getConnectionType\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 51,
+          "snippet": "NETWORK(AuthenticationConstants.FACET_NETWORK),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 57,
+          "snippet": "GET_CONNECTION_TYPE(\"get_connection_type\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 985,
+          "snippet": "arrayList.add(D0(Method.GET_CONNECTION_TYPE, Module.NETWORK, Section.GET_CONNECTION_TYPE, Section.EMPTY.getValue()));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2065,
+          "snippet": "arrayList.add(D0(Method.GET_CONNECTION_TYPE, Module.NETWORK, Section.GET_NETWORK_INFO, Collections.singletonList(Section.EMPTY.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ConnectionType.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"link_type\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.system.last_alarm_info",
+      "kind": "request",
+      "description": "Last alarm/event time and type.",
+      "value": {
+        "method": "getLastAlarmInfo",
+        "params": {
+          "system": {
+            "name": [
+              "last_alarm_info"
+            ]
+          }
+        },
+        "response_path": "result.system.last_alarm_info",
+        "fields": {
+          "last_alarm_time": "string",
+          "last_alarm_type": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 68,
+          "snippet": "GET_LAST_ALARM_INFO(\"getLastAlarmInfo\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 185,
+          "snippet": "LAST_ALARM_INFO(\"last_alarm_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3375,
+          "snippet": "return i6(new Request(Method.GET_LAST_ALARM_INFO, new Wrapper(Module.SYSTEM, Section.NAME, Section.LAST_ALARM_INFO.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LastAlarmInfo.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"last_alarm_time\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "control.video.quality_capability",
+      "kind": "request",
+      "description": "Stream encoder settings and capability (main/minor streams); useful to label RTSP streams.",
+      "value": {
+        "qualities": {
+          "method": "getVideoQualities",
+          "params": {
+            "video": {
+              "name": [
+                "main"
+              ]
+            }
+          },
+          "response_path": "result.video.main",
+          "fields": [
+            "resolution",
+            "bitrate",
+            "bitrate_type",
+            "frame_rate",
+            "encode_type",
+            "quality",
+            "stream_type",
+            "hdr"
+          ]
+        },
+        "capability": {
+          "method": "getVideoCapability",
+          "params": {
+            "video_capability": {
+              "name": [
+                "main",
+                "minor"
+              ]
+            }
+          },
+          "response_path": "result.video_capability.main",
+          "fields": [
+            "resolutions",
+            "bitrates",
+            "frame_rates",
+            "encode_types",
+            "qualitys",
+            "hdrs"
+          ]
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 166,
+          "snippet": "GET_VIDEO_QUALITIES(\"getVideoQualities\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 169,
+          "snippet": "GET_VIDEO_CAPABILITY(\"getVideoCapability\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4567,
+          "snippet": "return i6(new Request(Method.GET_VIDEO_QUALITIES, new Wrapper(Module.VIDEO, Section.NAME, Collections.singletonList(Section.VIDEO_MAIN.getValue()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 720,
+          "snippet": "arrayList.add(D0(Method.GET_VIDEO_CAPABILITY, Module.VIDEO_CAPABILITY, section, Arrays.asList(section2.getValue(), Section.VIDEO_MINOR.getValue())));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/VideoCapability.java",
+          "line": 54,
+          "snippet": "private final List<String> resolutions;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "error_code.common",
+      "kind": "error_code",
+      "description": "Common camera error codes (CameraErrorCode).",
+      "value": {
+        "-40401": "SESSION_EXPIRED",
+        "-40404": "DEVICE_BLOCKED",
+        "-40405": "DEVICE_FACTORY",
+        "-40406": "OUT_OF_LIMIT",
+        "-40407": "OTHER_ERROR",
+        "-40408": "SYSTEM_BLOCKED",
+        "-40409": "NONCE_EXPIRED",
+        "-40412": "HOMEKIT_LOGIN_FAIL",
+        "-40413": "INVALID_NONCE",
+        "-40414": "NEED_LOGIN_BY_LOCAL_PASSWORD",
+        "-40106": "UNSUPPORTED_METHOD",
+        "-40109": "ONE_SECOND_REPEAT_REQUEST",
+        "-40210": "PROTOCOL_FORMAT_ERROR",
+        "-40211": "MISSING_NECESSARY_PARAMS",
+        "40108": "TIMEOUT_ERROR",
+        "-40321": "IP_CONFLICT",
+        "-69096": "STREAM_FULL",
+        "-70001": "CAMERA_ALARM_SAVE_FAIL_REACH_LIMIT",
+        "-80101": "ENCRYPT_NOT_SUPPORT"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 17,
+          "snippet": "SESSION_EXPIRED(-40401),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 28,
+          "snippet": "UNSUPPORTED_METHOD(-40106),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 35,
+          "snippet": "MISSING_NECESSARY_PARAMS(-40211),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 36,
+          "snippet": "PROTOCOL_FORMAT_ERROR(-40210),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 29,
+          "snippet": "ONE_SECOND_REPEAT_REQUEST(-40109),"
+        }
+      ],
+      "confidence": "verified"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "NightVisionModeType raw strings",
+      "detail": "Enum raw values are set in synthetic subclasses JADX does not emit; mapping INFRARED->inf_night_vision etc. is inferred from the NightVision enum which carries the verified strings."
+    },
+    {
+      "topic": "PTZ coordinate units/range",
+      "detail": "motorMove x_coord/y_coord are integer strings; the app sends multiples of 5/10/15 per tap. The absolute limits come from getPtzInfo x/y_start_angle..end_angle; the unit (degrees vs motor steps) is not stated in code."
+    },
+    {
+      "topic": "Flat vs nested results",
+      "detail": "getPtzInfo/motorMove/stopMove/getConnectionType results are parsed with typeCastFromWrappers (first wrapper), so fields can be either directly in result or under result.<module>.<section>; client must accept both. Needs live capture to confirm."
+    },
+    {
+      "topic": "Siren on wired (non-battery, non-hub) cameras",
+      "detail": "setSirenStatus is built with module msg_alarm (battery-cam repository iv0.p0) and module siren (camera hub u3). For wired cameras the app path is doManualAlarm start/stop; which siren module a given wired model accepts is unverified."
+    },
+    {
+      "topic": "Record plan day-string format",
+      "detail": "RecordPlanInfo monday..sunday are opaque strings; the HHMM-HHMM:type encoding is from public knowledge, not confirmed in APK code."
+    },
+    {
+      "topic": "Volume ranges and sensitivity ranges",
+      "detail": "Speaker/mic volume range assumed 0-100; detection sensitivity range is per-model (capability.sensitivity_range). Motion digital_sensitivity levels 20/60/80 come from UI snapping code."
+    },
+    {
+      "topic": "getSdCardFormatStatus params",
+      "detail": "Uses DiskInfo.getSingletonDisk() whose exact JSON (object vs list, disk_name value) was not expanded."
+    },
+    {
+      "topic": "REA Android providers",
+      "detail": "rea inspect-android-class / inspect-android-method / inspect-android-package fail with capability_unavailable (REA_JADX_MCP_JAR not set). Only rea inspect-artifact succeeded."
+    }
+  ]
+}

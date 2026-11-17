@@ -1,0 +1,16 @@
+﻿# Large / proprietary / dev-time-only artifacts (never committed, never shipped)
+artifacts/apk/
+artifacts/tools/
+artifacts/jadx_*/
+artifacts/apktool_*/
+artifacts/*.log
+worktrees/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+*.spec.bak
+.coverage
+htmlcov/

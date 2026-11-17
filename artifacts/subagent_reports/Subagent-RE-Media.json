@@ -1,0 +1,32 @@
+{
+  "agent_id": "Subagent-RE-Media",
+  "status": "ok",
+  "spec_file": "specs/stream_profiles.json",
+  "items_total": 39,
+  "items_verified": 31,
+  "rea_commands_run": [
+    "rea inspect-artifact artifacts\\apk\\native_arm64\\libtpgenkey.so --token-limit 3000  (ok: ELF dynamic-library 4296 B, sha256 7d985cc6...)",
+    "rea inspect-android-method artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.ResolutionType <clinit>  (failed: REA_JADX_MCP_JAR not set)",
+    "rea inspect-android-package artifacts\\apk\\unpacked\\config.arm64_v8a.apk  (failed: REA_JADX_MCP_JAR not set)",
+    "rea function artifacts\\apk\\native_arm64\\libtpgenkey.so Java_com_tplink_libtpmediakitutility_GenKey_generateDefaultPsw  (failed: Ghidra on win32 accepts PE only)",
+    "rea inspect-binary-layout artifacts\\apk\\native_arm64\\libtpgenkey.so  (failed: pwntools profile Linux x64 only)"
+  ],
+  "key_findings": [
+    "Local media: POST /stream on camera port 8800 (plain TCP, Digest) or 28800 (TLS-PSK from getMediaPSK, no Digest); multipart/mixed boundary '--client-stream-boundary--', device parts '----device-stream-boundary--'.",
+    "Digest: username 'admin', password = UPPER_HEX(MD5(cloud password)) or UPPER_HEX(SHA256) when challenge has encrypt_type=3; nc=00000001; default password 'TPL075526460603' (libtpgenkey.so).",
+    "200 response header Key-Exchange: username/nonce[/algorithm=HKDF/salt]; AES-128-CBC/PKCS7 key=MD5(nonce:pwd), iv=MD5(admin:nonce); HKDF mode: key=HKDF-SHA256(nonce:pwd,salt,'stream_hkdf_aes_key'), iv=hex(X-Nonce), HMAC-SHA256 key info 'stream_hkdf_hmac_key' checked against X-Data-Hmac.",
+    "Parts: video/mp2t (MPEG-TS) with X-If-Encrypt, X-Data-PTS, X-If-IFrame, X-Stream-Type, X-Data-Sequence; JSON control {type:request,seq,params:{method:get,preview:{channels:[0],resolutions:[HD|VGA],audio:[default]}}}; X-Session-Id echoed afterwards.",
+    "Talkback: separate /stream session, {method:get,talk:{mode:aec|half_duplex|vad}}, uploads audio/mp2t parts (default G.711A 8 kHz mono, 32 kbps), encrypted with same AES context.",
+    "Camera Account: getThirdAccount / changeThirdAccount (user_management.change_third_account: secname third_account, username, passwd MD5 upper, ciphertext RSA-PKCS1 b64) / setAccountEnabled / deleteThirdAccount; RTSP/ONVIF security get/set commands.",
+    "Video config: getVideoQualities {video:{name:[main]}}, getVideoCapability {video_capability:{name:[main,minor]}}, setResolution {video:{set_resolution:{secname:main,resolution}}}, setVideoEncodeType {video:{main:{encode_type:H264|H265,codec_switch_trigger}}}.",
+    "Limits: -52407 TOO_MANY_CLIENT, -52411 TALK_IS_USED, -52435 VOD_SESSION_FULL, -52419 TOO_MANY_HTTPS_CLIENT; relay fallback /relayservice?deviceid=..&type=video&resolution=.."
+  ],
+  "unresolved": [
+    "RTSP /stream1,/stream2 and dual-lens /stream6,/stream7 not in APK (external only)",
+    "ResolutionType enum string values not recovered (only dex W*H list)",
+    "VideoQuality 'bitRate' wire key / no bitrate-fps setter found",
+    "media_psk.psk_key encoding (hex vs ascii)",
+    "Uplink TS muxer PIDs/stream_type",
+    "REA Android/ELF providers unavailable in this environment"
+  ]
+}

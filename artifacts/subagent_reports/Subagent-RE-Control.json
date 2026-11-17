@@ -1,0 +1,35 @@
+{
+  "agent_id": "Subagent-RE-Control",
+  "status": "ok",
+  "spec_file": "specs/camera_control_dtos.json",
+  "items_total": 69,
+  "items_verified": 64,
+  "rea_commands_run": [
+    "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.Method --token-limit 300",
+    "rea inspect-android-method artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.NightVisionModeType <clinit> --token-limit 2500",
+    "rea inspect-android-package artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 800",
+    "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 700"
+  ],
+  "key_findings": [
+    "Envelope: {method, params}; params = {module:{section:data}}; Section 'null' -> {module:data}; reads use {module:{name:[sections]}} or {module:{table:[...]}}.",
+    "App never uses generic get/set/do; it always wraps calls in multipleRequest {params:{requests:[...]}} -> result.responses[{method,result,error_code}].",
+    "Endpoint POST https://<cam>:443/stok={token}/ds (inside securePassthrough when the secure session is used).",
+    "Capability discovery: getAppComponentList -> app_component.app_component_list[{name,version}] (ComponentType strings like ptz, lensMask, nightVisionMode, videoRotation).",
+    "PTZ: motorMove {motor:{move:{x_coord,y_coord}}} (signed int strings, app step 5/10/15); singalMove {motor:{movestep:{direction:'0|90|180|270'}}}; stopMove {motor:{stop:'null'}}; manualCalibrate {motor:{manual_cali:{cal_to_resume:'0|1'}}}.",
+    "Presets: getPresetConfig -> preset.preset parallel arrays id/name/position_pan/position_tilt/read_only; goto {preset:{goto_preset:{id}}}; add addMotorPostion {preset:{set_preset:{name,save_ptz:'1'}}}; delete {preset:{remove_preset:{id:[...]}}}.",
+    "Privacy: lens_mask.lens_mask_info.enabled on/off; with lensMask v1 the app also flips led.config.enabled inversely.",
+    "Night vision: image.common.inf_type auto/on/off (legacy) and image.switch.night_vision_mode inf_night_vision/wtl_night_vision/md_night_vision/... (newer), range from image_capability.supplement_lamp.",
+    "Manual alarm: doManualAlarm {msg_alarm:{manual_alarm:{action:start|stop}}}; motion: setDetectionConfig {motion_detection:{motion_det:{enabled,digital_sensitivity:'20|60|80'}}}.",
+    "PTZ errors -64303/-64305 motor busy, -64304 boundary, -64306 preset limit; common -40401 session expired, -40106 unsupported method, -40210/-40211 bad/missing params."
+  ],
+  "unresolved": [
+    "NightVisionModeType raw strings: Enum raw values are set in synthetic subclasses JADX does not emit; mapping INFRARED->inf_night_vision etc. is inferred from the NightVision enum which carries the verified strings.",
+    "PTZ coordinate units/range: motorMove x_coord/y_coord are integer strings; the app sends multiples of 5/10/15 per tap. The absolute limits come from getPtzInfo x/y_start_angle..end_angle; the unit (degrees vs motor steps) is not stated in code.",
+    "Flat vs nested results: getPtzInfo/motorMove/stopMove/getConnectionType results are parsed with typeCastFromWrappers (first wrapper), so fields can be either directly in result or under result.<module>.<section>; client must accept both. Needs live capture to confirm.",
+    "Siren on wired (non-battery, non-hub) cameras: setSirenStatus is built with module msg_alarm (battery-cam repository iv0.p0) and module siren (camera hub u3). For wired cameras the app path is doManualAlarm start/stop; which siren module a given wired model accepts is unverified.",
+    "Record plan day-string format: RecordPlanInfo monday..sunday are opaque strings; the HHMM-HHMM:type encoding is from public knowledge, not confirmed in APK code.",
+    "Volume ranges and sensitivity ranges: Speaker/mic volume range assumed 0-100; detection sensitivity range is per-model (capability.sensitivity_range). Motion digital_sensitivity levels 20/60/80 come from UI snapping code.",
+    "getSdCardFormatStatus params: Uses DiskInfo.getSingletonDisk() whose exact JSON (object vs list, disk_name value) was not expanded.",
+    "REA Android providers: rea inspect-android-class / inspect-android-method / inspect-android-package fail with capability_unavailable (REA_JADX_MCP_JAR not set). Only rea inspect-artifact succeeded."
+  ]
+}

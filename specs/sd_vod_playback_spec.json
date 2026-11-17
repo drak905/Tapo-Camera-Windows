@@ -1,0 +1,2322 @@
+{
+  "spec_id": "sd_vod_playback",
+  "apk": {
+    "package": "com.tplink.iot",
+    "version_name": "3.22.806",
+    "version_code": "7276"
+  },
+  "summary": "SD-card recording search (searchDateWithVideo / searchVideoOfDay / searchVideoWithUTC / searchDetectionList on the HTTPS JSON API, always wrapped in multipleRequest), playback and download over the local POST /stream multipart media session (JSON control {type:'request',params:{method:'get',playback|download:{...}}}, MPEG-TS parts with X-Data-PTS etc., optional AES payload encryption, 25-part acks), app-side TS demux and MP4 remux, event type enum, SD card status/format, camera account + RTSP/ONVIF security + third-party NVR compatibility commands. ONVIF/RTSP port and discovery facts are external.",
+  "rea_evidence": [
+    {
+      "command": "rea inspect-artifact artifacts\\apk\\unpacked\\config.arm64_v8a.apk --format json",
+      "result": "ok: inventoried split APK; lib/arm64-v8a contains libffmpeg-transcode-lib.so, libavformat.so, libavcodec.so, libg722-lib.so, libffmpeg-opus-lib.so, libh264-bitstream-lib.so, libxnet-lib.so, libmeta-rtc-lib.so, libxquic.so"
+    },
+    {
+      "command": "rea inspect-artifact artifacts\\apk\\native_arm64\\libffmpeg-transcode-lib.so --format json",
+      "result": "ok: ELF, sha256 a21ce5efd4f716073c2364766f001a7ca40047d492e5316f0b119de668a5651f"
+    },
+    {
+      "command": "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.DailyPlaybackUtcFilter --format json",
+      "result": "capability_unavailable: REA_JADX_MCP_JAR (jadx-headless-mcp 0.7.1) not configured"
+    },
+    {
+      "command": "rea inspect-android-package artifacts\\apk\\unpacked\\com.tplink.iot.apk --format json",
+      "result": "capability_unavailable: REA_JADX_MCP_JAR not configured"
+    },
+    {
+      "command": "rea inspect-binary-layout artifacts\\apk\\native_arm64\\libffmpeg-transcode-lib.so --format json",
+      "result": "capability_unavailable: pwntools profile supports Linux x64 only"
+    },
+    {
+      "command": "rea inspect artifacts\\apk\\native_arm64\\libg722-lib.so --format md",
+      "result": "provider_unavailable: Windows Ghidra P0 accepts PE targets only; hopper unsupported; ida not configured"
+    }
+  ],
+  "items": [
+    {
+      "id": "vod.envelope.request_wrapping",
+      "kind": "request",
+      "description": "All VOD search / SD / security commands are sent on the camera HTTPS JSON API (port 443, secure-passthrough handled elsewhere). The app always wraps a single command inside multipleRequest. Each inner request is {method, params}; params is built from a Wrapper(module, section, data) as {module:{section:data}}, or {module:data} when section is the literal 'null' (Section.EMPTY).",
+      "value": {
+        "outer": {
+          "method": "multipleRequest",
+          "params": {
+            "requests": [
+              {
+                "method": "<cmd>",
+                "params": {
+                  "<module>": {
+                    "<section>": "<data>"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "section_empty_rule": "Section.EMPTY value is \"null\"; when used the data is placed directly under the module key",
+        "builders": {
+          "i6": "single Wrapper -> Wrappers -> j6",
+          "j6": "k6(singletonList)",
+          "k6": "Request(multipleRequest, MultipleRequest(list))"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3680,
+          "snippet": "return j6(new Request(request.getMethod(), new Wrappers(Collections.singletonList((Wrapper) request.getParams()))));"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3856,
+          "snippet": "return new Request(Method.MULTIPLE_REQUEST, new MultipleRequest(list));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeAdapter__TypeAdaptersKt.java",
+          "line": 233,
+          "snippet": "if (Intrinsics.d(wrapper.getSection(), Section.EMPTY.getValue())) { iVar.o(wrapper.getModule(), ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 206,
+          "snippet": "EMPTY(\"null\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 19,
+          "snippet": "MULTIPLE_REQUEST(\"multipleRequest\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.search.days",
+      "kind": "request",
+      "description": "List the days (in a date range) that have SD recordings. Method searchDateWithVideo, module playback, section search_year_utility. Dates are formatted yyyyMMdd (Locale.US). channel is a list, default [0]. Hub child cameras add child_device_id / child_device_mac. The app uses a month-sized range per calendar page (inferred).",
+      "value": {
+        "method": "searchDateWithVideo",
+        "params": {
+          "playback": {
+            "search_year_utility": {
+              "channel": [
+                0
+              ],
+              "start_date": "20250101",
+              "end_date": "20250131"
+            }
+          }
+        },
+        "optional_fields": {
+          "child_device_id": "string (hub child)",
+          "child_device_mac": "string (hub child)"
+        },
+        "date_format": "yyyyMMdd",
+        "channel_default": [
+          0
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 62,
+          "snippet": "SEARCH_DATE_WITH_VIDEO(\"searchDateWithVideo\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 101,
+          "snippet": "PLAYBACK_DATE_FILTER(\"search_year_utility\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 57,
+          "snippet": "PLAYBACK(\"playback\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 290,
+          "snippet": "f212772a = new SimpleDateFormat(\"yyyyMMdd\", Locale.US);"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2264,
+          "snippet": "new Request(Method.SEARCH_DATE_WITH_VIDEO, new Wrapper(Module.PLAYBACK, Section.PLAYBACK_DATE_FILTER, new YearlyPlaybackFilter(...)))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/YearlyPlaybackFilter.java",
+          "line": 139,
+          "snippet": "(i12 & 1) != 0 ? CollectionsKt.e(0) : list"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/YearlyPlaybackFilter.java",
+          "line": 25,
+          "snippet": "@SerializedName(FirebaseAnalytics.Param.END_DATE)  // \"end_date\""
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.search.days.response",
+      "kind": "response",
+      "description": "Response of searchDateWithVideo: playback.search_results is a list of single-entry maps whose value has a 'date' string (yyyyMMdd). Map key naming (e.g. search_results_1) comes from public pytapo knowledge.",
+      "value": {
+        "result": {
+          "playback": {
+            "search_results": [
+              {
+                "search_results_1": {
+                  "date": "20250103"
+                }
+              }
+            ]
+          }
+        },
+        "item_fields": {
+          "date": "string yyyyMMdd"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 104,
+          "snippet": "PLAYBACK_MONTHLY(MediaBrowserServiceCompat.KEY_SEARCH_RESULTS),  // \"search_results\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 137,
+          "snippet": "new TypeToken<List<? extends Map<String, ? extends YearlyPlaybackItem>>>()"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/YearlyPlaybackItem.java",
+          "line": 11,
+          "snippet": "private final String date;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.search.day_clips",
+      "kind": "request",
+      "description": "Legacy per-day clip search. Method searchVideoOfDay, section search_video_utility. id is the user/session id integer (constructor param named userId), date yyyyMMdd, start_index/end_index paging (defaults 0..99), channel default 0.",
+      "value": {
+        "method": "searchVideoOfDay",
+        "params": {
+          "playback": {
+            "search_video_utility": {
+              "id": 1,
+              "channel": 0,
+              "date": "20250103",
+              "start_index": 0,
+              "end_index": 99
+            }
+          }
+        },
+        "defaults": {
+          "channel": 0,
+          "start_index": 0,
+          "end_index": 99
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 61,
+          "snippet": "SEARCH_VIDEO_OF_DAY(\"searchVideoOfDay\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 102,
+          "snippet": "PLAYBACK_TIME_FILTER(\"search_video_utility\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1895,
+          "snippet": "new Request(Method.SEARCH_VIDEO_OF_DAY, new Wrapper(Module.PLAYBACK, Section.PLAYBACK_TIME_FILTER, new DailyPlaybackFilter(i12, str, i13, i14)))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackFilter.java",
+          "line": 123,
+          "snippet": "(i16 & 8) != 0 ? 99 : i15"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.search.day_clips_utc",
+      "kind": "request",
+      "description": "Newer per-range clip search using UTC epoch seconds. Method searchVideoWithUTC, section search_video_with_utc. Two shapes: (a) legacy-UTC with id; (b) Playback V6 (CameraComponent.isSupportPlaybackV6) without id but with player_id. start_index/end_index default 0..99, channel default 0. Hub child cameras add child_device_id / child_device_mac. Desktop client: query one local day [00:00, 24:00) in camera timezone converted to UTC seconds and page with start_index/end_index while to_be_continued != 0.",
+      "value": {
+        "method": "searchVideoWithUTC",
+        "params_v_legacy": {
+          "playback": {
+            "search_video_with_utc": {
+              "id": 1,
+              "channel": 0,
+              "start_time": 1735862400,
+              "end_time": 1735948799,
+              "start_index": 0,
+              "end_index": 99
+            }
+          }
+        },
+        "params_v6": {
+          "playback": {
+            "search_video_with_utc": {
+              "channel": 0,
+              "start_time": 1735862400,
+              "end_time": 1735948799,
+              "start_index": 0,
+              "end_index": 99,
+              "player_id": "<client player uuid>"
+            }
+          }
+        },
+        "optional_fields": {
+          "child_device_id": "string",
+          "child_device_mac": "string"
+        },
+        "units": "start_time/end_time = UTC epoch seconds (long)",
+        "page_size_default": 100
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 65,
+          "snippet": "SEARCH_VIDEO_WITH_UTC(\"searchVideoWithUTC\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 103,
+          "snippet": "PLAYBACK_TIME_FILTER_UTC(\"search_video_with_utc\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2164,
+          "snippet": "cameraComponent.isSupportPlaybackV6() ? new DailyPlaybackUtcFilter(j12, j13, i13, i14, str) : new DailyPlaybackUtcFilter(i12, j12, j13, i13, i14)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackUtcFilter.java",
+          "line": 30,
+          "snippet": "@SerializedName(\"player_id\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackUtcFilter.java",
+          "line": 217,
+          "snippet": "(i15 & 32) != 0 ? 99 : i14"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.search.current_clip_utc",
+      "kind": "request",
+      "description": "Search the clip(s) around a given time (used for timeline jump). Method searchCurrentVideoWithUTC, section search_current_video_with_utc. Fields: id, channel, start_time, end_time, player_id, index_order, total_num. A related detection-list variant exists: searchCurrentDetectionListWithUTC / search_current_detection_list_with_utc.",
+      "value": {
+        "method": "searchCurrentVideoWithUTC",
+        "params": {
+          "playback": {
+            "search_current_video_with_utc": {
+              "id": 1,
+              "channel": 0,
+              "start_time": 1735900000,
+              "end_time": 1735903600,
+              "index_order": 0,
+              "total_num": 1
+            }
+          }
+        },
+        "related": {
+          "method": "searchCurrentDetectionListWithUTC",
+          "section": "search_current_detection_list_with_utc"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 66,
+          "snippet": "SEARCH_CURRENT_VIDEO_WITH_UTC(\"searchCurrentVideoWithUTC\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1836,
+          "snippet": "new Wrapper(Module.PLAYBACK, Section.PLAYBACK_CURRENT_TIME_FILTER_UTC, new CurrentDailyPlaybackUtc(i12, j12, j13, i13))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CurrentDailyPlaybackUtc.java",
+          "line": 19,
+          "snippet": "@SerializedName(\"index_order\")"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "vod.search.day_clips.response",
+      "kind": "response",
+      "description": "Response of searchVideoOfDay / searchVideoWithUTC. playback.search_video_results is a list of single-entry maps; each value is a clip with startTime/endTime (UTC seconds, Gson default camelCase field names, no @SerializedName) and type fields. Note the misspelled 'vedio_type' key coexists with 'video_type'. to_be_continued (int) signals more pages; filter_enable / filter_chn_enable / playback_delete_v2_enable are capability flags. chn_times (map channel->ChnEvent) and event_info (list) appear on newer firmware / multi-lens cameras.",
+      "value": {
+        "result": {
+          "playback": {
+            "search_video_results": [
+              {
+                "search_video_results_1": {
+                  "startTime": 1735900000,
+                  "endTime": 1735900120,
+                  "vedio_type": "2",
+                  "video_type": "2"
+                }
+              }
+            ],
+            "to_be_continued": 0,
+            "filter_enable": true,
+            "filter_chn_enable": false,
+            "playback_delete_v2_enable": false
+          }
+        },
+        "clip_fields": {
+          "startTime": "long UTC s",
+          "endTime": "long UTC s",
+          "vedio_type": "string (event/record type, see events.type_enum)",
+          "video_type": "string",
+          "chn_times": "map<string,{event_start_time:long,events_1:long,event_info:[...],file_id:string}>",
+          "event_info": "list<{face_id:long,face_bitmap:int,name:string,tag:string}>"
+        },
+        "paging": {
+          "field": "to_be_continued",
+          "rule": "non-zero -> request next page with start_index += 100"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackList.java",
+          "line": 23,
+          "snippet": "@SerializedName(\"search_video_results\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackList.java",
+          "line": 26,
+          "snippet": "@SerializedName(\"to_be_continued\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackItem.java",
+          "line": 27,
+          "snippet": "@SerializedName(\"vedio_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DailyPlaybackItem.java",
+          "line": 25,
+          "snippet": "private final long startTime;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 142,
+          "snippet": "new TypeToken<List<? extends Map<String, ? extends DailyPlaybackItem>>>()"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ChnEvent.java",
+          "line": 17,
+          "snippet": "@SerializedName(\"event_start_time\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.search.nvr_variants",
+      "kind": "request",
+      "description": "NVR/hub variants (not needed for a single camera but same shapes): searchNVRDateWithVideo (search_year_utility with channel list [n]), searchNVRVideoWithDay (search_video_utility with date,start_index,end_index,channel,id; defaults channel=1,id=1), searchNVRMediaList, searchNVRSubEventWithDay, doSearchFaceDetectionVideo.",
+      "value": {
+        "methods": [
+          "searchNVRDateWithVideo",
+          "searchNVRVideoWithDay",
+          "searchNVRMediaList",
+          "searchNVRSubEventWithDay",
+          "doSearchFaceDetectionVideo",
+          "deleteVideosBatched"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 746,
+          "snippet": "SEARCH_NVR_DATE_WITH_VIDEO(\"searchNVRDateWithVideo\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 5315,
+          "snippet": "new SearchVideoWithDayParam(this.f212772a.format(date), i14, i15, i13, i12)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 660,
+          "snippet": "DELETE_VIDEOS_BATCHED(\"deleteVideosBatched\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "events.detection_list",
+      "kind": "request",
+      "description": "Detection-event (snapshot/event) list for a time range. Method searchDetectionList, module playback, section search_detection_list. Fields start_time/end_time UTC seconds, channel (default 0), start_index/end_index (default 0..99), optional child_device_id/child_device_mac.",
+      "value": {
+        "method": "searchDetectionList",
+        "params": {
+          "playback": {
+            "search_detection_list": {
+              "start_time": 1735862400,
+              "end_time": 1735948799,
+              "channel": 0,
+              "start_index": 0,
+              "end_index": 99
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 63,
+          "snippet": "SEARCH_SEARCH_SNAPSHOT(\"searchDetectionList\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 228,
+          "snippet": "PLAYBACK_SNAPSHOT_LIST(\"search_detection_list\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2693,
+          "snippet": "new Wrapper(Module.PLAYBACK, Section.PLAYBACK_SNAPSHOT_LIST, new SnapshotPlaybackFilter(j12, j13, i12, i13))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SnapshotPlaybackFilter.java",
+          "line": 162,
+          "snippet": "(i15 & 16) != 0 ? 99 : i14"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "events.detection_list.response",
+      "kind": "response",
+      "description": "Response: playback.search_detection_list is a list of event items; playback.snapshot_enable (bool) and playback.to_be_continued (int) are siblings. Item fields: start_time, end_time (UTC s), alarm_type (int, see events.type_enum), file_id, events_1, modify_event_type, chn_events (map), event_info (list), channelId (Gson default name).",
+      "value": {
+        "result": {
+          "playback": {
+            "search_detection_list": [
+              {
+                "start_time": 1735900000,
+                "end_time": 1735900030,
+                "alarm_type": 6,
+                "file_id": "..."
+              }
+            ],
+            "snapshot_enable": true,
+            "to_be_continued": 0
+          }
+        },
+        "item_fields": {
+          "start_time": "long",
+          "end_time": "long",
+          "alarm_type": "int",
+          "file_id": "string",
+          "events_1": "long",
+          "modify_event_type": "bool",
+          "chn_events": "map<string,ChnEvent>",
+          "event_info": "list",
+          "channelId": "int"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DetectionList.java",
+          "line": 15,
+          "snippet": "@SerializedName(\"search_detection_list\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DetectionList.java",
+          "line": 18,
+          "snippet": "@SerializedName(\"snapshot_enable\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SnapshotPlaybackItem.java",
+          "line": 41,
+          "snippet": "@SerializedName(\"alarm_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SnapshotPlaybackItem.java",
+          "line": 31,
+          "snippet": "@SerializedName(FontsContractCompat.Columns.FILE_ID)  // \"file_id\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/TypeDispatcher.java",
+          "line": 147,
+          "snippet": "new TypeToken<List<? extends SnapshotPlaybackItem>>()"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "events.type_enum",
+      "kind": "enum",
+      "description": "Playback event type codes (used in vedio_type/alarm_type of search results and in event_type[] filters of playback/download stream requests). Mapping of alarm_type to this enum is inferred from shared usage.",
+      "value": {
+        "1": "TIMING (scheduled/continuous)",
+        "2": "MOTION",
+        "3": "TAMPER",
+        "4": "LINECROSS",
+        "5": "AREAINTRUSION",
+        "6": "HUMAN (person)",
+        "7": "BABYCRY",
+        "8": "VEHICLE",
+        "9": "PET",
+        "10": "RINGALARM",
+        "11": "ALARMBARK",
+        "12": "ALARMMEOW",
+        "13": "ALARMGLASS",
+        "14": "ALARMSMOKE",
+        "15": "DELIVERPACKAGE",
+        "16": "PICKUPPACKAGE",
+        "17": "DOORBELL_RING_MISSED",
+        "18": "DOORBELL_RING_ANSWERED",
+        "19": "ANTITHEFT",
+        "23": "BABYLEAVE",
+        "24": "BABYCAREGIVER",
+        "25": "BABYASLEEP",
+        "26": "BABYAWAKEUP",
+        "27": "FACECOVER",
+        "28": "SAFEFENCE_OUT",
+        "30": "BABYMOTION",
+        "31": "PANORAMICVIDEO",
+        "33": "ANIMAL",
+        "34": "DOORUNLOCK",
+        "35": "GATEOPEN",
+        "36": "CO_ALARM"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/business/model/PlayBackEventType.java",
+          "line": 10,
+          "snippet": "TIMING(1, \"1\"), MOTION(2, \"2\"), ..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/business/model/PlayBackEventType.java",
+          "line": 15,
+          "snippet": "HUMAN(6, \"6\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/business/model/PlayBackEventType.java",
+          "line": 40,
+          "snippet": "CO_ALARM(36, \"36\");"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "events.last_alarm_info",
+      "kind": "request",
+      "description": "Poll-style local motion/event indicator (no push channel on LAN in the app). Method getLastAlarmInfo, module system, name [\"last_alarm_info\"]. Response system.last_alarm_info has last_alarm_time and last_alarm_type (strings). A desktop client can poll this every few seconds and/or poll searchDetectionList for new items.",
+      "value": {
+        "method": "getLastAlarmInfo",
+        "params": {
+          "system": {
+            "name": [
+              "last_alarm_info"
+            ]
+          }
+        },
+        "response": {
+          "system": {
+            "last_alarm_info": {
+              "last_alarm_time": "1735900000",
+              "last_alarm_type": "motion"
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 68,
+          "snippet": "GET_LAST_ALARM_INFO(\"getLastAlarmInfo\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1140,
+          "snippet": "new Request(Method.GET_LAST_ALARM_INFO, E0(new Wrapper(Module.SYSTEM, section, Collections.singletonList(Section.LAST_ALARM_INFO.getValue()))))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LastAlarmInfo.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"last_alarm_time\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "events.msg_push_event_list",
+      "kind": "request",
+      "description": "Which events trigger push notifications (configuration, cloud push). getMsgPushEventList: {msg_push:{table:\"msg_push_event\"}}; also getMsgPushConfig/setMsgPushConfig. Push delivery itself is cloud-based, not LAN.",
+      "value": {
+        "method": "getMsgPushEventList",
+        "params": {
+          "msg_push": {
+            "table": "msg_push_event"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 454,
+          "snippet": "new Request(Method.GET_MSG_PUSH_EVENT_LIST, new Wrapper(Module.MSG_PUSH, Section.TABLE, Section.MSG_PUSH_EVENT.getValue()))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 455,
+          "snippet": "GET_MSG_PUSH_EVENT_LIST(\"getMsgPushEventList\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.stream.transport",
+      "kind": "endpoint",
+      "description": "SD playback and SD download use the same local media connection as live view: raw TCP (or TLS) socket to the camera, HTTP/1.1 'POST /stream' with multipart/mixed body boundary '--client-stream-boundary--'; device parts use '--device-stream-boundary--'. First POST carries X-Key-Exchange: 1 (unless already negotiated) and is answered 401 + WWW-Authenticate (Digest) ; client retries with Authorization (Digest over POST /stream). Port comes from the device record (TDP discovery http_port); 8800 is the well-known value from public sources. Each multipart part has headers Content-Type, Content-Length, optional X-Session-Id. Details of digest/key-exchange belong to the live-stream spec.",
+      "value": {
+        "http_request_line": "POST /stream HTTP/1.1",
+        "headers": {
+          "Content-Type": "multipart/mixed; boundary=--client-stream-boundary--",
+          "Connection": "Keep-Alive",
+          "Accept-Encoding": "gzip",
+          "Content-Length": "0",
+          "X-Key-Exchange": "1"
+        },
+        "client_part_prefix": "----client-stream-boundary--\\r\\n",
+        "device_boundary": "--device-stream-boundary--",
+        "port": 8800,
+        "port_source": "TPMediaDevice/TDP http_port (inferred); 8800 public"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "tb1/a.java",
+          "line": 453,
+          "snippet": "E(\"POST\".concat(\" /stream\").concat(t()).concat(\" HTTP/1.1\\r\\n\")..."
+        },
+        {
+          "source": "jadx",
+          "file": "tb1/a.java",
+          "line": 444,
+          "snippet": "linkedHashMap.put(\"Content-Type\", \"multipart/mixed; boundary=--client-stream-boundary--\");"
+        },
+        {
+          "source": "jadx",
+          "file": "tb1/a.java",
+          "line": 354,
+          "snippet": "if (str.contains(\"--device-stream-boundary--\")) {"
+        },
+        {
+          "source": "jadx",
+          "file": "tb1/a.java",
+          "line": 463,
+          "snippet": "String str3 = (String) mapL.get(\"WWW-Authenticate\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpappcommonmedia/bean/TPMediaDevice.java",
+          "line": 34,
+          "snippet": "@SerializedName(\"http_port\")"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "vod.stream.control_envelope",
+      "kind": "request",
+      "description": "JSON control messages sent as multipart parts (Content-Type: application/json) on the /stream connection. Envelope: {type:'request', seq:int, params:{method:'get'|'do', <verb>:{...}}}. Responses: {type:'response', seq, result:{error_code, session_id,...}}; notifications: {type:'notification', params:{event_type:..., ...}}; type 'error' also exists. Once a session is open, subsequent parts carry header X-Session-Id: <session_id>.",
+      "value": {
+        "request": {
+          "type": "request",
+          "seq": 1,
+          "params": {
+            "method": "get",
+            "playback": {}
+          }
+        },
+        "type_values": [
+          "request",
+          "response",
+          "notification",
+          "error"
+        ],
+        "method_values": {
+          "get": [
+            "preview",
+            "playback",
+            "download",
+            "talk",
+            "image",
+            "usr_def_audio",
+            "video_call"
+          ],
+          "do": [
+            "play",
+            "pause",
+            "stop",
+            "finish",
+            "change_streams",
+            "change_resolutions",
+            "change_audio",
+            "mute",
+            "playback_add_channels",
+            "remove_channels"
+          ]
+        },
+        "session_header": "X-Session-Id"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/StreamControlRequest.java",
+          "line": 10,
+          "snippet": "@SerializedName(\"params\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/StreamControlType.java",
+          "line": 12,
+          "snippet": "REQUEST = \"request\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/GetPlaybackRequest.java",
+          "line": 14,
+          "snippet": "super(\"get\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/Request.java",
+          "line": 10,
+          "snippet": "@SerializedName(FirebaseAnalytics.Param.METHOD)  // \"method\""
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 876,
+          "snippet": "map.put(SSLClient.X_SESSION_ID, this.f186143t);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.playback.session",
+      "kind": "request",
+      "description": "Open an SD playback session on the /stream connection. params.method='get', key 'playback' (GetVodParams). start_time/end_time are UTC seconds as STRINGS; start_time must be > 0, end_time optional. scale is a rate string. event_type is a list of event codes; when non-empty the app sets filter=true (play only event clips). channels defaults to [0]; streams list optional. client_id is an int chosen by the client. Optional fields: vod_type (0 normal,1 from notification), auto_seek (SeekMethod 0/1/2), auto_switch_date ('0'/'1' continue into next day), player_id, camera_mac (hub child), audio_config, ignore_limit, face_id[], det_origin[], play_channel[], traj_start_time, play_type ('traj_play'|'traj_play_multilens'), data_filter_tag, file_id, range, interval, speed, media_type.",
+      "value": {
+        "message": {
+          "type": "request",
+          "seq": 1,
+          "params": {
+            "method": "get",
+            "playback": {
+              "client_id": 1,
+              "channels": [
+                0
+              ],
+              "scale": "1/1",
+              "start_time": "1735900000",
+              "end_time": "1735900120",
+              "event_type": [
+                2,
+                6
+              ],
+              "filter": true,
+              "vod_type": 0,
+              "auto_seek": 0,
+              "auto_switch_date": "1",
+              "player_id": "<uuid>"
+            }
+          }
+        },
+        "required": [
+          "client_id",
+          "channels",
+          "scale",
+          "start_time"
+        ],
+        "all_fields": [
+          "audio_config",
+          "auto_seek",
+          "auto_switch_date",
+          "camera_mac",
+          "client_id",
+          "data_filter_tag",
+          "det_origin",
+          "end_time",
+          "face_id",
+          "file_id",
+          "filter",
+          "ignore_limit",
+          "interval",
+          "media_type",
+          "play_channel",
+          "play_type",
+          "player_id",
+          "range",
+          "scale",
+          "speed",
+          "start_time",
+          "traj_start_time",
+          "vod_type",
+          "channels",
+          "streams",
+          "event_type"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/GetPlaybackRequest.java",
+          "line": 10,
+          "snippet": "@SerializedName(\"playback\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/param/GetVodParams.java",
+          "line": 24,
+          "snippet": "@SerializedName(\"client_id\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/param/GetVodParams.java",
+          "line": 87,
+          "snippet": "@SerializedName(\"event_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "e51/a.java",
+          "line": 34,
+          "snippet": "getVodParams.setChannels(Collections.singletonList(0));"
+        },
+        {
+          "source": "jadx",
+          "file": "e51/a.java",
+          "line": 44,
+          "snippet": "getVodParams.setFilter(Boolean.valueOf(!arrayList.isEmpty()));"
+        },
+        {
+          "source": "jadx",
+          "file": "e51/a.java",
+          "line": 74,
+          "snippet": "getVodParams.setStartTime(String.valueOf(j12));"
+        },
+        {
+          "source": "jadx",
+          "file": "ob1/l0.java",
+          "line": 62,
+          "snippet": "new Exception(\"playback start time must invalid\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.playback.enums",
+      "kind": "enum",
+      "description": "Value sets for playback parameters.",
+      "value": {
+        "scale": [
+          "1/1",
+          "2/1",
+          "4/1",
+          "8/1",
+          "16/1",
+          "1/2",
+          "1/4",
+          "1/8",
+          "1/16"
+        ],
+        "vod_type": {
+          "0": "NORMAL",
+          "1": "NOTIFICATION"
+        },
+        "auto_seek": {
+          "0": "NORMAL",
+          "1": "SEEK_AFTER",
+          "2": "SEEK_BEFORE"
+        },
+        "auto_switch_date": {
+          "0": "DISABLE",
+          "1": "ENABLE"
+        },
+        "play_type": [
+          "traj_play",
+          "traj_play_multilens"
+        ],
+        "client_type": [
+          "live",
+          "vod",
+          "vod_file",
+          "image",
+          "double_talk",
+          "diagnose",
+          "add_face_image",
+          "get_face_image"
+        ],
+        "uri_stream_type": {
+          "preview": "live",
+          "sdvod": "SD playback",
+          "download": "SD download",
+          "talk": "talkback",
+          "image": "image",
+          "usr_def_audio": "custom audio"
+        },
+        "vod_video_type": {
+          "0": "OTHER",
+          "1": "AOV",
+          "2": "LIVE"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/VodScale.java",
+          "line": 10,
+          "snippet": "SCALE_1 = \"1/1\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/VodType.java",
+          "line": 7,
+          "snippet": "NOTIFICATION = 1;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/SeekMethod.java",
+          "line": 7,
+          "snippet": "SEEK_AFTER = 1;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/UriStreamType.java",
+          "line": 9,
+          "snippet": "SD_VOD = \"sdvod\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/ClientType.java",
+          "line": 12,
+          "snippet": "VOD = \"vod\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/EnumVodVideoType.java",
+          "line": 17,
+          "snippet": "LIVE(2), AOV(1), OTHER(0)"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.playback.response",
+      "kind": "response",
+      "description": "Reply to get playback: {type:'response', seq, result:{error_code:int, session_id:string, speed:string}}. error_code 0 + non-empty session_id = success. All later control messages for this session carry header X-Session-Id.",
+      "value": {
+        "message": {
+          "type": "response",
+          "seq": 1,
+          "result": {
+            "error_code": 0,
+            "session_id": "7",
+            "speed": "1/1"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/response/GetPlaybackResponse.java",
+          "line": 9,
+          "snippet": "@SerializedName(\"session_id\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/response/Response.java",
+          "line": 9,
+          "snippet": "@SerializedName(\"error_code\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.playback.controls",
+      "kind": "request",
+      "description": "In-session control (method 'do'). Seek / change speed: {method:'do', play:{start_time, end_time?, scale, auto_seek, auto_switch_date, camera_mac?, data_filter_tag?, streams?}}. Pause: {method:'do', pause:'null'}. Resume: {method:'do', play:'null'} (DoResumeRequest uses key 'play' with a string). Stop: {method:'do', stop:'playback'} (download uses stop:'download'). Finish: {method:'do', finish:'null'}. Add/remove channels: playback_add_channels:[..] / remove_channels:[..]. Change streams: change_streams:{channels,streams,resolutions}.",
+      "value": {
+        "seek": {
+          "type": "request",
+          "seq": 2,
+          "params": {
+            "method": "do",
+            "play": {
+              "start_time": "1735900060",
+              "scale": "1/1",
+              "auto_seek": "0",
+              "auto_switch_date": "1"
+            }
+          }
+        },
+        "pause": {
+          "type": "request",
+          "seq": 3,
+          "params": {
+            "method": "do",
+            "pause": "null"
+          }
+        },
+        "resume": {
+          "type": "request",
+          "seq": 4,
+          "params": {
+            "method": "do",
+            "play": "null"
+          }
+        },
+        "stop": {
+          "type": "request",
+          "seq": 5,
+          "params": {
+            "method": "do",
+            "stop": "playback"
+          }
+        },
+        "note": "auto_seek in DoPlayParams is serialized as a string"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/DoPlayRequest.java",
+          "line": 9,
+          "snippet": "@SerializedName(\"play\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/DoPlayParams.java",
+          "line": 25,
+          "snippet": "@SerializedName(\"auto_seek\") private String seekMethod;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/DoPauseRequest.java",
+          "line": 14,
+          "snippet": "this.pause = \"null\";"
+        },
+        {
+          "source": "jadx",
+          "file": "ob1/l0.java",
+          "line": 120,
+          "snippet": "doStopRequest.setStop(\"playback\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/channel/DoAddPlaybackChannelsRequest.java",
+          "line": 12,
+          "snippet": "@SerializedName(\"playback_add_channels\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.download.session",
+      "kind": "request",
+      "description": "SD clip download over the same /stream connection. params.method='get', key 'download' (GetDownloadParams). start_time/end_time strings of UTC seconds; media_type 0 = video (2 normal image, 3 thumbnail, 1 push image, 5 nice-moments image). download_type: 'normal' | 'trajectory' | 'timelapse'. event_type is an int array. channels default [0]. Optional: dev_id, mac (hub child), player_id, last_pts (resume after interruption), audio_config, file_id, range, splmom_snap_id[]. The app caps concurrent clip downloads at 10.",
+      "value": {
+        "message": {
+          "type": "request",
+          "seq": 1,
+          "params": {
+            "method": "get",
+            "download": {
+              "client_id": 1,
+              "channels": [
+                0
+              ],
+              "media_type": 0,
+              "start_time": "1735900000",
+              "end_time": "1735900120",
+              "event_type": [
+                2
+              ],
+              "download_type": "normal",
+              "player_id": "<uuid>"
+            }
+          }
+        },
+        "media_type": {
+          "0": "VIDEO",
+          "1": "PUSH_IMAGE",
+          "2": "NORMAL_IMAGE",
+          "3": "THUMBNAIL",
+          "5": "NICE_MOMENTS_IMAGE"
+        },
+        "download_type": [
+          "normal",
+          "trajectory",
+          "timelapse"
+        ],
+        "stop": {
+          "type": "request",
+          "seq": 9,
+          "params": {
+            "method": "do",
+            "stop": "download"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/GetDownloadRequest.java",
+          "line": 11,
+          "snippet": "@SerializedName(UriStreamType.SD_DOWNLOAD)  // \"download\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/param/GetDownloadParams.java",
+          "line": 24,
+          "snippet": "@SerializedName(\"download_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/param/GetDownloadParams.java",
+          "line": 36,
+          "snippet": "@SerializedName(\"last_pts\")"
+        },
+        {
+          "source": "jadx",
+          "file": "e51/a.java",
+          "line": 272,
+          "snippet": "getDownloadParams.setStartTime(j12 + \"\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/DownloadMediaType.java",
+          "line": 14,
+          "snippet": "VIDEO = 0;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpvideodownloadmedia/loader/VideoDownloadType.java",
+          "line": 6,
+          "snippet": "NORMAL(\"normal\"), TRAJECTORY(\"trajectory\"), TIMELAPSE(\"timelapse\")"
+        },
+        {
+          "source": "jadx",
+          "file": "ob1/i0.java",
+          "line": 27,
+          "snippet": "doStopRequest.setStop(UriStreamType.SD_DOWNLOAD);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/ipcamera/play/PlayBackClipViewModel.java",
+          "line": 386,
+          "snippet": "R.string.play_back_download_video_reach_limit, 10"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.download.response",
+      "kind": "response",
+      "description": "Reply to get download: result {error_code, session_id, range, image_list[], seq_image_lens[]}. Non-zero error_code or empty session_id = failure.",
+      "value": {
+        "message": {
+          "type": "response",
+          "seq": 1,
+          "result": {
+            "error_code": 0,
+            "session_id": "9"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/response/GetDownloadResponse.java",
+          "line": 19,
+          "snippet": "@SerializedName(\"session_id\")"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 811,
+          "snippet": "if (getDownloadResponse.getErrorCode() != 0 || TextUtils.isEmpty(getDownloadResponse.getSessionId()))"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.stream.media_part_headers",
+      "kind": "header",
+      "description": "Each device->client media part: Content-Type 'video/mp2t' (MPEG-TS chunk) or 'application/json' (control/notification). Media headers: X-Data-PTS (pts, used as progress; must be >= 0), X-If-IFrame ('1' = keyframe), X-Data-Sequence (part counter), X-Stream-Type (int, stream/lens index), X-Data-PTS-Ext, X-Session-Id, X-If-Encrypt ('1' = payload AES-encrypted), X-Data-Hmac (integrity tag on newer HKDF scheme), X-Nonce (rekey on HKDF scheme).",
+      "value": {
+        "content_types": [
+          "video/mp2t",
+          "application/json"
+        ],
+        "headers": [
+          "X-Data-PTS",
+          "X-If-IFrame",
+          "X-Data-Sequence",
+          "X-Stream-Type",
+          "X-Data-PTS-Ext",
+          "X-Session-Id",
+          "X-If-Encrypt",
+          "X-Data-Hmac",
+          "X-Nonce"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 757,
+          "snippet": "String str2 = (String) mapR.get(\"X-Data-PTS\"); ... get(\"X-If-IFrame\")"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 771,
+          "snippet": "if (\"video/mp2t\".equals(str)) {"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/c.java",
+          "line": 205,
+          "snippet": "map.containsKey(SSLClient.X_IF_ENCRYPT) && \"1\".equals(map.get(SSLClient.X_IF_ENCRYPT))"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/c.java",
+          "line": 214,
+          "snippet": "if (!map.containsKey(\"X-Data-Hmac\")) { return t(bArrP); }"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpmediastatistics/SSLClient.java",
+          "line": 87,
+          "snippet": "X_DATA_SEQUENCE = \"X-Data-Sequence\";"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.stream.flow_control_ack",
+      "kind": "request",
+      "description": "Receiver ack: every 25 received parts (X-Data-Sequence % 25 == 0) the client sends a JSON notification part with headers X-Data-Received: <seq>, X-Session-Id: <sid>, Content-Type: application/json and body {type:'notification',params:{event_type:'stream_sequence'}}. On pause the download client also sends {type:'notification',params:{event_type:'stream_status',status:'stopped'}}.",
+      "value": {
+        "ack": {
+          "headers": {
+            "X-Data-Received": "25",
+            "X-Session-Id": "<sid>",
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "type": "notification",
+            "params": {
+              "event_type": "stream_sequence"
+            }
+          }
+        },
+        "every_n_parts": 25,
+        "pause_notify": {
+          "type": "notification",
+          "params": {
+            "event_type": "stream_status",
+            "status": "stopped"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 765,
+          "snippet": "if (jL0 % 25 == 0) { n0(jL0); }"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 902,
+          "snippet": "map.put(SSLClient.X_DATA_RECEIVED, \"\" + this.Q);"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 905,
+          "snippet": "{\"type\":\"notification\",\"params\":{\"event_type\":\"stream_sequence\"}}"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 714,
+          "snippet": "{\"type\":\"notification\",\"params\":{\"event_type\":\"stream_status\",\"status\":\"stopped\"}}"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.stream.notifications",
+      "kind": "enum",
+      "description": "Device notifications relevant to VOD (params.event_type). stream_status with status 'finished' marks end of the requested range (download completes; app throws 'video data invalid' if no pts was received). disk_status with status 'offline' = SD card removed (MediaException SD_CARD_OFFLINE). playback_switch_next = playback moved to next clip/day (fields mac, streams). stream_finish has reason enum. connection_closed carries close_reason. heartbeat keeps the link alive.",
+      "value": {
+        "stream_status.status": [
+          "finished",
+          "grabbed",
+          "image_ended",
+          "stopped"
+        ],
+        "disk_status.status": [
+          "offline"
+        ],
+        "stream_finish.reason": [
+          "finish",
+          "interrupt",
+          "internal_error",
+          "channel_invalid",
+          "channel_offline",
+          "media_encrypt_changed",
+          "password_changed",
+          "permission_deny",
+          "share_finish"
+        ],
+        "other_event_types": [
+          "playback_switch_next",
+          "heartbeat",
+          "connection_closed",
+          "stream_sequence",
+          "stream_resolution",
+          "channel_stream_status",
+          "internal_error",
+          "device_locked",
+          "unsupport_audio",
+          "change_aov_type",
+          "channel_mime_info"
+        ],
+        "client_close": {
+          "event_type": "connection_closed",
+          "error_code": 0,
+          "close_reason": "bidirection_closed_by_peer"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 833,
+          "snippet": "if (streamStatus != null && \"finished\".equals(streamStatus.getStatus())) {"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 802,
+          "snippet": "EVENT_DISK_STATUS.equals(eventType) && ... \"offline\".equals(diskStatus.getStatus())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/common/NotificationEventType.java",
+          "line": 43,
+          "snippet": "EVENT_TYPE_STREAM_SWITCH = \"playback_switch_next\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/notification/StreamFinish.java",
+          "line": 19,
+          "snippet": "FINISH = \"finish\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpcommonstream/stream/control/request/DoCloseRequest.java",
+          "line": 9,
+          "snippet": "CLOSED_BY_PEER = \"bidirection_closed_by_peer\";"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.stream.encryption",
+      "kind": "algorithm",
+      "description": "Media payloads with X-If-Encrypt: 1 are AES (o81.a, key+iv) encrypted. Legacy scheme (Key-Exchange params without algorithm=HKDF): key = MD5(nonce + ':' + password_secret), iv = MD5(username + ':' + nonce), where nonce/username come from the device Key-Exchange header (space-separated k=\"v\" pairs; parsed fields nonce, username, cipher, padding, algorithm, salt). Newer HKDF scheme: key = HKDF(ikm = nonce + ':' + secret, salt, info='stream_hkdf_aes_key', 16 bytes), iv = hex-decoded value, plus HMAC integrity via X-Data-Hmac; X-Nonce in a part re-derives the key. Same mechanism as live view; see live-stream spec for exact secret (password hash) selection.",
+      "value": {
+        "cipher": "AES (CBC per public pytapo, inferred)",
+        "legacy": {
+          "key": "MD5(nonce:secret)",
+          "iv": "MD5(username:nonce)"
+        },
+        "hkdf": {
+          "info": "stream_hkdf_aes_key",
+          "key_len": 16,
+          "integrity_header": "X-Data-Hmac",
+          "rekey_header": "X-Nonce"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d51/b.java",
+          "line": 32,
+          "snippet": "return new o81.a(i(str2 + \":\" + str3), i(str + \":\" + str2));"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/b.java",
+          "line": 48,
+          "snippet": "k41.c.c((str2 + \":\" + str5).getBytes(), str3.getBytes(), \"stream_hkdf_aes_key\".getBytes(), 16)"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/b.java",
+          "line": 95,
+          "snippet": "MessageDigest.getInstance(MessageDigestAlgorithms.MD5)"
+        },
+        {
+          "source": "jadx",
+          "file": "d51/c.java",
+          "line": 206,
+          "snippet": "String str = (String) map.get(\"X-Nonce\");"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "vod.stream.ts_format",
+      "kind": "stream",
+      "description": "Payload is MPEG-TS. The app's own TS demuxer maps PMT stream_type: 0x1B(27)=H.264, 0x24(36)=H.265, 0x90(144)=PCMA (G.711 A-law, TP-Link private), 0x91(145)=PCMU, 0x0F(15)=AAC, 0x0B(11)=Opus, 0x03/0x04=MP3, 0x06=private (checked further). Elementary audio types also include PCM and G722.",
+      "value": {
+        "pmt_stream_types": {
+          "27": "H264",
+          "36": "H265",
+          "144": "PCMA",
+          "145": "PCMU",
+          "15": "AAC",
+          "11": "OPUS",
+          "3": "MP3",
+          "4": "MP3",
+          "6": "private/other"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpdemux/tsdemux/b.java",
+          "line": 597,
+          "snippet": "if ((bArr4[i36] & 255) == 27) { ... ESStreamType.H264"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpdemux/tsdemux/b.java",
+          "line": 614,
+          "snippet": "if ((bArr4[i36] & 255) == 144) { ... ESStreamType.PCMA"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpdemux/tsdemux/ESStreamType.java",
+          "line": 7,
+          "snippet": "H264(0), H265(1), PCM(2), PCMA(3), PCMU(4), MP3(6), AAC(7), G722(8), OPUS(9)"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "vod.download.mp4_conversion",
+      "kind": "algorithm",
+      "description": "Download pipeline: decrypted TS chunks (with pts, iframe flag, stream type) -> app TS demuxer -> video elementary stream remuxed unchanged; G.711 audio decoded and re-encoded to AAC ('audio/mp4a-latm'); written with Android MediaMuxer (format 0 = MPEG-4) to '<name>.mp4'. A Windows client can do the same with FFmpeg/Media Foundation: remux H.264/H.265 to MP4 and transcode pcm_alaw to AAC (or keep the .ts).",
+      "value": {
+        "container_out": "mp4",
+        "video": "copy (H.264/H.265)",
+        "audio": "G.711 -> AAC",
+        "muxer": "android.media.MediaMuxer(path, 0)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "w81/a.java",
+          "line": 25,
+          "snippet": "this.f236171a = new MediaMuxer(str, 0);"
+        },
+        {
+          "source": "jadx",
+          "file": "md1/e.java",
+          "line": 580,
+          "snippet": "this.f211790h = new w81.a(string);"
+        },
+        {
+          "source": "jadx",
+          "file": "md1/e.java",
+          "line": 430,
+          "snippet": "mediaFormat.setString(\"mime\", MediaMimeType.AUDIO_AAC);"
+        },
+        {
+          "source": "jadx",
+          "file": "cd1/g0.java",
+          "line": 24,
+          "snippet": "class g0 implements x, com.tplink.libtpdemux.tsdemux.b.InterfaceC0435b"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\unpacked\\config.arm64_v8a.apk --format json",
+          "summary": "split APK ships libffmpeg-transcode-lib.so, libavformat.so, libavcodec.so, libg722-lib.so, libffmpeg-opus-lib.so, libh264-bitstream-lib.so used by media pipeline"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "sd.status",
+      "kind": "request",
+      "description": "SD card status. Method getSdCardStatus (getHardDiskStatus on NVR/hard-disk models), module harddisk_manage, table [\"hd_info\"]. Response harddisk_manage.hd_info is a list of single-entry maps (key e.g. hd_info_1) with disk fields.",
+      "value": {
+        "method": "getSdCardStatus",
+        "params": {
+          "harddisk_manage": {
+            "table": [
+              "hd_info"
+            ]
+          }
+        },
+        "response_fields": [
+          "disk_name",
+          "status",
+          "detect_status",
+          "type",
+          "total_space",
+          "free_space",
+          "video_total_space",
+          "video_free_space",
+          "picture_total_space",
+          "picture_free_space",
+          "msg_push_total_space",
+          "msg_push_free_space",
+          "gallery_rec_total_space",
+          "gallery_rec_free_space",
+          "gallery_snap_total_space",
+          "gallery_snap_free_space",
+          "record_duration",
+          "record_free_duration",
+          "record_start_time",
+          "write_protect",
+          "percent",
+          "security_status",
+          "hardware_security_config",
+          "password",
+          "storage_version"
+        ],
+        "status_enum": [
+          "normal",
+          "unformatted",
+          "abnormal",
+          "formatting",
+          "offline",
+          "insufficient",
+          "full",
+          "DilatantSuspect",
+          "recognizing",
+          "mismatched"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 22,
+          "snippet": "GET_SD_CARD_STATUS(\"getSdCardStatus\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2757,
+          "snippet": "D0(Method.GET_SD_CARD_STATUS, Module.HARD_DISK_MANAGE, Section.TABLE, Collections.singletonList(Section.HARD_DISK_INFO.getValue()))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 46,
+          "snippet": "HARD_DISK_MANAGE(\"harddisk_manage\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 77,
+          "snippet": "HARD_DISK_INFO(\"hd_info\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/HardDiskInfo.java",
+          "line": 40,
+          "snippet": "@SerializedName(\"video_free_space\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SdCardStatus.java",
+          "line": 19,
+          "snippet": "NORMAL(\"normal\"), UNFORMATTED(\"unformatted\"), ..."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "sd.format",
+      "kind": "request",
+      "description": "Format SD card (DESTRUCTIVE; record only, a client must not call it without explicit user confirmation). Simple form: {harddisk_manage:{format_hd:\"1\"}}. Newer form puts FormatInfo directly under harddisk_manage (Section.EMPTY): {format_hd, rec_percent, snap_permile}. Progress: getSdCardFormatStatus {harddisk_manage:{get_format_status:{disk_name:\"1\"}}}; status values success/waiting/failed.",
+      "value": {
+        "format_simple": {
+          "method": "formatSdCard",
+          "params": {
+            "harddisk_manage": {
+              "format_hd": "1"
+            }
+          }
+        },
+        "format_with_partition": {
+          "method": "formatSdCard",
+          "params": {
+            "harddisk_manage": {
+              "format_hd": "1",
+              "rec_percent": 90,
+              "snap_permile": 50
+            }
+          }
+        },
+        "format_status": {
+          "method": "getSdCardFormatStatus",
+          "params": {
+            "harddisk_manage": {
+              "get_format_status": {
+                "disk_name": "1"
+              }
+            }
+          }
+        },
+        "format_status_values": [
+          "success",
+          "waiting",
+          "failed"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 23,
+          "snippet": "FORMAT_SD_CARD(\"formatSdCard\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4626,
+          "snippet": "new Request(Method.FORMAT_SD_CARD, new Wrapper(Module.HARD_DISK_MANAGE, Section.HARD_DISK_FORMAT, \"1\"))"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4551,
+          "snippet": "new Request(Method.FORMAT_SD_CARD, new Wrapper(Module.HARD_DISK_MANAGE, Section.EMPTY, formatInfo))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/FormatInfo.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"format_hd\")"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1312,
+          "snippet": "Method.GET_SD_CARD_FORMAT_STATUS, new Wrapper(Module.HARD_DISK_MANAGE, Section.HARD_DISK_FORMAT_STATUS, DiskInfo.getSingletonDisk())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/DiskInfo.java",
+          "line": 18,
+          "snippet": "singletonDisk = new DiskInfo(\"1\");"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "sd.loop_recording",
+      "kind": "request",
+      "description": "Circular (loop) recording. get: getCircularRecordingConfig {harddisk_manage:{name:[\"harddisk\"]}}; set: setCircularRecordingConfig {harddisk_manage:{harddisk:{loop:\"on\"|\"off\"}}}.",
+      "value": {
+        "get": {
+          "method": "getCircularRecordingConfig",
+          "params": {
+            "harddisk_manage": {
+              "name": [
+                "harddisk"
+              ]
+            }
+          }
+        },
+        "set": {
+          "method": "setCircularRecordingConfig",
+          "params": {
+            "harddisk_manage": {
+              "harddisk": {
+                "loop": "on"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4827,
+          "snippet": "new Wrapper(Module.HARD_DISK_MANAGE, Section.HARD_DISK_LOOP, new HardDiskLoop(z12 ? \"on\" : \"off\"))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 76,
+          "snippet": "HARD_DISK_LOOP(\"harddisk\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "sd.record_plan",
+      "kind": "request",
+      "description": "Recording schedule. get: getRecordPlan {record_plan:{name:[\"chn1_channel\"]}}; set: setRecordPlan {record_plan:{chn1_channel:{enabled, monday..sunday}}}. Day strings encode time slots (format not decoded here). Audio recording toggle: setRecordAudio {audio_config:{record_audio:{enabled:\"on\"|\"off\"}}}.",
+      "value": {
+        "get": {
+          "method": "getRecordPlan",
+          "params": {
+            "record_plan": {
+              "name": [
+                "chn1_channel"
+              ]
+            }
+          }
+        },
+        "set": {
+          "method": "setRecordPlan",
+          "params": {
+            "record_plan": {
+              "chn1_channel": {
+                "enabled": "on",
+                "monday": "...",
+                "tuesday": "...",
+                "wednesday": "...",
+                "thursday": "...",
+                "friday": "...",
+                "saturday": "...",
+                "sunday": "..."
+              }
+            }
+          }
+        },
+        "record_audio": {
+          "method": "setRecordAudio",
+          "params": {
+            "audio_config": {
+              "record_audio": {
+                "enabled": "on"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4859,
+          "snippet": "new Request(Method.GET_RECORD_PLAN, new Wrapper(Module.RECORD_PLAN, Section.NAME, Collections.singletonList(Section.CHN1_CHANNEL.getValue())))"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4438,
+          "snippet": "new Request(Method.SET_RECORD_PLAN, new Wrapper(Module.RECORD_PLAN, Section.CHN1_CHANNEL, recordPlanInfo))"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4375,
+          "snippet": "new Wrapper(Module.AUDIO_CONFIG, Section.RECORD_AUDIO, new RecordAudioInfo(z12 ? \"on\" : \"off\"))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/RecordPlanInfo.java",
+          "line": 12,
+          "snippet": "private String enabled; private String friday; ..."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "thirdparty.camera_account",
+      "kind": "request",
+      "description": "The 'Camera Account' (RTSP/ONVIF credentials, a.k.a. third account). get: getThirdAccount {user_management:{name:[\"third_account\"]}}; change: changeThirdAccount {user_management:{change_third_account:AccountInfo}}; verify: verifyThirdAccount {user_management:{verify_third_account:{username, passwd...}}}; delete: deleteThirdAccount {user_management:{delete_third_account:{}}}. AccountInfo fields: username, passwd, old_passwd, secname, enabled, encrypt_type, ciphertext, public_key, unique_key.",
+      "value": {
+        "get": {
+          "method": "getThirdAccount",
+          "params": {
+            "user_management": {
+              "name": [
+                "third_account"
+              ]
+            }
+          }
+        },
+        "change": {
+          "method": "changeThirdAccount",
+          "params": {
+            "user_management": {
+              "change_third_account": {
+                "username": "rtspuser",
+                "passwd": "<pw or ciphertext>"
+              }
+            }
+          }
+        },
+        "verify": {
+          "method": "verifyThirdAccount",
+          "params": {
+            "user_management": {
+              "verify_third_account": {
+                "username": "rtspuser",
+                "passwd": "<pw>"
+              }
+            }
+          }
+        },
+        "delete": {
+          "method": "deleteThirdAccount",
+          "params": {
+            "user_management": {
+              "delete_third_account": {}
+            }
+          }
+        },
+        "account_fields": [
+          "username",
+          "passwd",
+          "old_passwd",
+          "secname",
+          "enabled",
+          "encrypt_type",
+          "ciphertext",
+          "public_key",
+          "unique_key"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4108,
+          "snippet": "new Request(Method.GET_THIRD_ACCOUNT, new Wrapper(Module.USER_MANAGEMENT, Section.NAME, Collections.singletonList(Section.THIRD_ACCOUNT.getValue())))"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1285,
+          "snippet": "new Wrapper(Module.USER_MANAGEMENT, Section.CHANGE_THIRD_ACCOUNT, new AccountInfo(str, str2, str3))"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3643,
+          "snippet": "new Wrapper(Module.USER_MANAGEMENT, Section.DELETE_THIRD_ACCOUNT, Collections.EMPTY_MAP)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/AccountInfo.java",
+          "line": 24,
+          "snippet": "@SerializedName(\"passwd\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "thirdparty.rtsp_onvif_security",
+      "kind": "request",
+      "description": "RTSP and ONVIF security settings (auth algorithm, ONVIF auth type, TLS). get capability: getRtspSecurityCapability {security_capability:{rtsp_security_capability:{}}}, getOnvifSecurityCapability {security_capability:{onvif_security_capability:{}}}; get config: getRtspSecurityConfig {security_config:{rtsp_security_config:{}}}, getOnvifSecurityConfig {security_config:{onvif_security_config:{}}}; set: setOnvifSecurityConfig {security_config:{onvif_security_config:{auth_algo,auth_type,tls_enable,tls_version}}} and setRtspSecurityConfig {security_config:{rtsp_security_config:{auth_algo,tls_enable,tls_version}}}. Capability lists give allowed auth_algo / auth_type / tls_version values. The app has no plain on/off RTSP or ONVIF service toggle; enabling = creating the camera account.",
+      "value": {
+        "get_all": {
+          "method": "multipleRequest",
+          "params": {
+            "requests": [
+              {
+                "method": "getRtspSecurityCapability",
+                "params": {
+                  "security_capability": {
+                    "rtsp_security_capability": {}
+                  }
+                }
+              },
+              {
+                "method": "getRtspSecurityConfig",
+                "params": {
+                  "security_config": {
+                    "rtsp_security_config": {}
+                  }
+                }
+              },
+              {
+                "method": "getOnvifSecurityCapability",
+                "params": {
+                  "security_capability": {
+                    "onvif_security_capability": {}
+                  }
+                }
+              },
+              {
+                "method": "getOnvifSecurityConfig",
+                "params": {
+                  "security_config": {
+                    "onvif_security_config": {}
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "onvif_config_fields": {
+          "auth_algo": "string",
+          "auth_type": "string",
+          "tls_enable": "on|off",
+          "tls_version": "string"
+        },
+        "rtsp_config_fields": {
+          "auth_algo": "string",
+          "tls_enable": "on|off",
+          "tls_version": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1908,
+          "snippet": "arrayList.add(D0(method, module, section, map));  // getRtspSecurityCapability, security_capability"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 1947,
+          "snippet": "D0(method, module, Section.ONVIF_SECURITY_CONFIG, onvifSecurityConfig)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 100,
+          "snippet": "GET_RTSP_SECURITY_CAPABILITY(\"getRtspSecurityCapability\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Section.java",
+          "line": 173,
+          "snippet": "ONVIF_SECURITY_CONFIG(\"onvif_security_config\"),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/OnvifSecurityConfig.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"auth_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Module.java",
+          "line": 44,
+          "snippet": "SECURITY_CAPABILITY(\"security_capability\"),"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "thirdparty.nvr_compatibility",
+      "kind": "request",
+      "description": "Third-party NVR compatibility switch and third-party camera type. getThirdPartyCompatibility {local_ctrl:{name:\"third_party_setting\"}}; setThirdPartyCompatibility {local_ctrl:{third_party_setting:{enabled:\"on\"|\"off\"}}}. getThirdPartyCamera {video:{name:\"third_party_camera\"}}; setThirdPartyCamera {video:{third_party_camera:{camera_type:\"...\"}}} (used by a regional third-party config screen).",
+      "value": {
+        "get_compat": {
+          "method": "getThirdPartyCompatibility",
+          "params": {
+            "local_ctrl": {
+              "name": "third_party_setting"
+            }
+          }
+        },
+        "set_compat": {
+          "method": "setThirdPartyCompatibility",
+          "params": {
+            "local_ctrl": {
+              "third_party_setting": {
+                "enabled": "on"
+              }
+            }
+          }
+        },
+        "get_camera_type": {
+          "method": "getThirdPartyCamera",
+          "params": {
+            "video": {
+              "name": "third_party_camera"
+            }
+          }
+        },
+        "set_camera_type": {
+          "method": "setThirdPartyCamera",
+          "params": {
+            "video": {
+              "third_party_camera": {
+                "camera_type": "<type>"
+              }
+            }
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 4297,
+          "snippet": "D0(Method.GET_THIRD_PARTY_COMPATIBILITY, Module.LOCAL_CTRL, Section.NAME, Section.THIRD_PARTY_SETTING.getValue())"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 341,
+          "snippet": "D0(Method.SET_THIRD_PARTY_COMPATIBILITY, Module.LOCAL_CTRL, Section.THIRD_PARTY_SETTING, thirdPartyCompatibilityParams)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/ThirdPartyCompatibilityParams.java",
+          "line": 11,
+          "snippet": "private String enabled;"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2285,
+          "snippet": "D0(Method.SET_THIRD_PARTY_CAMERA, Module.VIDEO, Section.THIRD_PARTY_CAMERA, cameraThirdPartyType)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/CameraThirdPartyType.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"camera_type\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "onvif.port",
+      "kind": "endpoint",
+      "description": "ONVIF device service on TCP 2020 (http://<ip>:2020/onvif/device_service), using the camera account credentials (WS-UsernameToken). The APK contains no ONVIF client code beyond the security settings above; the port is firmware behavior from public sources.",
+      "value": {
+        "port": 2020,
+        "device_service": "/onvif/device_service",
+        "auth": "WS-Security UsernameToken (digest) with camera account"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/OnvifSecurityConfig.java",
+          "line": 16,
+          "snippet": "@SerializedName(\"auth_type\")  // only ONVIF-related config in APK"
+        }
+      ],
+      "confidence": "external"
+    },
+    {
+      "id": "onvif.discovery",
+      "kind": "endpoint",
+      "description": "WS-Discovery: UDP multicast 239.255.255.250:3702 Probe for dn:NetworkVideoTransmitter; camera answers with XAddrs pointing to :2020. Not implemented in the APK (the app discovers via TDP instead).",
+      "value": {
+        "multicast": "239.255.255.250",
+        "port": 3702,
+        "types": "dn:NetworkVideoTransmitter"
+      },
+      "evidence": [
+        {
+          "source": "external",
+          "url": "https://www.tapo.com/en/faqs/tapo-camera-onvif-and-rtsp-common-questions-answered",
+          "summary": "Tapo FAQ: ONVIF Profile S on port 2020; ONVIF WS-Discovery (udp 3702 multicast 239.255.255.250) and Events PullPoint are ONVIF Core standard services"
+        },
+        {
+          "source": "external",
+          "url": "https://www.onvif.org/specs/core/ONVIF-Core-Specification.pdf",
+          "summary": "ONVIF Core spec sections WS-Discovery and Event Service (CreatePullPointSubscription / PullMessages)"
+        }
+      ],
+      "confidence": "external"
+    },
+    {
+      "id": "onvif.events_pullpoint",
+      "kind": "endpoint",
+      "description": "ONVIF Events: CreatePullPointSubscription + PullMessages on the events service (:2020) deliver motion (tns1:RuleEngine/CellMotionDetector/Motion, IsMotion) and on some firmware person/vehicle detection topics. This is the only LAN push-style event channel; the app itself relies on cloud push and polling (getLastAlarmInfo / searchDetectionList).",
+      "value": {
+        "operations": [
+          "GetEventProperties",
+          "CreatePullPointSubscription",
+          "PullMessages",
+          "Renew",
+          "Unsubscribe"
+        ],
+        "motion_topic": "tns1:RuleEngine/CellMotionDetector/Motion"
+      },
+      "evidence": [
+        {
+          "source": "external",
+          "url": "https://www.tapo.com/en/faqs/tapo-camera-onvif-and-rtsp-common-questions-answered",
+          "summary": "Tapo FAQ: ONVIF Profile S on port 2020; ONVIF WS-Discovery (udp 3702 multicast 239.255.255.250) and Events PullPoint are ONVIF Core standard services"
+        },
+        {
+          "source": "external",
+          "url": "https://www.onvif.org/specs/core/ONVIF-Core-Specification.pdf",
+          "summary": "ONVIF Core spec sections WS-Discovery and Event Service (CreatePullPointSubscription / PullMessages)"
+        }
+      ],
+      "confidence": "external"
+    },
+    {
+      "id": "rtsp.endpoints",
+      "kind": "endpoint",
+      "description": "RTSP on TCP 554: rtsp://<user>:<pass>@<ip>:554/stream1 (main/HD) and /stream2 (sub/SD), camera-account credentials, Digest/Basic per rtsp_security_config.auth_algo. RTSP does not expose SD playback; SD VOD must use the /stream media session. URL paths are from public sources; the APK lists a request_rtsp_url method (hub/cloud) but no local RTSP URL template.",
+      "value": {
+        "port": 554,
+        "paths": {
+          "main": "/stream1",
+          "sub": "/stream2"
+        },
+        "apk_method": "request_rtsp_url"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 663,
+          "snippet": "REQUEST_RTSP_URL(\"request_rtsp_url\"),"
+        }
+      ],
+      "confidence": "external"
+    },
+    {
+      "id": "vod.client_flow",
+      "kind": "state_machine",
+      "description": "Recommended desktop flow derived from the app: (1) HTTPS API: searchDateWithVideo for the visible month -> days; (2) searchVideoWithUTC for a day, paging 100 at a time while to_be_continued != 0 -> clip list; optionally searchDetectionList for event markers; (3) open /stream connection (digest auth, key exchange) ; (4) send get playback with start_time of selected position, scale '1/1', channels [0], optional event_type filter; (5) on response save session_id; read multipart parts: video/mp2t -> decrypt if X-If-Encrypt=1 -> TS demux/decoder; application/json -> notifications; ack every 25 parts with stream_sequence; (6) seek = do play with new start_time; pause/resume = do pause / do play; speed = do play with scale; (7) end: stream_status finished or playback_switch_next; stop = do stop 'playback'. Download: same but get download with start/end of clip, collect TS until stream_status finished, then remux to MP4.",
+      "value": {
+        "states": [
+          "IDLE",
+          "SEARCH_DAYS",
+          "SEARCH_CLIPS",
+          "CONNECTING",
+          "AUTH",
+          "SESSION_OPEN",
+          "STREAMING",
+          "PAUSED",
+          "FINISHED",
+          "CLOSED"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 818,
+          "snippet": "b0(getDownloadResponse.getSessionId());"
+        },
+        {
+          "source": "jadx",
+          "file": "ed1/b.java",
+          "line": 838,
+          "snippet": "this.P = -1L; ... aVar5.a(...)  // finished"
+        }
+      ],
+      "confidence": "inferred"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "media port",
+      "detail": "No hard-coded 8800 in Java; port comes from device record (TDP http_port). Confirm against a live camera."
+    },
+    {
+      "topic": "search_video_results map key names",
+      "detail": "Response is List<Map<String,Item>>; key naming (search_video_results_1 ...) taken from public pytapo, not visible in APK."
+    },
+    {
+      "topic": "vedio_type vs alarm_type semantics",
+      "detail": "Assumed both use PlayBackEventType codes; mapping code for the record list was not traced end to end."
+    },
+    {
+      "topic": "Stream key derivation secret",
+      "detail": "Which password form (plain cloud password / MD5 / SHA256 / camera account) feeds the AES key is determined in the live-stream path (o81.c.d / o81.c.f, GenKey); covered by the live-stream spec."
+    },
+    {
+      "topic": "Record plan day-string format",
+      "detail": "RecordPlanInfo monday..sunday string encoding not decoded."
+    },
+    {
+      "topic": "REA coverage",
+      "detail": "REA Android class/method inspection needs REA_JADX_MCP_JAR; Ghidra backend on Windows only accepts PE, so native ELF libs could not be decompiled via REA. All APK facts come from the JADX tree."
+    },
+    {
+      "topic": "ONVIF events/discovery",
+      "detail": "No ONVIF client code in APK; PullPoint/WS-Discovery facts are external and must be validated on the device."
+    }
+  ]
+}

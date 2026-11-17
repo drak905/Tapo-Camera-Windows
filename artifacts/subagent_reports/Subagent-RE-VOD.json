@@ -1,0 +1,35 @@
+{
+ "agent_id": "Subagent-RE-VOD",
+ "status": "ok",
+ "spec_file": "specs/sd_vod_playback_spec.json",
+ "items_total": 39,
+ "items_verified": 30,
+ "rea_commands_run": [
+  "rea inspect-artifact artifacts\\apk\\unpacked\\config.arm64_v8a.apk --format json  => ok: inventoried split APK; lib/arm64-v8a contains libffmpeg-transcode-lib.so, libavformat.so, libavcodec.so, libg722-lib.so, libffmpeg-opus-lib.so, libh264-bitstream-lib.so, libxnet-lib.so, libmeta-rtc-lib.so, libxquic.so",
+  "rea inspect-artifact artifacts\\apk\\native_arm64\\libffmpeg-transcode-lib.so --format json  => ok: ELF, sha256 a21ce5efd4f716073c2364766f001a7ca40047d492e5316f0b119de668a5651f",
+  "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.model.DailyPlaybackUtcFilter --format json  => capability_unavailable: REA_JADX_MCP_JAR (jadx-headless-mcp 0.7.1) not configured",
+  "rea inspect-android-package artifacts\\apk\\unpacked\\com.tplink.iot.apk --format json  => capability_unavailable: REA_JADX_MCP_JAR not configured",
+  "rea inspect-binary-layout artifacts\\apk\\native_arm64\\libffmpeg-transcode-lib.so --format json  => capability_unavailable: pwntools profile supports Linux x64 only",
+  "rea inspect artifacts\\apk\\native_arm64\\libg722-lib.so --format md  => provider_unavailable: Windows Ghidra P0 accepts PE targets only; hopper unsupported; ida not configured"
+ ],
+ "key_findings": [
+  "Days with recordings: searchDateWithVideo {playback:{search_year_utility:{channel:[0],start_date:'yyyyMMdd',end_date:'yyyyMMdd'}}} -> playback.search_results[{..:{date}}]",
+  "Clips: searchVideoWithUTC {playback:{search_video_with_utc:{channel:0,start_time,end_time (UTC s),start_index:0,end_index:99,id|player_id}}} -> search_video_results[{..:{startTime,endTime,vedio_type}}], to_be_continued paging; legacy searchVideoOfDay/search_video_utility with date",
+  "Events: searchDetectionList/search_detection_list (start_time,end_time,start_index,end_index) -> items with alarm_type; PlayBackEventType codes 1 timing,2 motion,4 linecross,5 intrusion,6 person,7 baby cry,8 vehicle,9 pet,...36 CO",
+  "Playback on POST /stream: {type:'request',seq,params:{method:'get',playback:{client_id,channels:[0],scale:'1/1',start_time:'<s>',end_time,event_type:[..],filter}}} -> result.session_id; controls do play/pause/stop('playback')",
+  "Download: {method:'get',download:{client_id,channels:[0],media_type:0,start_time,end_time,event_type,download_type:'normal'}}; finished via notification stream_status=finished; stop 'download'",
+  "Media parts video/mp2t with X-Data-PTS, X-If-IFrame, X-Data-Sequence, X-If-Encrypt; ack every 25 parts with X-Data-Received + stream_sequence notification",
+  "TS PMT types: 0x1B H264, 0x24 H265, 0x90 PCMA, 0x91 PCMU, 0x0F AAC, 0x0B Opus; app remuxes to MP4 with MediaMuxer, audio to AAC",
+  "SD: getSdCardStatus {harddisk_manage:{table:['hd_info']}}; formatSdCard {harddisk_manage:{format_hd:'1'}} (destructive); getSdCardFormatStatus",
+  "RTSP/ONVIF: camera account via get/change/verify/deleteThirdAccount (user_management); get/set Rtsp/OnvifSecurityConfig (security_config); setThirdPartyCompatibility {local_ctrl:{third_party_setting:{enabled}}}; no plain RTSP/ONVIF on/off toggle in app"
+ ],
+ "unresolved": [
+  "media port: No hard-coded 8800 in Java; port comes from device record (TDP http_port). Confirm against a live camera.",
+  "search_video_results map key names: Response is List<Map<String,Item>>; key naming (search_video_results_1 ...) taken from public pytapo, not visible in APK.",
+  "vedio_type vs alarm_type semantics: Assumed both use PlayBackEventType codes; mapping code for the record list was not traced end to end.",
+  "Stream key derivation secret: Which password form (plain cloud password / MD5 / SHA256 / camera account) feeds the AES key is determined in the live-stream path (o81.c.d / o81.c.f, GenKey); covered by the live-stream spec.",
+  "Record plan day-string format: RecordPlanInfo monday..sunday string encoding not decoded.",
+  "REA coverage: REA Android class/method inspection needs REA_JADX_MCP_JAR; Ghidra backend on Windows only accepts PE, so native ELF libs could not be decompiled via REA. All APK facts come from the JADX tree.",
+  "ONVIF events/discovery: No ONVIF client code in APK; PullPoint/WS-Discovery facts are external and must be validated on the device."
+ ]
+}

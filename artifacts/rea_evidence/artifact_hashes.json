@@ -1,0 +1,90 @@
+﻿[
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\com.tplink.iot.xapk",
+        "Hash":  "278A82C3F8724DD996FE487E050850D2137C5CA87743C308C0B4FF7DB42DA7E2"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\asset_pack.apk",
+        "Hash":  "61D4427B3D5B2DFB57A702AFB30F9F49CA99A967FC6F88244E14E7C7DF9F76A3"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\com.tplink.iot.apk",
+        "Hash":  "78AAC1692521CFC19645F659F5AE89ABD888794C39C47E366ECAC3204034BF3C"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.ar.apk",
+        "Hash":  "80F1DE19236C1BB8411B561B43256CAF471D653A1A1CAD17AE0C4F70218BBA57"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.arm64_v8a.apk",
+        "Hash":  "A8592641ECCDDEAD31E6BF91440A73BFDF1B0FE437A7B8E3E6CC5228F8B8CF2A"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.de.apk",
+        "Hash":  "7FD1A0BD4D6B5B6DD7D507A2A5E00F86A20B066E47C7E8CEFF7A8ABE134E95DE"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.en.apk",
+        "Hash":  "CAF4B30BFD636F2597858F3D87A8DBE0A64F353E60F4B3639B370F2C947D611E"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.es.apk",
+        "Hash":  "2E7F084F09288D84F067286A7B9BA3AC145E7C998195771B87FDBFE1839373B0"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.fr.apk",
+        "Hash":  "13F479C156CAA547A5D06ABE204335422D3173FD234B75D288427E77A6CB98BD"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.hi.apk",
+        "Hash":  "F998186E68D0E5E479929F1C079A3FED636CF0ED8811C71B59C86270DB8BC401"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.in.apk",
+        "Hash":  "57024A7E45EE3F2E2DEBDC70EFE26F584A0A565B9BBFA0C6B671E5C151BCC7A2"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.it.apk",
+        "Hash":  "61E5BD2C7017E48A30A0DA421AD9A1A7F577B46551B80BA6C5570330E60BB547"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.ja.apk",
+        "Hash":  "4CF70ADCB7FCE2AFB0F2C4200DF761E843B26C12B1A321F39F4A2FB1ECD0FD9B"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.ko.apk",
+        "Hash":  "898C13D8F1C6360EFE461DCC33B08E8D3FC19BA2BE70F8AAC8300F6A82243724"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.my.apk",
+        "Hash":  "8D71AEEB126833514C96B0F8311DCF2877A4EE3295714EE4022C1C9709C4667B"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.pt.apk",
+        "Hash":  "2D4721A5AE600056868DEFC12F54B53838B989DB45AA4C40D9967387091F0F4E"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.ru.apk",
+        "Hash":  "D3D8E8FBE6C062CB2D459C32737DC14E1FDFC8877F5A0E5C6E6665D315617E38"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.th.apk",
+        "Hash":  "EEECEA06FEEF06E4B1317601C8C59A285EF6784D7FD287EFBBC15590F9370D1B"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.tr.apk",
+        "Hash":  "A68C286535E52D225DA8B02F8870E24DD5A75AFFD48F7D9CA62D676357664422"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.vi.apk",
+        "Hash":  "B2B8D271DC0F2266CCBF2F408CFE1F93F1CF9210A228570AF6FB81578964DDA0"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.xxhdpi.apk",
+        "Hash":  "7E9A168241FD3B1D9874A422D66AC8A6690E85757A024A5EDF86CBBBB5B55B5B"
+    },
+    {
+        "Path":  "E:\\002.Github\\054.Tapo_Camera_Windows\\artifacts\\apk\\unpacked\\config.zh.apk",
+        "Hash":  "8CCF44594BD2108E46285694E6DFDEAA837FC79A49A74F6170BA29A6F7FC31A5"
+    }
+]

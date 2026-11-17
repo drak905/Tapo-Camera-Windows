@@ -1,0 +1,33 @@
+{
+  "agent_id": "Subagent-RE-Auth",
+  "status": "ok",
+  "spec_file": "specs/auth_handshake_spec.json",
+  "items_total": 22,
+  "items_verified": 21,
+  "rea_commands_run": [
+    "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 800 (ok)",
+    "rea inspect-android-method artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.util.SecureUtils__SecureUtilsKt o --format json (failed: REA_JADX_MCP_JAR missing)",
+    "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.transport.local.LocalSecureAccessApi --format json (failed: same)",
+    "rea inspect-android-package artifacts\\apk\\unpacked\\com.tplink.iot.apk --format json (failed: same)"
+  ],
+  "key_findings": [
+    "Session type from TDP: tpap present -> TPAP/SPAKE2+; encrypt_type == ['3'] -> secure v3 (LocalSecureSession); else legacy MD5 login",
+    "Username 'admin'; password = TP-Link cloud account password (plaintext from TCAccountBean), LAT from cloud, or md5(deviceId) for FFS (-90000/-90001)",
+    "Legacy: {method:login,params:{hashed:true,password:MD5 upper hex,username:admin}} -> stok; plaintext POST /stok=<stok>/ds",
+    "v3 cnonce = 8 random bytes -> 16 upper hex; step1 -> -40413 with nonce, device_confirm = SHA256U(cnonce+SHA256U(pwd)+nonce)+nonce+cnonce",
+    "digest_passwd = SHA256U(SHA256U(pwd)+cnonce+nonce)+cnonce+nonce; response stok, start_seq, user_group",
+    "lsk/ivb = SHA256('lsk'/'ivb'+cnonce+nonce+SHA256U(cnonce+SHA256U(pwd)+nonce))[0:16]; AES-128-CBC PKCS7, fixed IV per session, base64 NO_WRAP",
+    "securePassthrough {request:b64} -> {response:b64}; headers 'seq' and 'tapo_tag'; tag = SHA256U(SHA256U(SHA256U(pwd)+cnonce)+bodyJson+seq); seq = start_seq then +1 per request",
+    "TLS: trust-all TrustManager + hostname verifier true; only TPAP tls==2 pins TP-Link device root CA + MAC check",
+    "Error table CameraErrorCode: -40401 session expired (re-login), -40404 device blocked, -40413 invalid nonce/challenge, -40210 protocol format (re-login), -40211 missing params",
+    "Golden vector computed (password test_password, cnonce ABCDEF0123456789, nonce 0123456789ABCDEF, seq 1234) incl. AES ciphertext and tag"
+  ],
+  "unresolved": [
+    "-40102 / lockout seconds: -40102 does not exist in CameraErrorCode; lockout is DEVICE_BLOCKED -40404. Remaining-lockout time field (sec_left) only appears in ChangeAccountStatus / NVR beans, not in LoginFailData.",
+    "MD5 device_confirm variant: App only implements SHA-256 password hashing for encrypt_type 3; pytapo's MD5 fallback is not confirmed by this APK.",
+    "LAT acquisition: LAT is issued/synced through cloud ThingApi (syncThingLat); a pure-LAN client cannot obtain it. If the camera is in LAT mode the cloud password will not verify.",
+    "Third-party compatibility: ThirdPartyCompatibilityRepository sends username 'TPL075526460603' + cloud password via a setter (bv0.jm.K7 -> qk.oa); request method name not traced.",
+    "TPAP details: SPAKE2+ message formats, TSLP binary framing and key schedule not traced (out of scope; see com/tplink/tls/session/*).",
+    "REA jadx provider: rea inspect-android-class/method/package fail: REA_JADX_MCP_JAR not configured; only rea inspect-artifact succeeded."
+  ]
+}

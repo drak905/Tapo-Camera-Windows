@@ -1,0 +1,13 @@
+﻿{
+  "name": "tapo-desktop-tasks",
+  "private": true,
+  "description": "Task aliases for the verification gates (the app itself is Python/PyQt6).",
+  "scripts": {
+    "verify:specs": "powershell -NoProfile -File tools/run.ps1 verify-specs",
+    "test:tdd-all": "powershell -NoProfile -File tools/run.ps1 test-tdd",
+    "test:soak": "powershell -NoProfile -File tools/run.ps1 test-soak",
+    "test:hardware": "powershell -NoProfile -File tools/run.ps1 test-hardware",
+    "build:windows": "powershell -NoProfile -File tools/run.ps1 build-windows",
+    "audit:release": "powershell -NoProfile -File tools/run.ps1 audit-release"
+  }
+}

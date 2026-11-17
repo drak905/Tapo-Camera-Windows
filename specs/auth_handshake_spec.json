@@ -1,0 +1,1233 @@
+{
+  "spec_id": "auth_handshake_spec",
+  "apk": {
+    "package": "com.tplink.iot",
+    "version_name": "3.22.806",
+    "version_code": "7276"
+  },
+  "summary": "Local HTTPS(:443) auth of Tapo cameras (libtapocameranetwork). Session type chosen from TDP discovery: tpap object -> TPAP/SPAKE2+; encrypt_type == [\"3\"] -> secure v3; else legacy. Username always 'admin'; password = cloud account password (or cloud LAT, or md5(deviceId) when unprovisioned). Legacy: login {hashed:true,password:MD5U}. v3: login{cnonce,encrypt_type:'3',username} -> -40413 {nonce,device_confirm=SHA256U(cnonce+SHA256U(pwd)+nonce)+nonce+cnonce} -> login + digest_passwd=SHA256U(SHA256U(pwd)+cnonce+nonce)+cnonce+nonce -> stok,start_seq. lsk/ivb = SHA256('lsk'|'ivb'+cnonce+nonce+SHA256U(cnonce+SHA256U(pwd)+nonce))[:16]; AES-128-CBC/PKCS7 + base64 in {method:securePassthrough,params:{request}} to /stok=<stok>/ds with headers seq and tapo_tag=SHA256U(SHA256U(SHA256U(pwd)+cnonce)+body+seq); seq post-increments. TLS: trust-all + no hostname check (except TPAP tls==2).",
+  "items": [
+    {
+      "id": "auth.transport.selection",
+      "kind": "state_machine",
+      "description": "How the app chooses the local session implementation (legacy / secure v3 / TPAP) for a camera on HTTPS.",
+      "value": {
+        "inputs": "TDP discovery result (UDP TDP, see discovery spec): encrypt_type (List<String>), tpap (TDPTpapInfo, nullable), http_port (0 -> 443), tpap_preferred",
+        "rules": [
+          "1. if tpap object present AND a TPAP authenticator (o21.d) was built -> TPAP session (transport.local.z2) using TLA/SPAKE2+ (see auth.tpap.*)",
+          "2. else if encrypt_type list is exactly [\"3\"] -> LocalSecureSession (secure login v3 + securePassthrough)",
+          "3. else -> legacy session transport.local.b2 (MD5 hashed login, plaintext JSON)"
+        ],
+        "encrypt_type_enum_TPCameraEncryptType": {
+          "UNSUPPORTED": -1,
+          "LEGACY_SUPPORT": 1,
+          "TYPE_V3": 3,
+          "TYPE_V4": 4
+        },
+        "type_v4_note": "encrypt_type [\"4\"] (isEncryptTypeV4) is a separate local-control flavour; it does not select LocalSecureSession in uk.c (only exact [\"3\"] does).",
+        "base_url": "https://<ip>:<port>; port = tpap.port if TPAP and >0 else http_port (default 443)",
+        "http_client": {
+          "connect/read/write timeout_s": 30,
+          "pooled_client": "ConnectionPool(4, 5 min), maxRequestsPerHost 4",
+          "unpooled_client": "ConnectionPool(0)"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/uk.java",
+          "line": 138,
+          "snippet": "z21.a.a(list) ? new LocalSecureSession(...) : new ...b2(...)"
+        },
+        {
+          "source": "jadx",
+          "file": "z21/a.java",
+          "line": 11,
+          "snippet": "list.size() == 1 && Intrinsics.d(\"3\", list.get(0))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/TPCameraEncryptType.java",
+          "line": 13,
+          "snippet": "TYPE_V3(3),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/d2.java",
+          "line": 130,
+          "snippet": "return SSLClient.HTTPS_PREFIX + this.f157888a + \":\" + this.f157889b;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/TDPCameraDevice.java",
+          "line": 149,
+          "snippet": "return i12 != 0 ? i12 : BR.viewListener; // =443"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/uk.java",
+          "line": 116,
+          "snippet": "builder.readTimeout(30L, timeUnit)"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\unpacked\\com.tplink.iot.apk --token-limit 800",
+          "summary": "APK identified as format apk, sha256 78aac1692521cfc19645f659f5ae89abd888794c39c47e366ecac3204034bf3c, 41959 graph nodes; confirms the analysed base APK identity."
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.common.username",
+      "kind": "constant",
+      "description": "Username sent in every local login (legacy and secure).",
+      "value": {
+        "username": "admin",
+        "other_constant": "util.l.g(true) returns \"TPL075526460603\" (used only by the Third-Party/Home-Assistant compatibility setting flow, not by normal login)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 278,
+          "snippet": "new Account(\"admin\", d2Var.f(), false)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 266,
+          "snippet": "new Account(\"admin\", ...getFFSDefaultPwd(), false)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/l.java",
+          "line": 136,
+          "snippet": "z12 ? \"TPL075526460603\" : \"admin\""
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.common.password_sources",
+      "kind": "constant",
+      "description": "Which secret is used as 'password' for local HTTPS login.",
+      "value": {
+        "tp_password": "The TP-Link cloud (Tapo) account password in plaintext: TCAccountBean.getPassword() is passed into d2 as password (d2.f()). This is the default for owner/shared users (CameraPasswordMode.TP_PASSWORD = \"tp_password\").",
+        "lat": "Local Access Token (CameraLATInfo.localAccessToken, CameraPasswordMode.LAT = \"lat\") obtained from / synced through the cloud (ThingApi.syncThingLat, body {\"localAccessToken\":...}). Used when device_confirm shows the camera does NOT use the TP password.",
+        "ffs_default": "Unprovisioned (factory, FFS) camera: password = md5(deviceId) lower-case hex (or TDP deviceIdMd5 for some models); triggered by error -90000 (FFS_NONE_PWD) or -90001 (TSS_NONE_PWD).",
+        "camera_account_note": "The 'Camera Account' (localUserName, d2.l()) is NOT used for the :443 API login in this code path; it is only used as a cookie-jar/session key prefix (localUserName + '_' + mac). It is the RTSP/ONVIF credential.",
+        "desktop_client_recommendation": "Use username 'admin' + cloud account password. If device_confirm does not match SHA256U(cnonce+SHA256U(pwd)+nonce) the camera uses a LAT and cloud access is needed."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "bv0/jm.java",
+          "line": 1259,
+          "snippet": "new ...local.d2(ip, httpPort, ...getLocalUserName(), ...getPassword(), ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/d2.java",
+          "line": 93,
+          "snippet": "return this.f157891d;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/bean/CameraPasswordMode.java",
+          "line": 9,
+          "snippet": "TP_PASSWORD(\"tp_password\");"
+        },
+        {
+          "source": "jadx",
+          "file": "wc1/a.java",
+          "line": 101,
+          "snippet": "return l(g(str.getBytes()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 777,
+          "snippet": "new Account(\"admin\", this.f158059c.d(), false) // FFS"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.legacy.login_request",
+      "kind": "request",
+      "description": "Legacy login (cameras whose TDP encrypt_type is not exactly [\"3\"] and no TPAP). Plaintext JSON POST to '/'.",
+      "value": {
+        "http": "POST https://<ip>:443/  Content-Type: application/json",
+        "body": {
+          "method": "login",
+          "params": {
+            "hashed": true,
+            "password": "<MD5(password) UPPER-case hex>",
+            "username": "admin"
+          }
+        },
+        "hash": "MD5 over UTF-8 bytes, hex with alphabet 0123456789ABCDEF (upper case)",
+        "optional_params": {
+          "authType": "only if set (enum serialized by Gson; values AuthType DEFAULT=\"1\", MANUALLY=\"2\", QRCODE=\"3\")",
+          "account_category": "only if set"
+        },
+        "response": {
+          "error_code": 0,
+          "result": {
+            "stok": "<token>",
+            "user_group": "<e.g. root>"
+          }
+        },
+        "subsequent_requests": "POST https://<ip>:443/stok=<stok>/ds with plaintext JSON body (e.g. {\"method\":\"multipleRequest\",\"params\":{\"requests\":[...]}}); no seq/tapo_tag headers.",
+        "anonymous_requests": "POST https://<ip>:443/ without stok (multipleAnonymous/singleAnonymous) for pre-login methods."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 2964,
+          "snippet": "account = Model.passwordDigest(account);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Model__ModelKt.java",
+          "line": 13,
+          "snippet": "Account.copy$default(account, null, k.a(account.getPassword()), true, ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/l.java",
+          "line": 63,
+          "snippet": "MessageDigest.getInstance(MessageDigestAlgorithms.MD5)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/l.java",
+          "line": 47,
+          "snippet": "char[] charArray = \"0123456789ABCDEF\".toCharArray();"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalAccessApi.java",
+          "line": 20,
+          "snippet": "vr1.r<Response<LoginResult>> login(@vx1.a Request request);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Method.java",
+          "line": 96,
+          "snippet": "LOGIN(\"login\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.cnonce",
+      "kind": "algorithm",
+      "description": "Client nonce generation for secure login (encrypt_type \"3\").",
+      "value": {
+        "bytes": 8,
+        "rng": "java.util.Random().nextBytes (not SecureRandom)",
+        "encoding": "hex, then toUpperCase -> 16 chars [0-9A-F]",
+        "example": "ABCDEF0123456789",
+        "reuse": "same cnonce is kept for step 2 and for tag computation for the whole session; FFS re-login reuses the existing cnonce"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/bean/SecureSessionInfo.java",
+          "line": 26,
+          "snippet": "private final byte[] cnonce = new byte[8];"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 222,
+          "snippet": "new Random().nextBytes(secureSessionInfo.getCnonce());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 227,
+          "snippet": "String upperCase = strF.toUpperCase(locale);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.login_step1",
+      "kind": "request",
+      "description": "Secure login step 1 (encrypt_type \"3\"): send cnonce, camera answers error -40413 carrying nonce + device_confirm.",
+      "value": {
+        "http": "POST https://<ip>:443/  Content-Type: application/json (no stok, no seq/tapo_tag)",
+        "body": {
+          "method": "login",
+          "params": {
+            "cnonce": "<16 hex upper>",
+            "encrypt_type": "3",
+            "username": "admin"
+          }
+        },
+        "optional_params": {
+          "auth_type": "AuthType.getAuth(): \"1\" DEFAULT | \"2\" MANUALLY | \"3\" QRCODE (only if Account.authType != null)",
+          "account_category": "string, only if set"
+        },
+        "serialization": "Gson, nulls omitted (digest_passwd absent in step 1), HTML escaping disabled; field order on Android is alphabetical by declared name (not significant to the camera)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 270,
+          "snippet": "this.f157861d.setPwd(account.getPassword());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 308,
+          "snippet": "secureAccount.setCnonce(com.tplink.libtapocameranetwork.util.i.n(this.f157861d));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SecureAccount.java",
+          "line": 22,
+          "snippet": "@SerializedName(\"digest_passwd\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SecureAccount.java",
+          "line": 25,
+          "snippet": "@SerializedName(\"encrypt_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/SecureAccount.java",
+          "line": 18,
+          "snippet": "@SerializedName(\"auth_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Encrypt.java",
+          "line": 13,
+          "snippet": "V3(\"3\");"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/zk.java",
+          "line": 3018,
+          "snippet": "return new Request(Method.LOGIN, secureAccount);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/google/gson/c.java",
+          "line": 151,
+          "snippet": "this.f15283m = false;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.login_step1_response",
+      "kind": "response",
+      "description": "Expected challenge response to step 1.",
+      "value": {
+        "error_code": -40413,
+        "result": {
+          "data": {
+            "code": "<string>",
+            "nonce": "<hex upper, typically 16 chars>",
+            "device_confirm": "<64 hex SHA256U + nonce + cnonce>",
+            "key": "<string, stored but unused locally>"
+          }
+        },
+        "app_checks": [
+          "c(): result.data, data.nonce, data.device_confirm must be non-null else fail 'check loginResultFailData failed'",
+          "d(): len(device_confirm) > len(nonce+cnonce) AND device_confirm ends with (nonce + cnonce) else fail 'check device confirm failed'",
+          "t() isDeviceUseTPPassword: device_confirm startsWith SHA256U(cnonce + SHA256U(password) + nonce) -> camera uses TP (cloud) password; else camera uses LAT"
+        ],
+        "other_codes_at_step1": {
+          "-90000/-90001": "camera unprovisioned (FFS/TSS no password) -> immediate re-login with password md5(deviceId) keeping the same cnonce; marks needSetupFFS",
+          "other": "passed through as error"
+        },
+        "external_note": "pytapo also sees result.data.encrypt_type ([\"3\"]) in this response; not modelled by LoginFailData."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LoginFailData.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"device_confirm\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 73,
+          "snippet": "loginResult.getData().getNonce() == null"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 87,
+          "snippet": "return Intrinsics.d(str, StringsKt.C1(deviceConfirm, str.length()));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 65,
+          "snippet": "String strP2 = i.p(cnonceString + strP + nonceString);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 326,
+          "snippet": "StringsKt.Y(deviceConfirm, strP2, false, 2, null)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 91,
+          "snippet": "if (response.getErrorCode() != CameraErrorCode.INVALID_NONCE.getRawCode())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 277,
+          "snippet": "FFS使用默认密码登录"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.device_confirm",
+      "kind": "algorithm",
+      "description": "Exact device_confirm formula and how the app interprets it.",
+      "value": {
+        "SHA256U(s)": "hex(SHA-256(UTF-8(s))).toUpperCase()",
+        "password_hash": "SHA256U(password)  (SHA-256 variant; the Android app has NO MD5 variant for encrypt_type 3)",
+        "device_confirm": "SHA256U(cnonce + SHA256U(password) + nonce) + nonce + cnonce",
+        "decision": [
+          "matches with cloud password -> TP_PASSWORD mode; login with cloud password (or, if a cached LAT exists and last LAT sync is older than 24 h, first trigger LAT password sync)",
+          "does not match -> LAT mode; if cached LAT matches (same formula with LAT as password) login with LAT; else trigger password sync via cloud then retry"
+        ],
+        "external_note": "pytapo additionally accepts SHA256U(cnonce + MD5U(password) + nonce) for some firmwares; not present in this app version."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 65,
+          "snippet": "String strP2 = i.p(cnonceString + strP + nonceString);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 66,
+          "snippet": "String str = strP2 + nonceString + cnonceString;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 257,
+          "snippet": "MessageDigest.getInstance(MessageDigestAlgorithms.SHA_256).digest(bytes)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/i.java",
+          "line": 74,
+          "snippet": "return SecureUtils__SecureUtilsKt.q(str);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 85,
+          "snippet": "设备使用TP密码"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 220,
+          "snippet": "设备使用同样的LAT, 使用 LAT 登录"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 235,
+          "snippet": "System.currentTimeMillis() - lastSyncLATTime < 86400000"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.digest_passwd",
+      "kind": "algorithm",
+      "description": "digest_passwd (appConfirm) sent in login step 2.",
+      "value": {
+        "formula": "SHA256U(SHA256U(password) + cnonce + nonce) + cnonce + nonce",
+        "length": "64 + 16 + len(nonce) chars"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 213,
+          "snippet": "String strP2 = i.p(strP + cnonceString + nonceString);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 214,
+          "snippet": "String str = strP2 + cnonceString + nonceString;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 147,
+          "snippet": "secureAccount.setDigestPassword(strM);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.login_step2",
+      "kind": "request",
+      "description": "Secure login step 2: same cnonce plus digest_passwd.",
+      "value": {
+        "http": "POST https://<ip>:443/  Content-Type: application/json",
+        "body": {
+          "method": "login",
+          "params": {
+            "cnonce": "<same cnonce>",
+            "digest_passwd": "<see auth.secure.digest_passwd>",
+            "encrypt_type": "3",
+            "username": "admin"
+          }
+        },
+        "response_ok": {
+          "error_code": 0,
+          "result": {
+            "stok": "<token>",
+            "start_seq": "<int>",
+            "user_group": "<string, e.g. root>"
+          }
+        },
+        "on_success": "stok and start_seq stored (z()); lsk/ivb were derived before sending step 2 (o())"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 141,
+          "snippet": "this.f157861d.setPwd(str);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 142,
+          "snippet": "com.tplink.libtapocameranetwork.util.i.o(str, this.f157861d);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LoginResult.java",
+          "line": 18,
+          "snippet": "@SerializedName(\"start_seq\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LoginResult.java",
+          "line": 21,
+          "snippet": "@SerializedName(\"stok\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/LoginResult.java",
+          "line": 15,
+          "snippet": "@SerializedName(\"user_group\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 410,
+          "snippet": "secureSessionInfo.setStok(loginResult.getToken());"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.session_keys",
+      "kind": "algorithm",
+      "description": "Session key (lsk) and IV (ivb) derivation.",
+      "value": {
+        "hashed_key": "first_hash = SHA256U(cnonce + SHA256U(password) + nonce)  (64-char upper hex string)",
+        "lsk": "SHA-256(UTF-8(\"lsk\" + cnonce + nonce + first_hash))[0:16]  (raw bytes, AES-128 key)",
+        "ivb": "SHA-256(UTF-8(\"ivb\" + cnonce + nonce + first_hash))[0:16]  (raw bytes, CBC IV)",
+        "note": "IV is fixed for the whole session (copyEncryptInfo copies the same ivb for every request and response)."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 65,
+          "snippet": "String strP2 = i.p(cnonceString + strP + nonceString);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 244,
+          "snippet": "p(\"lsk\" + cnonceString + nonceString + strP2), RangesKt.p(0, 16)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 245,
+          "snippet": "p(\"ivb\" + cnonceString + nonceString + strP2), RangesKt.p(0, 16)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/bean/SecureSessionInfo.java",
+          "line": 32,
+          "snippet": "public SecureEncryptInfo copyEncryptInfo() {"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.cipher",
+      "kind": "algorithm",
+      "description": "Payload cipher for securePassthrough.",
+      "value": {
+        "cipher": "AES/CBC/PKCS7Padding (AES-128, key=lsk, iv=ivb)",
+        "plaintext": "UTF-8 JSON of the inner Request (normally multipleRequest)",
+        "encoding": "Base64 standard alphabet, with padding, NO_WRAP (android flag 2)",
+        "response": "result.response is Base64 -> AES-CBC decrypt with same lsk/ivb -> UTF-8 JSON {error_code, result:{responses:[...]}} (or single Response)",
+        "quirk": "on cipher exception the app returns the input bytes unchanged instead of failing"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 150,
+          "snippet": "Cipher cipher = Cipher.getInstance(\"AES/CBC/PKCS7Padding\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 151,
+          "snippet": "cipher.init(2, secretKeySpec, new IvParameterSpec(bArr3));"
+        },
+        {
+          "source": "jadx",
+          "file": "wc1/a.java",
+          "line": 33,
+          "snippet": "return Base64.encodeToString(bArr, 2);"
+        },
+        {
+          "source": "jadx",
+          "file": "wc1/a.java",
+          "line": 22,
+          "snippet": "return Base64.decode(str, 2);"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.passthrough_envelope",
+      "kind": "request",
+      "description": "Encrypted request envelope and endpoint used after secure login.",
+      "value": {
+        "http": "POST https://<ip>:443/stok=<stok>/ds",
+        "headers": {
+          "seq": "<int seq as decimal>",
+          "tapo_tag": "<tag>",
+          "Content-Type": "application/json; charset=UTF-8 (Retrofit Gson converter)"
+        },
+        "body": {
+          "method": "securePassthrough",
+          "params": {
+            "request": "<base64 AES ciphertext>"
+          }
+        },
+        "response": {
+          "error_code": 0,
+          "result": {
+            "response": "<base64 AES ciphertext>"
+          }
+        },
+        "error_handling": "outer error_code != 0 -> SecureException(error_code); e.g. -40401 means re-login",
+        "ble_variant_only": "BLE transport adds params.extra = {seq, tapo_tag, token} and escapes '/' as '\\/' when computing tag; NOT used over HTTPS"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureAccessApi.java",
+          "line": 11,
+          "snippet": "@vx1.o(\"/stok={token}/ds\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureAccessApi.java",
+          "line": 12,
+          "snippet": "@vx1.i(RtspHeaders.Values.SEQ) int i12, @vx1.i(\"tapo_tag\") String str"
+        },
+        {
+          "source": "jadx",
+          "file": "io/netty/handler/codec/rtsp/RtspHeaders.java",
+          "line": 95,
+          "snippet": "public static final String SEQ = \"seq\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 179,
+          "snippet": "return new Request(\"securePassthrough\", new SecureRequest(strD, null, 2, null));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Extra.java",
+          "line": 15,
+          "snippet": "@SerializedName(\"tapo_tag\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 181,
+          "snippet": "return vr1.r.c0(new SecureException(response.getErrorCode(), \"secure request error!\"));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.tag",
+      "kind": "algorithm",
+      "description": "tapo_tag header computation (HTTPS LocalSecureSession uses SecureUtils.r, no slash escaping).",
+      "value": {
+        "formula": "tapo_tag = SHA256U( SHA256U( SHA256U(password) + cnonce ) + body_json + str(seq) )",
+        "password": "the password the session logged in with (cloud pwd, LAT or FFS default)",
+        "body_json": "exact JSON of the outer securePassthrough request, serialized by Gson without HTML escaping and without nulls: {\"method\":\"securePassthrough\",\"params\":{\"request\":\"<b64>\"}} (must be byte-identical to the POSTed body)",
+        "seq": "decimal integer, same value sent in the seq header"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 293,
+          "snippet": "String strP2 = i.p(strP + cnonceString);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 294,
+          "snippet": "String strP3 = i.p(strP2 + json + i12);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 155,
+          "snippet": "final String strQ = com.tplink.libtapocameranetwork.util.i.q(this.f157861d, requestJ, startSeq);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/i.java",
+          "line": 78,
+          "snippet": "return SecureUtils__SecureUtilsKt.r(secureSessionInfo, request, i12);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 45,
+          "snippet": "f158126c = new com.google.gson.c().c().b();"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.secure.seq",
+      "kind": "state_machine",
+      "description": "Sequence number rules.",
+      "value": {
+        "init": "seq := result.start_seq from login step 2",
+        "per_request": "AtomicInteger.getAndIncrement(): request uses current seq, then seq += 1 (every securePassthrough call, success or failure)",
+        "reset": "reset() sets seq=0 and clears stok, nonce, cnonce, lsk, ivb, pwd before each new login",
+        "needLogin": "true if lsk/ivb missing or seq == 0"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/bean/SecureSessionInfo.java",
+          "line": 94,
+          "snippet": "return this.startSeq.getAndIncrement();"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 411,
+          "snippet": "secureSessionInfo.setStartSeq(loginResult.getStartSeq());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/bean/SecureSessionInfo.java",
+          "line": 111,
+          "snippet": "return isSecureSessionInfoInvalid() || this.startSeq.get() == 0;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.http.common_headers",
+      "kind": "header",
+      "description": "Headers added to every local HTTPS request by interceptor ov0.b.",
+      "value": {
+        "Referer": "<base url, e.g. https://192.168.1.10:443>",
+        "Accept-Encoding": "gzip, deflate",
+        "User-Agent": "Tapo CameraClient Android",
+        "Connection": "Keep-Alive",
+        "requestByApp": "true",
+        "Accept": "application/json (only if not already set)",
+        "secure_only": {
+          "seq": "int",
+          "tapo_tag": "hex upper"
+        },
+        "cookies": "OkHttp CookieJar pv0.a keyed by session name (localUserName_mac); cookies, if any, are replayed"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ov0/b.java",
+          "line": 34,
+          "snippet": "addHeader(\"Referer\", this.f219777a).addHeader(\"Accept-Encoding\", \"gzip, deflate\")"
+        },
+        {
+          "source": "jadx",
+          "file": "ov0/b.java",
+          "line": 34,
+          "snippet": "addHeader(\"User-Agent\", \"Tapo CameraClient Android\")"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/uk.java",
+          "line": 112,
+          "snippet": "builder.cookieJar(new pv0.a(bVar, str2));"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.tls.trust",
+      "kind": "constant",
+      "description": "TLS certificate validation behaviour toward the camera.",
+      "value": {
+        "default": "Custom X509TrustManager with empty checkServerTrusted (accepts any cert, incl. self-signed) and HostnameVerifier always returning true. No pinning, no fingerprint store, no TOFU.",
+        "tpap_tls2": "Only when TDP tpap.tls == 2 and a root CA string is supplied: o21.e trust manager validates the chain against an embedded TP-Link device root CA (EC P-256; 'TP-LINK SYSTEMS DEVICE ROOT CA' or 'TP-LINK GLOBAL DEVICE ROOT CA', chosen by build flavour) and checks that the leaf certificate contains the device MAC address.",
+        "protocol": "SSLContext default protocol (TLS)",
+        "ssl_handshake_failure": "SSLHandshakeException is logged/treated as a transport error (x0.xm)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "mv0/uk.java",
+          "line": 64,
+          "snippet": "public void checkServerTrusted(X509Certificate[] x509CertificateArr, String str) {"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/uk.java",
+          "line": 84,
+          "snippet": "return true;"
+        },
+        {
+          "source": "jadx",
+          "file": "mv0/uk.java",
+          "line": 95,
+          "snippet": "return inputStream == null ? new a() : new o21.e(inputStream, str);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/d2.java",
+          "line": 99,
+          "snippet": "tDPTpapInfoJ.getTls() != 2 || strH == null"
+        },
+        {
+          "source": "jadx",
+          "file": "o21/e.java",
+          "line": 121,
+          "snippet": "Device MAC address does not match certificate"
+        },
+        {
+          "source": "jadx",
+          "file": "qv0/i1.java",
+          "line": 128,
+          "snippet": "BEGIN CERTIFICATE"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.errors.table",
+      "kind": "error_code",
+      "description": "CameraErrorCode enum (libtapocameranetwork.common) plus SecureException codes, with the app's recovery action where found.",
+      "value": {
+        "-40401": {
+          "name": "SESSION_EXPIRED",
+          "action": "on a data request: invalid stok/session -> reset and re-login; on a login request: app treats it as password mismatch and sets needSyncPassword=true (cloud password sync) before retrying"
+        },
+        "-40412": {
+          "name": "HOMEKIT_LOGIN_FAIL"
+        },
+        "-40404": {
+          "name": "DEVICE_BLOCKED",
+          "action": "too many failed attempts (lockout); shown as password error in password settings"
+        },
+        "-40405": {
+          "name": "DEVICE_FACTORY"
+        },
+        "-40406": {
+          "name": "OUT_OF_LIMIT"
+        },
+        "-40407": {
+          "name": "OTHER_ERROR"
+        },
+        "-40408": {
+          "name": "SYSTEM_BLOCKED"
+        },
+        "-40409": {
+          "name": "NONCE_EXPIRED"
+        },
+        "-40413": {
+          "name": "INVALID_NONCE",
+          "action": "normal step-1 challenge for encrypt_type 3; if returned to a non-secure (legacy) session => firmware switched encryption: mark transport unavailable, redo TDP discovery"
+        },
+        "-40414": {
+          "name": "NEED_LOGIN_BY_LOCAL_PASSWORD"
+        },
+        "-40418": {
+          "name": "TPAP_AUTHENTICATION_FAILED",
+          "action": "TPAP re-auth"
+        },
+        "-40420": {
+          "name": "TPAP_SLP_AUTH_TAG_SIG_FAIL",
+          "action": "TPAP re-auth"
+        },
+        "-40421": {
+          "name": "TPAP_SESSION_TOKEN_INVALID",
+          "action": "re-login"
+        },
+        "-40210": {
+          "name": "PROTOCOL_FORMAT_ERROR",
+          "action": "treated as invalid secure session -> re-login"
+        },
+        "-40211": {
+          "name": "MISSING_NECESSARY_PARAMS"
+        },
+        "-40203": {
+          "name": "BIND_SENSOR_EXISTS"
+        },
+        "-40106": {
+          "name": "UNSUPPORTED_METHOD"
+        },
+        "-40109": {
+          "name": "ONE_SECOND_REPEAT_REQUEST"
+        },
+        "40108": {
+          "name": "TIMEOUT_ERROR"
+        },
+        "-40321": {
+          "name": "IP_CONFLICT"
+        },
+        "-60506": {
+          "name": "LOCAL_ACCOUNT_OLD_PWD_ERROR"
+        },
+        "-80101": {
+          "name": "ENCRYPT_NOT_SUPPORT"
+        },
+        "-90000": {
+          "name": "FFS_NONE_PWD",
+          "action": "re-login with admin / md5(deviceId)"
+        },
+        "-90001": {
+          "name": "TSS_NONE_PWD",
+          "action": "same as -90000"
+        },
+        "-109762": {
+          "name": "SecureException.DECRYPT_ERROR (client-side)",
+          "action": "re-login"
+        },
+        "-109763": {
+          "name": "SecureException.INVALID_PARAMS (client-side, lsk/ivb null)",
+          "action": "re-login"
+        },
+        "-2402": {
+          "name": "(TLA) treated like session invalid",
+          "action": "TPAP re-auth"
+        },
+        "diagnose/network": "-69051..-69097 diagnose and stream errors, -70001/-70002 alarm, -72101 hardwired not found (not auth related)",
+        "-40102": "not present in this app's CameraErrorCode table (unresolved)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 17,
+          "snippet": "SESSION_EXPIRED(-40401),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 30,
+          "snippet": "INVALID_NONCE(-40413),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 19,
+          "snippet": "DEVICE_BLOCKED(-40404),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 36,
+          "snippet": "PROTOCOL_FORMAT_ERROR(-40210),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/net/SecureException.java",
+          "line": 9,
+          "snippet": "public static int DECRYPT_ERROR = -109762;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 801,
+          "snippet": "SecureException.DECRYPT_ERROR != errorCode && SecureException.INVALID_PARAMS != errorCode"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 723,
+          "snippet": "CameraErrorCode.SESSION_EXPIRED.isEqual(((CameraException) th2).getErrorCode())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 733,
+          "snippet": "固件加密方式变更，置为不可用，需要重新TDP 发现"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 843,
+          "snippet": "errorCode == -2402"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.response.envelope",
+      "kind": "response",
+      "description": "Generic JSON response wrapper for all local calls.",
+      "value": {
+        "fields": {
+          "error_code": "int, 0 = success",
+          "method": "string (optional)",
+          "result": "object"
+        },
+        "multiple": "result.responses = [ {method, result, error_code}, ... ]"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/Response.java",
+          "line": 14,
+          "snippet": "@SerializedName(\"error_code\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/model/MultipleResponse.java",
+          "line": 12,
+          "snippet": "private final List<Response<Wrappers>> responses;"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.state_machine.login",
+      "kind": "state_machine",
+      "description": "Secure login flow including password-mode branching (LocalSecureSession.e).",
+      "value": {
+        "steps": [
+          "reset session; pwd := cloud password; cnonce := random",
+          "POST login step1 -> expect -40413 (else if -90000/-90001 -> FFS default login; else return response)",
+          "store nonce/device_confirm/key; verify suffix (nonce+cnonce)",
+          "if device_confirm prefix == SHA256U(cnonce+SHA256U(cloudPwd)+nonce): TP_PASSWORD branch -> login step2 with cloud password (optionally LAT sync first)",
+          "else LAT branch: if cached LAT matches -> step2 with LAT; else cloud password sync (c2.c/b) then step2 with synced secret; if no LAT and sync fails -> error -40413",
+          "step2: derive lsk/ivb, send digest_passwd -> stok + start_seq",
+          "on transport error with -40401/-40421/-40210/decrypt error -> reset and repeat"
+        ],
+        "retry": "tryLogin retried once (b1(1)) when HttpException body is FFS error"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 94,
+          "snippet": "LoginResult loginResult = (LoginResult) response.getResult();"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+          "line": 210,
+          "snippet": "还未获取到LAT 进行一次密码同步 避免一直尝试登录导致设备锁定"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 775,
+          "snippet": "CameraErrorCode.isNonePwdError(response.getErrorCode())"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "auth.tpap.summary",
+      "kind": "state_machine",
+      "description": "Newer TPAP handshake (com.tplink.tls / libtapotpap). Brief summary only.",
+      "value": {
+        "selected_when": "TDP discovery includes a 'tpap' object (TDPTpapInfo: pake[List<int>], port, tls, noc, dac, owner, user_hash_type) and app builds an authenticator; uses tpap.port if > 0",
+        "endpoints": {
+          "login": "POST / (application/json) TslpAuthRequest {method, params}",
+          "data": "POST /stok=<token>/ds (application/octet-stream, binary TSLP frames)"
+        },
+        "sub_methods": [
+          "pake_register",
+          "pake_share",
+          "noc_kex",
+          "noc_proof",
+          "dac_nonce/dac_proof (device attestation)"
+        ],
+        "pake_modes": {
+          "0": "default_userpw (setup/default code)",
+          "1": "setupcode",
+          "2": "userpw: candidates md5(pwd) lower-hex, SHA256U(alt), SHA256U(pwd)",
+          "3": "shared_token"
+        },
+        "user_identity": "user_hash_type==1 -> SHA256U(username/email) else md5 lower-hex",
+        "crypto": "SPAKE2+ cipher suites 1..9: SHA-256/SHA-512, HKDF, HMAC or CMAC-AES-128",
+        "tls": "tls==2 -> pinned TP-Link device root CA + MAC check (see auth.tls.trust)",
+        "relevance": "Only for newer firmware/models advertising tpap; legacy/v3 flows above are what most current Tapo C-series cameras use on :443."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapotpap/TpapAccessApi.java",
+          "line": 21,
+          "snippet": "secureLogin(@a TslpAuthRequest request);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/common/CommonTDPResult.java",
+          "line": 109,
+          "snippet": "@SerializedName(\"tpap\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+          "line": 278,
+          "snippet": "arrayList.add(t(strU, listE, \"userpw\", strH));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+          "line": 310,
+          "snippet": "if (tDPTpapInfo.getUserHashType() == 1) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/Spake2pCipherSuiteType.java",
+          "line": 15,
+          "snippet": "SPAKE2P_CIPHER_SUITE_MAC_CMAC, Spake2pBean.SPAKE2P_CIPHER_SUITE_AES_128"
+        }
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "auth.golden_vector.v3",
+      "kind": "golden_vector",
+      "description": "Deterministic test vector for encrypt_type 3 login + securePassthrough, computed in Python from the APK algorithm.",
+      "value": {
+        "inputs": {
+          "password": "test_password",
+          "cnonce": "ABCDEF0123456789",
+          "nonce": "0123456789ABCDEF",
+          "seq": 1234,
+          "username": "admin"
+        },
+        "legacy_md5_upper_password": "16EC1EBB01FE02DED9B7D5447D3DFC65",
+        "sha256_upper_password": "10A6E6CC8311A3E2BCC09BF6C199ADECD5DD59408C343E926B129C4914F3CB01",
+        "first_hash = SHA256U(cnonce+SHA256U(pwd)+nonce)": "AE0E012599836B112471EC21767309CF4A927A9053B8A9FA7917E8AB28F09D01",
+        "expected_device_confirm = first_hash+nonce+cnonce": "AE0E012599836B112471EC21767309CF4A927A9053B8A9FA7917E8AB28F09D010123456789ABCDEFABCDEF0123456789",
+        "digest_passwd = SHA256U(SHA256U(pwd)+cnonce+nonce)+cnonce+nonce": "5A379DADD2ED54B76D3308115F0520E539295A1EF5C5149DBE269EB7C23ACE5EABCDEF01234567890123456789ABCDEF",
+        "lsk_hex = SHA256('lsk'+cnonce+nonce+first_hash)[0:16]": "018fb84dcd026fb84e766fa42627c6df",
+        "ivb_hex = SHA256('ivb'+cnonce+nonce+first_hash)[0:16]": "0681a79416d607616bc1572710f41f6d",
+        "inner_request_json": "{\"method\":\"multipleRequest\",\"params\":{\"requests\":[{\"method\":\"getDeviceInfo\",\"params\":{\"device_info\":{\"name\":[\"basic_info\"]}}}]}}",
+        "ciphertext_b64 (AES-128-CBC/PKCS7, key=lsk, iv=ivb)": "tsPetnY0BwryJNwfMIFkg6TmS7K69/hlPfr/0l4P3q/Ir3YMNXX0fEE1ASXzOjcW0qoTq3WZqTSc9MSNF2kA5hJJqD5UUkNw54G4WGEg/d0+IDljn04yvBwE8MLzstIcebwChQMmXfM4jJ1hTf6Gj920E5ML9J10B5ThkTJqhfG+WKfkRzTHXtMuNpHkFjOd",
+        "outer_body_json (exact bytes POSTed, also tag input)": "{\"method\":\"securePassthrough\",\"params\":{\"request\":\"tsPetnY0BwryJNwfMIFkg6TmS7K69/hlPfr/0l4P3q/Ir3YMNXX0fEE1ASXzOjcW0qoTq3WZqTSc9MSNF2kA5hJJqD5UUkNw54G4WGEg/d0+IDljn04yvBwE8MLzstIcebwChQMmXfM4jJ1hTf6Gj920E5ML9J10B5ThkTJqhfG+WKfkRzTHXtMuNpHkFjOd\"}}",
+        "tag_prefix = SHA256U(SHA256U(pwd)+cnonce)": "965F1905CC2A04E75E383CE6F9D17CEE73D5D3C8F46CB5AF47FAD987EFCB720F",
+        "tapo_tag = SHA256U(tag_prefix+outer_body_json+str(seq))": "1E3CCDD1AA638ACBF781C0BE09D3510F270E61429E7E86FC56F76B636F2C6A38",
+        "http_headers": {
+          "seq": "1234",
+          "tapo_tag": "1E3CCDD1AA638ACBF781C0BE09D3510F270E61429E7E86FC56F76B636F2C6A38"
+        },
+        "url": "https://<camera-ip>:443/stok=<stok>/ds",
+        "ffs_default_password_example": {
+          "deviceId": "0123456789ABCDEF0123456789ABCDEF01234567",
+          "password = md5(deviceId) lowercase hex": "ac80b0ccea9b65429ad9c7a0b903c025"
+        },
+        "note": "SHA256U = SHA-256 over UTF-8, hex upper-case. Computed with Python hashlib + cryptography 49; decrypt round-trip verified."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 244,
+          "snippet": "p(\"lsk\" + cnonceString + nonceString + strP2)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+          "line": 294,
+          "snippet": "String strP3 = i.p(strP2 + json + i12);"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-android-method artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.util.SecureUtils__SecureUtilsKt o --format json",
+          "summary": "capability_unavailable: jadx provider needs REA_JADX_MCP_JAR (jadx-headless-mcp 0.7.1) which is not installed; method-level REA evidence therefore unavailable, JADX 1.5.6 sources used instead."
+        }
+      ],
+      "confidence": "verified"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "-40102 / lockout seconds",
+      "detail": "-40102 does not exist in CameraErrorCode; lockout is DEVICE_BLOCKED -40404. Remaining-lockout time field (sec_left) only appears in ChangeAccountStatus / NVR beans, not in LoginFailData."
+    },
+    {
+      "topic": "MD5 device_confirm variant",
+      "detail": "App only implements SHA-256 password hashing for encrypt_type 3; pytapo's MD5 fallback is not confirmed by this APK."
+    },
+    {
+      "topic": "LAT acquisition",
+      "detail": "LAT is issued/synced through cloud ThingApi (syncThingLat); a pure-LAN client cannot obtain it. If the camera is in LAT mode the cloud password will not verify."
+    },
+    {
+      "topic": "Third-party compatibility",
+      "detail": "ThirdPartyCompatibilityRepository sends username 'TPL075526460603' + cloud password via a setter (bv0.jm.K7 -> qk.oa); request method name not traced."
+    },
+    {
+      "topic": "TPAP details",
+      "detail": "SPAKE2+ message formats, TSLP binary framing and key schedule not traced (out of scope; see com/tplink/tls/session/*)."
+    },
+    {
+      "topic": "REA jadx provider",
+      "detail": "rea inspect-android-class/method/package fail: REA_JADX_MCP_JAR not configured; only rea inspect-artifact succeeded."
+    }
+  ]
+}
