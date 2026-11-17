@@ -1,0 +1,28 @@
+{
+ "agent_id": "Subagent-RE-RemoteCtl",
+ "status": "ok",
+ "spec_file": "specs/remote_control_spec.json",
+ "items_total": 15,
+ "items_verified": 11,
+ "rea_commands_run": [
+  "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.transport.iotremote.IoTRemoteSession --format json (failed: REA_JADX_MCP_JAR missing)",
+  "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.transport.remote.CloudAccessApi --token-limit 600 (failed: same)",
+  "rea inspect-artifact artifacts\\apk\\native_arm64\\libxnet-lib.so --token-limit 600 (ok)"
+ ],
+ "key_findings": [
+  "IoT path: POST {thingUrl}/v1/things/{deviceId}/services-sync {serviceId:'passthrough',inputParams:{requestData:<multipleRequest object>}}, IoT headers, 30 s timeout; reply outputParams.responseData.result.responses[]",
+  "Legacy path: signed POST {appServerUrl}/api/v2/common/passthrough?token=..&appName..&termID.. {requestData,deviceId}; used only when no thing record; -20571 offline, -20002 timeout, -20651 token expired",
+  "requestData is a JSON object, always multipleRequest-wrapped",
+  "Routing LOCAL->REMOTE->IOT_REMOTE; LOCAL only for the owner (TDP owner = md5(localUserName)), so shared users always go via cloud with same body",
+  "No MQTT command path; MQTT only for relay/sfu requests and events",
+  "Relay playback: streamType 1, channelId '0'; download streamType 3 subType cover (vod: video); customParams JSON string with event_type; tunnel carries LAN get playback/download JSON; 18 s data timeout on relay",
+  "Shared flags: role 0/1, shareType deviceShare|familyShare, ownerAccountId/Username/Nickname, familyId; no fine-grained permission fields",
+  "Talk: streamType 2, type=dtspk, customParams {mode:half_duplex|aec}"
+ ],
+ "unresolved": [
+  "IoT-cloud offline/timeout error codes for services-sync",
+  "shared-user permission matrix",
+  "outputParams shape (responseData wrapped vs direct)",
+  "server rate limits"
+ ]
+}
