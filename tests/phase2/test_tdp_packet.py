@@ -99,11 +99,26 @@ def test_parse_http_port_zero_means_default(keypair):
     assert dev is not None and dev.http_port is None
 
 
-def test_parse_with_wrong_private_key_keeps_device_without_identity(keypair):
+def test_parse_with_wrong_private_key_falls_back_to_top_level_md5(keypair):
     _, pem = keypair
     other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     dev = parse_response(build_reply(_device(), 5, pem), other)
-    assert dev is not None and dev.ip == "192.168.1.50" and dev.device_id_md5 == ""
+    assert dev is not None and dev.ip == "192.168.1.50"
+    assert dev.device_id_md5 == DEVICE_MD5 and dev.http_port is None
+    anon = parse_response(build_reply(_device(top_level_id=False), 5, pem), other)
+    assert anon is not None and anon.device_id_md5 == ""
+
+
+def test_parse_encrypted_reply_without_top_level_id_needs_decryption(keypair):
+    key, pem = keypair
+    dev = parse_response(build_reply(_device(top_level_id=False), 5, pem), key)
+    assert dev is not None and dev.device_id_md5 == DEVICE_MD5 and dev.http_port == 4433
+
+
+def test_parse_ignores_malformed_top_level_id(keypair):
+    key, _ = keypair
+    dev = parse_response(build_reply(_device(encrypt=False, extra={"device_id": "not-an-md5"}), 5, None), key)
+    assert dev is not None and dev.device_id_md5 == ""
 
 
 def test_parse_rejects_bad_crc(keypair):

@@ -20,6 +20,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import re
 import secrets
 import socket
 import struct
@@ -52,6 +53,7 @@ FLAG_UNICAST = 0x20
 CRC_SEED = 0x5A6B7C8D
 HEADER = struct.Struct(">BBHHBBII")
 _MAX_DATAGRAM = 65535
+_MD5_HEX = re.compile(r"^[0-9a-f]{32}$")
 
 _key_lock = threading.Lock()
 _key_pair: tuple[rsa.RSAPrivateKey, str] | None = None
@@ -125,10 +127,13 @@ def _device_from_payload(payload: bytes, private_key: rsa.RSAPrivateKey, sender_
     if not ip:
         return None
     secret = _decrypt_info(result.get("encrypt_info"), private_key)
+    top_level = str(result.get("device_id") or "").strip().lower()
     if secret.get("device_id"):
         md5 = hashlib.md5(str(secret["device_id"]).encode("utf-8")).hexdigest()
-    elif "encrypt_info" not in result and isinstance(result.get("device_id"), str):
-        md5 = result["device_id"].strip().lower()  # unencrypted replies carry MD5(deviceId) already
+    elif _MD5_HEX.match(top_level):
+        # Cameras also send MD5(deviceId) (upper case) next to encrypt_info (C200 fw 1.5.7);
+        # it is the only identity when encrypt_info is absent or cannot be decrypted.
+        md5 = top_level
     else:
         md5 = ""
     try:
@@ -159,7 +164,8 @@ def _parse_all(data: bytes, private_key: rsa.RSAPrivateKey, serial: int | None,
 
 def parse_response(data: bytes, private_key: rsa.RSAPrivateKey, *, serial: int | None = None) -> LanDevice | None:
     """First camera in a TDP reply datagram, or ``None`` for garbage, bad CRC, wrong serial/version
-    or a non-zero ``error_code``. Undecryptable ``encrypt_info`` keeps the device without identity."""
+    or a non-zero ``error_code``. If ``encrypt_info`` cannot be decrypted the identity falls back to
+    the top-level MD5 ``device_id`` (or ``""``)."""
     try:
         devices = _parse_all(bytes(data), private_key, serial)
     except Exception:  # noqa: BLE001 - tolerant by contract: a hostile datagram must never raise

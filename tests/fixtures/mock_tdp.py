@@ -10,9 +10,9 @@ Each device dict accepts: ``ip`` (default ``127.0.0.1``), ``mac`` (any format), 
 ``http_port`` (default 443), ``encrypt`` (default True) and ``extra`` (merged into ``result``).
 With ``encrypt=True`` the reply carries ``encrypt_info`` [spec:tdp.encrypt_info.decrypt]: a random
 32-byte key||iv encrypted with RSA-OAEP-SHA1 to the probe's ``rsa_key`` and the JSON
-``{"device_id", "http_port", ...}`` encrypted with AES-128-CBC/PKCS7; no top-level ``device_id``
-is sent, so a client must decrypt to learn the identity. With ``encrypt=False`` the top-level
-``device_id`` is MD5(deviceId) in UPPER case (clients must lowercase it).
+``{"device_id", "http_port", ...}`` encrypted with AES-128-CBC/PKCS7. Like real C200 firmware
+1.5.7 the top-level ``device_id`` is MD5(deviceId) in UPPER case (clients must lowercase it), also
+next to ``encrypt_info``; set ``top_level_id=False`` to omit it (identity only via decryption).
 
 The packet/crypto code here is implemented independently of ``tapo_desktop.core.discovery``.
 """
@@ -78,7 +78,7 @@ def build_reply(device: dict, serial: int, rsa_key_pem: str | None) -> bytes:
         data = enc.update(padded) + enc.finalize()
         result["encrypt_info"] = {"sym_schm": "AES", "key": base64.b64encode(enc_key).decode("ascii"),
                                   "data": base64.b64encode(data).decode("ascii")}
-    else:
+    if device.get("top_level_id", True) or not (device.get("encrypt", True) and rsa_key_pem):
         result["device_id"] = hashlib.md5(full_id.encode("utf-8")).hexdigest().upper()
     result.update(device.get("extra", {}))
     payload = json.dumps({"error_code": 0, "result": result}).encode("utf-8")
