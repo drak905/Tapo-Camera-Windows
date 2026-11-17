@@ -1,0 +1,11 @@
+{
+  "checkpoints": [
+    {"barrier": 1, "status": "passed", "detail": "4 Wave 1 specs merged into specs/tapo_protocol_spec.json (169 items: 146 verified, 12 inferred, 11 external); Gate 1 PASS (tools/specs_tool.py verify)."},
+    {"barrier": 2, "status": "passed", "commit": "15958a4", "detail": "Wave 2 merged. Fixture self-check 39 passed / 6 skipped (AdGuard intercepts loopback HTTP :8800 over TCP). Red suite: 695 failed + 21 setup errors (NotImplementedError), 0 unexpected passes. Soak test collected (deselected)."}
+  ],
+  "environment_notes": [
+    "AdGuard (Adguard.exe, AdguardSvc) filters plain HTTP on loopback for python.exe; breaks :8800 media protocol over real TCP after the 200 response.",
+    "REA 6.3.0: Ghidra backend healthy; Android class/method commands unavailable (REA_JADX_MCP_JAR unset); evidence relies on JADX 1.5.6 sources + rea inspect-artifact.",
+    "Rust toolchain absent -> plan's sanctioned alternative stack Python 3.14 + PyQt6 chosen."
+  ]
+}
