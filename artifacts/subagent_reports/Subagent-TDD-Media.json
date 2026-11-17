@@ -1,0 +1,75 @@
+{
+  "agent_id": "Subagent-TDD-Media",
+  "status": "done",
+  "tests_total": 216,
+  "tests_red": 216,
+  "tests_passing_unexpectedly": 0,
+  "red_breakdown": {
+    "unit_failed_NotImplementedError": 188,
+    "integration_chaos_soak_error_fixture_not_found": 28
+  },
+  "files": [
+    "src/tapo_desktop/core/media_engine/profiles.py",
+    "src/tapo_desktop/core/media_engine/limiter.py",
+    "src/tapo_desktop/core/media_engine/job_object.py",
+    "src/tapo_desktop/core/media_engine/ffmpeg.py",
+    "src/tapo_desktop/core/media_engine/alaw.py",
+    "src/tapo_desktop/core/media_engine/supervisor.py",
+    "src/tapo_desktop/core/vod/session.py",
+    "src/tapo_desktop/core/vod/downloader.py",
+    "tests/unit/_media_helpers.py",
+    "tests/unit/test_media_profiles.py",
+    "tests/unit/test_media_limiter.py",
+    "tests/unit/test_media_ffmpeg.py",
+    "tests/unit/test_media_alaw.py",
+    "tests/unit/test_media_job_object.py",
+    "tests/unit/test_media_supervisor.py",
+    "tests/unit/test_vod_session_crypto.py",
+    "tests/unit/test_vod_multipart.py",
+    "tests/unit/test_vod_session.py",
+    "tests/unit/test_vod_downloader.py",
+    "tests/integration/_media_helpers.py",
+    "tests/integration/test_media_supervisor.py",
+    "tests/integration/test_media_chaos.py",
+    "tests/integration/test_vod_download.py",
+    "tests/soak/_soak_mock_server.py",
+    "tests/soak/test_endurance_grid.py"
+  ],
+  "public_pure_helpers_added": {
+    "tapo_desktop.core.vod.session": [
+      "CLIENT_BOUNDARY", "DEVICE_BOUNDARY", "DEFAULT_MEDIA_USERNAME", "DEFAULT_MEDIA_PASSWORD",
+      "parse_www_authenticate(value) -> dict", "transform_password(password, encrypt_type=None) -> str",
+      "generate_cnonce() -> str", "digest_response(*, username, realm, password, method, uri, nonce, nc, cnonce, qop, algorithm='MD5') -> str",
+      "digest_authorization(challenge, password, *, username='admin', method='POST', uri='/stream', cnonce=None) -> str",
+      "parse_key_exchange(value) -> dict", "derive_stream_key_iv(key_exchange, transformed_password) -> (key, iv) | None",
+      "decrypt_part(body, key, iv) -> bytes", "encode_client_part(body, *, content_type='application/json', headers=None) -> bytes",
+      "build_ack_part(received_seq, session_id) -> bytes",
+      "MultipartReader(boundary=DEVICE_BOUNDARY, max_part_size=16 MiB).feed(data) -> list[MediaPart]; .buffered"
+    ],
+    "tapo_desktop.core.vod.downloader": [
+      "build_download_request(clip, *, player_id=None, client_id=1, channel=0) -> dict",
+      "build_stop_download_request() -> dict",
+      "build_remux_args(ts_path, mp4_path) -> list[str]"
+    ]
+  },
+  "notes": [
+    "pyproject.toml (orchestrator-owned) starts with a UTF-8 BOM; pytest 9 fails to parse it ('Invalid statement (at line 1, column 1)') so NO test runs with the repo config. I ran with a BOM-stripped copy: pytest -c %TEMP%\\tapo_media_cfg\\pyproject.toml --rootdir . (pythonpath made absolute). Orchestrator should strip the BOM.",
+    "ENVIRONMENT: AdGuard (kernel drivers adgnetworksockdrv / adgvpnnetworkwfpdrv) intercepts plaintext HTTP on TCP, including 127.0.0.1 on ephemeral ports. Once a connection starts with an HTTP request line, client->server bytes sent after the response are held (treated as a pipelined request). The :8800 protocol sends the download request and acks as multipart parts AFTER the 200, so they never reach the mock. Reproduced with raw sockets and no project code. Effect: tests/unit/test_vod_session.py::test_send_json_adds_incrementing_seq_and_frames_parts and 3 tests in tests/integration/test_vod_download.py (handshake, seeded clip, every clip) cannot pass on this PC whatever the implementation; the fixture lane's :8800 self-check likely fails too, and the real app would fail against a real camera here. Fix: exclude python.exe/ffmpeg.exe from AdGuard filtering or turn off its HTTP filtering. Its HTTPS filtering may also break TOFU pinning for the core lane.",
+    "Validation: before committing I ran the suite against a throwaway reference implementation in %TEMP% (not committed) plus a read-only copy of lane-fixture's uncommitted mock. Results: unit 187/188 (the one failure is the AdGuard test), integration supervisor 14/14, chaos 6/6, vod 4/7 (the 3 failures are AdGuard), soak 120 s 1/1. Soak numbers: Python ~46-50 MB private; ffmpeg ~102 MB per child with d3d11va; handles 220 -> 243 while running, back to baseline after stop. So the specified behaviour is achievable.",
+    "Measured: with default ffmpeg probing the first frame from the mock arrives about 3.1 s after connect; '-probesize 32768 -analyzeduration 0' brings it to about 1.1 s. The 3 s recovery tests (chaos: reset/drop/blackhole/refuse) need the reduced probing. Recorded in the build_ffmpeg_args docstring; not asserted in unit tests.",
+    "pcm_alaw inside MPEG-TS is not recognised by ffmpeg 8.1 (it shows up as a bin_data stream), so 'ffmpeg -i x.ts -c:v copy -c:a aac' writes a video-only MP4 from camera TS. The tests only require h264 video and duration > 0. Keeping audio would need demuxing PCMA (stream_type 0x90) in-house.",
+    "Soak: the mock cameras run in a child process (tests/soak/_soak_mock_server.py) so RSS and handle numbers describe our process only. Control load (500 commands in 10 bursts of 50) uses TapoControlClient when it is importable and implemented. Otherwise it falls back to DeviceShadow mutations in the mock process. Env TAPO_SOAK_CONTROL=client|state|auto forces a mode. Memory growth uses Theil-Sen on per-sample min-of-5 reads; the peak uses max-of-5. Budgets: Python peak < 180 MB, growth < 2 %; ffmpeg < 256 MB per child (2x the measured 128 MB d3d11va peak), summed growth < 5 %; handles <= baseline + max(64, 10 %); 0 reconnects; >= 12 fps per stream.",
+    "Folded the trivially-passing checks (StreamState names, Frame frozen, session constants) into failing tests so that 0 tests pass on the stubs."
+  ],
+  "contract_questions": [
+    "RESOLVED (extension): MediaSession.send_json(message, *, headers=None). The flow-control ack [spec:vod.stream.flow_control_ack] needs the part headers X-Data-Received/X-Session-Id, and the contract signature had no way to pass them.",
+    "RESOLVED: build_ffmpeg_args returns arguments WITHOUT the executable. build_remux_args does the same.",
+    "RESOLVED: hwaccel='auto' tries d3d11va and falls back to software if the first attempt dies before its first frame. An explicit bogus hwaccel ('bogus_accel') also falls back. stats()['decoder'] is 'd3d11va' (or the hwaccel name) or 'software'.",
+    "RESOLVED: if the limiter is full, start() returns at once and the state goes to FAILED with a reason containing 'limit'. No ffmpeg is spawned. Default limiter_key is the URL host.",
+    "RESOLVED: JobObject.assign raises OSError (e.g. ProcessLookupError) for an exited Popen or a non-existent pid. close() is idempotent. terminate_all keeps the job usable.",
+    "RESOLVED: RecordingDownloader maps -52407 to StreamLimitError and any other non-zero error_code to TapoDeviceError(code). An empty session_id, finished with no media, disk_status offline, early EOF or an ffmpeg failure raises TapoError. progress is non-decreasing in [0, 1] and ends exactly at 1.0. On cancel it sends {method:'do', stop:'download'}, closes the session and leaves no files; it may raise TapoError or return (both accepted).",
+    "RESOLVED: MediaSession.connect maps 401 after the authorized retry to TapoAuthError, HTTP 503 to StreamLimitError, and refused/timeout to TapoConnectionError.",
+    "OPEN: find_ffmpeg behaviour when TAPO_FFMPEG points to a missing file (fall back or raise) is not tested.",
+    "OPEN: HKDF key schedule [spec:stream.local8800.encryption.hkdf] is not covered (the contract only names the MD5 scheme)."
+  ]
+}
