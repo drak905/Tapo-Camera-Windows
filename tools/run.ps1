@@ -16,6 +16,6 @@ switch ($Task) {
                     & $Py -m pytest tests -m hardware -q -s -p no:cacheprovider; exit $LASTEXITCODE }
   'smoke'         { & $Py tools/smoke_e2e.py; exit $LASTEXITCODE }
   'build-windows' { & $Py tools/build_windows.py; exit $LASTEXITCODE }
-  'audit-release' { & $Py tools/audit_release.py dist/TapoDesktop --json artifacts/release_audit.json; exit $LASTEXITCODE }
+  'audit-release' { & $Py tools/audit_release.py release/TapoDesktop --json artifacts/release_audit.json; exit $LASTEXITCODE }
   default         { Write-Error "unknown task $Task" }
 }

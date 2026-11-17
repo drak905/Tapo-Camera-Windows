@@ -15,12 +15,18 @@
       "barrier": 3,
       "status": "passed_with_env_exceptions",
       "detail": "Wave 3 merged; no Wave 3 lane modified tests. Orchestrator repairs: e2e waitUntil bool() wrap (pytest-qt rejects list returns), soak PTZ direction alternation bug."
+    },
+    {
+      "barrier": "phase2",
+      "status": "passed_on_mocks",
+      "detail": "Mobile parity: TP-Link ID sign-in (signed v2 API, MFA, region), cloud device list, TDP LAN discovery (2 real C200 found), TPAP/SPAKE2+ login for encrypt_type 4, :8800 live view, auth circuit breaker. 1008 tests pass; mobile-flow smoke PASS; release rebuilt to release/ (dist/ ACL locked)."
     }
   ],
   "environment_notes": [
     "AdGuard (Adguard.exe, AdguardSvc) filters plain HTTP on loopback for python.exe; breaks :8800 media protocol over real TCP after the 200 response.",
     "REA 6.3.0: Ghidra backend healthy; Android class/method commands unavailable (REA_JADX_MCP_JAR unset); evidence relies on JADX 1.5.6 sources + rea inspect-artifact.",
-    "Rust toolchain absent -> plan's sanctioned alternative stack Python 3.14 + PyQt6 chosen."
+    "Rust toolchain absent -> plan's sanctioned alternative stack Python 3.14 + PyQt6 chosen.",
+    "dist/ and .git/worktrees/p2-* folders acquired ACLs without the user account (Access denied); builds moved to release/."
   ],
   "gates": {
     "gate1_specs": "PASS (169 items, all JADX citations re-validated)",

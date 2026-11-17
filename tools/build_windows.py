@@ -12,10 +12,11 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST = ROOT / "dist"
+DIST = Path(os.environ.get("TAPO_DIST", ROOT / "release"))
 BUILD = ROOT / "build"
 APP = "TapoDesktop"
 sys.path.insert(0, str(ROOT / "src"))
@@ -57,7 +58,7 @@ def main() -> int:
     icon = make_icon()
     ffmpeg = os.environ.get("TAPO_FFMPEG") or shutil.which("ffmpeg")
     args = [py, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed", "--name", APP,
-            "--distpath", str(DIST), "--workpath", str(BUILD / "pyi"), "--specpath", str(BUILD),
+            "--distpath", str(DIST), "--workpath", tempfile.mkdtemp(prefix="tapo_pyi_"), "--specpath", str(BUILD),
             "--paths", str(ROOT / "src"), "--icon", str(icon),
             "--exclude-module", "tests", "--exclude-module", "pytest", "--exclude-module", "hypothesis",
             "--exclude-module", "PyQt6.QtWebEngineCore", "--exclude-module", "PyQt6.QtQml",
@@ -78,7 +79,7 @@ def main() -> int:
 
     zip_base = DIST / f"{APP}-{__version__}-win64"
     shutil.make_archive(str(zip_base), "zip", root_dir=DIST, base_dir=APP)
-    print("portable zip:", zip_base.with_suffix(".zip"))
+    print("portable zip:", f"{zip_base}.zip")
 
     iscc = find_iscc()
     if iscc:

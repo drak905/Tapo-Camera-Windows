@@ -1,4 +1,4 @@
-"""Gate 4 check: packaged TapoDesktop.exe streams from a mock camera; after a hard kill
+﻿"""Gate 4 check: packaged TapoDesktop.exe streams from a mock camera; after a hard kill
 (TerminateProcess, no cleanup code runs) every ffmpeg child must be gone within 200 ms
 thanks to the Windows Job Object (KILL_ON_JOB_CLOSE)."""
 from __future__ import annotations
@@ -20,7 +20,7 @@ from tapo_desktop.models import CameraConfig, CredentialKind, Credentials  # noq
 from tapo_desktop.services.config_store import ConfigStore  # noqa: E402
 from tests.fixtures.mock_tapo_server import MockTapoCamera  # noqa: E402
 
-EXE = ROOT / "dist" / "TapoDesktop" / "TapoDesktop.exe"
+EXE = ROOT / "release" / "TapoDesktop" / "TapoDesktop.exe"
 
 
 def main() -> int:
