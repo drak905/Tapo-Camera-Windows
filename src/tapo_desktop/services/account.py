@@ -498,8 +498,9 @@ class AccountManager(QObject):
             return
         cached = [c for c in self._ctrl.cameras() if c.source == "cloud"]
         prune = devices is not None
-        if devices is not None and self._relay_provider is not None:
-            self._relay_provider.update_devices(devices)  # device type / IoT-cloud flag for relay slots
+        provider = self.__dict__.get("_relay_provider")  # (tests may build the manager without __init__)
+        if devices is not None and provider is not None:
+            provider.update_devices(devices)  # device type / IoT-cloud flag for relay slots
         if devices is None:
             devices = [CloudDevice(device_id=c.device_id or c.id, mac=c.mac, model=c.model, alias=c.name,
                                    online=c.online) for c in cached]

@@ -1,6 +1,7 @@
 """View-only feasibility probe of the TP-Link cloud relay for ONE remote camera [spec:remote.*]:
 relay slot request, TLS tunnel, preview request, read a few parts (headers only + body sizes),
-stop. Changes nothing on the camera. Prints no tokens. Usage: python tools/diag_relay.py [name-substring]"""
+stop. Changes nothing on the camera. Prints no tokens. Usage: python tools/diag_relay.py [name-substring]
+[--use-app-code]  (the flag runs the same check through RelayClient + RelayStreamSupervisor)."""
 from __future__ import annotations
 
 import http.client
@@ -119,5 +120,62 @@ def main(pattern: str) -> int:
     return 0 if media else 1
 
 
+def main_app_code(pattern: str, seconds: float = 10.0) -> int:
+    """Same view-only check through the app's own classes: RelayClient + RelayStreamSupervisor
+    (slot, tunnel, preview, heartbeat thread, ffmpeg decode) for ~``seconds`` s, then stop."""
+    import threading
+
+    from tapo_desktop.core.cloud.relay import RelayClient, cloud_type_for
+    from tapo_desktop.core.media_engine.relay_stream import RelayStreamSupervisor
+
+    data = default_data_dir()
+    acct = CredentialVault(data / "vault.json").get(ACCOUNT_VAULT_ID, CredentialKind.CLOUD)
+    term = ConfigStore(data / "config.json").get_setting("terminal_uuid")
+    cloud = TapoCloudClient(terminal_uuid=term)
+    cloud.login(acct.username, acct.password)
+    cams = cloud.list_cameras()
+    cloud.local_access_tokens()
+    online = cloud.thing_online
+    cam = next(c for c in cams if pattern.lower() in c.alias.lower() and online.get(c.device_id))
+    out: dict = {"camera": cam.alias, "model": cam.model, "cloud_type": cloud_type_for(cam.raw)}
+    states: list[tuple[float, str, str]] = []
+    frames: list[tuple[int, int]] = []
+    lock = threading.Lock()
+    t0 = time.monotonic()
+
+    def on_frame(f) -> None:
+        with lock:
+            frames.append((f.width, f.height))
+
+    def on_state(s, r) -> None:
+        with lock:
+            states.append((round(time.monotonic() - t0, 2), s.name, r or ""))
+
+    relay = RelayClient(cloud, terminal_uuid=term)
+    sup = RelayStreamSupervisor(relay, cam.device_id, 640, 360, device_type=cam.device_type, model=cam.model,
+                                cloud_type=cloud_type_for(cam.raw), resolution="VGA", on_frame=on_frame,
+                                on_state=on_state, max_retries=1)
+    sup.start()
+    deadline = t0 + seconds
+    while time.monotonic() < deadline and sup.state.name not in ("FAILED",):
+        time.sleep(0.2)
+    t_stop = time.monotonic()
+    sup.stop()
+    out["stop_seconds"] = round(time.monotonic() - t_stop, 2)
+    with lock:
+        out["states"] = states
+        out["frames"] = len(frames)
+        out["frame_sizes"] = sorted(set(frames))
+    first_play = next((t for t, s, _ in states if s == "PLAYING"), None)
+    out["first_frame_after_s"] = first_play
+    out["fps"] = round(len(frames) / max(0.1, t_stop - t0 - (first_play or 0)), 1) if first_play else 0
+    out["stats"] = {k: v for k, v in sup.stats().items() if k != "last_frame_age"}
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    return 0 if frames else 1
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "Remote"))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--use-app-code" in sys.argv[1:]:
+        sys.exit(main_app_code(args[0] if args else "Remote"))
+    sys.exit(main(args[0] if args else "Remote"))

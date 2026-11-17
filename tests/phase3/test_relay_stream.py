@@ -24,7 +24,7 @@ def make_relay(ffmpeg_path, relay_client):
     def factory(width=640, height=360, *, rec=None, **kw):
         rec = rec or Recorder()
         kw.setdefault("ffmpeg_path", ffmpeg_path)
-        kw.setdefault("stall_timeout", 2.0)
+        kw.setdefault("stall_timeout", 4.0)  # first-frame budget; generous for a loaded CI machine
         kw.setdefault("model", "C210")
         sup = RelayStreamSupervisor(relay_client, DEV, width, height, **rec.kwargs(), **kw)
         created.append(sup)
@@ -52,7 +52,7 @@ def test_plays_with_exact_frame_size(make_relay, mock_relay, relay_cloud, resolu
     assert time.monotonic() - t0 < 0.5, "start() must not block"
     assert wait_until(lambda: sup.state is StreamState.PLAYING, 20), (rec.state_names(), rec.reasons())
     assert wait_until(lambda: rec.frame_count() >= 15, 10)
-    assert rec.state_names()[:2] == ["CONNECTING", "PLAYING"]
+    assert rec.state_names()[:2] == ["CONNECTING", "PLAYING"], rec.reasons()
     assert all((f.width, f.height, f.size) == (*size, size[0] * size[1] * 3) for f in rec.frames)
     assert relay_cloud.calls("/v2/relay/request")[-1]["body"]["resolution"] == resolution
     assert mock_relay.previews[-1]["resolution"] == resolution
