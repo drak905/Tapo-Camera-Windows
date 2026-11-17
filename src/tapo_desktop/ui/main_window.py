@@ -22,13 +22,21 @@ text = camera name, ``Qt.UserRole`` data = camera id), ``addCameraButton``, ``re
 
 Lane additions: ``editCameraButton`` (and double-click on a list row) opens the dialog in edit mode
 and calls ``controller.update_camera``.
+
+Phase 2 (lane P2-app, docs/CONTRACT_PHASE2.md): ``MainWindow(controller, tray_enabled, accounts=None)``.
+``accountButton`` (QToolButton in toolbar ``accountToolbar``) shows the signed-in email and opens a
+menu with "Sign in...", "Refresh cameras" and "Sign out" (``accounts.refresh_cameras`` /
+``accounts.sign_out``; "Sign in..." opens :class:`SignInDialog`). Without ``accounts`` the actions
+are disabled. ``cameraList`` rows show the camera name, plus " (Offline)" for cameras the cloud
+reports offline or " (Not on this network)" for cameras not found on the LAN; the bare status is
+in :data:`STATUS_ROLE`. Snapshot results and account events are shown in the status bar.
 """
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QEvent, QSignalBlocker, Qt
-from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QKeyEvent
+from PyQt6.QtCore import QEvent, QSignalBlocker, Qt, QTimer
+from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QKeyEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -37,6 +45,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTabWidget,
@@ -46,7 +55,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from tapo_desktop.ui import _theme, camera_dialog
+from tapo_desktop.services.camera_service import NOT_ON_NETWORK
+from tapo_desktop.ui import _theme, camera_dialog, sign_in_dialog
 from tapo_desktop.ui.controls_panel import ControlsPanel
 from tapo_desktop.ui.grid import CameraGrid, validate_grid_size
 from tapo_desktop.ui.playback_panel import PlaybackPanel
@@ -62,16 +72,29 @@ PTZ_KEYS: dict[Qt.Key, tuple[int, int]] = {
     Qt.Key.Key_D: (PTZ_UNIT, 0), Qt.Key.Key_Right: (PTZ_UNIT, 0),
 }
 _STATUS_MS = 6000
+#: ``cameraList`` item role holding the row status (``""``, ``"Offline"`` or ``NOT_ON_NETWORK``).
+STATUS_ROLE = Qt.ItemDataRole.UserRole + 1
+
+
+def camera_row_status(cfg) -> str:
+    """Status suffix of a camera row: "Offline" (cloud says offline), NOT_ON_NETWORK, or ""."""
+    if not cfg.online:
+        return "Offline"
+    if not cfg.lan_found or not cfg.host:
+        return NOT_ON_NETWORK
+    return ""
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller, tray_enabled: bool = True):
+    def __init__(self, controller, tray_enabled: bool = True, accounts=None):
         super().__init__()
         self._ctrl = controller
+        self._accounts = accounts
         self._store = controller.config_store
         self._selected: str | None = None
         self._held_key: int | None = None
         self._quitting = False
+        self._sign_in_dialog = None
         self.setWindowTitle("Tapo Desktop")
         self.setWindowIcon(_theme.app_icon())
         self.resize(1280, 800)
@@ -79,6 +102,7 @@ class MainWindow(QMainWindow):
         self._grid = CameraGrid(controller, self)
         self.setCentralWidget(self._grid)
         self._build_toolbar()
+        self._build_account_toolbar()
         self._build_camera_dock()
         self._build_side_dock()
         self.statusBar().showMessage("Ready")
@@ -94,6 +118,14 @@ class MainWindow(QMainWindow):
         controller.cameras_changed.connect(self._refresh_list)
         controller.command_failed.connect(self._on_command_failed)
         controller.stream_state.connect(self._on_stream_state)
+        self._controls.snapshot_taken.connect(self._on_snapshot)
+        if accounts is not None:
+            accounts.signed_in.connect(lambda _account: self._sync_account())
+            accounts.signed_out.connect(self._on_signed_out)
+            accounts.sign_in_failed.connect(self._on_sign_in_failed)
+            accounts.cameras_refreshed.connect(self._on_cameras_refreshed)
+            accounts.mfa_required.connect(self._on_mfa_required)
+        self._sync_account()
 
         self._grid.set_grid_size(self._initial_grid_size())
         self._sync_layout_buttons()
@@ -116,6 +148,27 @@ class MainWindow(QMainWindow):
 
     def selected_camera_id(self) -> str | None:
         return self._selected
+
+    @property
+    def accounts(self):
+        """The AccountManager given to ``__init__`` (None = manual cameras only)."""
+        return self._accounts
+
+    def show_sign_in(self, mfa_types: list[int] | None = None) -> bool:
+        """Run the SignInDialog modally; True when the user signed in. With ``mfa_types`` the
+        dialog opens on its two-step verification section (a silent sign-in at startup that the
+        cloud answered with an MFA challenge)."""
+        if self._accounts is None or self._sign_in_dialog is not None:
+            return False
+        dialog = sign_in_dialog.SignInDialog(self._accounts, self)
+        self._sign_in_dialog = dialog
+        try:
+            if mfa_types:
+                dialog.show_mfa(list(mfa_types))
+            return dialog.exec() == QDialog.DialogCode.Accepted
+        finally:
+            self._sign_in_dialog = None
+            dialog.deleteLater()
 
     def quit(self) -> None:
         """Stop every stream/event listener, remove the tray icon and quit the application."""
@@ -149,6 +202,30 @@ class MainWindow(QMainWindow):
             if isinstance(button, QToolButton):
                 button.setObjectName(f"layout{n}x{n}Button")
             self._layout_actions[n] = action
+
+    def _build_account_toolbar(self) -> None:
+        bar = QToolBar("Account", self)
+        bar.setObjectName("accountToolbar")
+        bar.setMovable(False)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, bar)
+        menu = QMenu(self)
+        menu.setObjectName("accountMenu")
+        self._sign_in_action = menu.addAction("Sign in\u2026")
+        self._sign_in_action.triggered.connect(lambda _checked=False: self.show_sign_in())
+        menu.addSeparator()
+        self._refresh_action = menu.addAction("Refresh cameras")
+        self._refresh_action.setToolTip("Reload the camera list and find the cameras on this network")
+        self._refresh_action.triggered.connect(lambda _checked=False: self._refresh_cameras())
+        self._sign_out_action = menu.addAction("Sign out")
+        self._sign_out_action.triggered.connect(lambda _checked=False: self._sign_out())
+        self._account_menu = menu
+        button = QToolButton(bar)
+        button.setObjectName("accountButton")
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        button.setMenu(menu)
+        bar.addWidget(button)
+        self._account_button = button
 
     def _build_camera_dock(self) -> None:
         panel = QWidget(self)
@@ -236,9 +313,16 @@ class MainWindow(QMainWindow):
         with QSignalBlocker(self._list):
             self._list.clear()
             for cfg in cams:
-                item = QListWidgetItem(cfg.name)
+                status = camera_row_status(cfg)
+                item = QListWidgetItem(f"{cfg.name} ({status})" if status else cfg.name)
                 item.setData(Qt.ItemDataRole.UserRole, cfg.id)
-                item.setToolTip(cfg.host)
+                item.setData(STATUS_ROLE, status)
+                tip = cfg.host or "No address on this network"
+                if cfg.model:
+                    tip = f"{cfg.model} - {tip}"
+                item.setToolTip(tip)
+                if status:
+                    item.setForeground(QColor(140, 145, 152))  # muted: not streamable right now
                 self._list.addItem(item)
         ids = [c.id for c in cams]
         keep = self._selected if self._selected in ids else (ids[0] if ids else None)
@@ -288,6 +372,55 @@ class MainWindow(QMainWindow):
     def _on_stream_state(self, camera_id: str, state: str, reason: str) -> None:
         if state == "FAILED" and reason:
             self.statusBar().showMessage(f"{self._camera_name(camera_id)}: {reason}", _STATUS_MS)
+
+    def _on_snapshot(self, path: str, error: str) -> None:
+        if path:
+            self.statusBar().showMessage(f"Snapshot saved: {path}", _STATUS_MS)
+        else:
+            self.statusBar().showMessage(error or "Snapshot failed", _STATUS_MS)
+
+    # ================================================================== account (Phase 2)
+    def _sync_account(self) -> None:
+        account = self._accounts.account() if self._accounts is not None else None
+        if account is not None:
+            label = account.nickname or account.email
+            self._account_button.setText(label)
+            self._account_button.setToolTip(f"Signed in as {account.email}")
+        else:
+            self._account_button.setText("Sign in")
+            self._account_button.setToolTip("Sign in with your TP-Link ID to show your cameras"
+                                            if self._accounts is not None else "Account features unavailable")
+        self._sign_in_action.setEnabled(self._accounts is not None and account is None)
+        self._refresh_action.setEnabled(account is not None)
+        self._sign_out_action.setEnabled(account is not None)
+
+    def _refresh_cameras(self) -> None:
+        if self._accounts is not None and self._accounts.account() is not None:
+            self.statusBar().showMessage("Looking for cameras\u2026", _STATUS_MS)
+            self._accounts.refresh_cameras()
+
+    def _sign_out(self) -> None:
+        if self._accounts is not None and self._accounts.account() is not None:
+            self._accounts.sign_out()
+
+    def _on_signed_out(self) -> None:
+        self._sync_account()
+        self.statusBar().showMessage("Signed out", _STATUS_MS)
+
+    def _on_sign_in_failed(self, message: str) -> None:
+        self._sync_account()
+        if self._sign_in_dialog is None:  # the dialog shows its own errors inline
+            self.statusBar().showMessage(f"{message} Use the account button to sign in again.", _STATUS_MS * 2)
+
+    def _on_cameras_refreshed(self, total: int, found: int) -> None:
+        self.statusBar().showMessage(
+            f"{total} camera{'s' if total != 1 else ''} in your account, {found} found on this network",
+            _STATUS_MS)
+
+    def _on_mfa_required(self, types) -> None:
+        if self._sign_in_dialog is None:  # silent sign-in hit an MFA challenge: ask for the code
+            mfa_types = [int(t) for t in (types or [])]
+            QTimer.singleShot(0, lambda: self.show_sign_in(mfa_types or [3]))
 
     # ================================================================== keyboard PTZ
     @staticmethod

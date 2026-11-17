@@ -10,7 +10,10 @@
   pending events, then ``controller.stop_all()`` and closes the window WITHOUT entering the event
   loop and WITHOUT any network I/O (no stream is started: the grid's ``start_view`` calls are
   allowed but must not block). Returns 0 on success, 1 if anything raised (error printed to stderr).
-* Without ``--selftest``: runs ``app.exec()`` and returns its exit code.
+* Without ``--selftest``: shows the window, then (Phase 2) restores the TP-Link ID session silently
+  (``AccountManager.restore_session``) or, when no account is stored, shows ``SignInDialog``
+  ("Use without account" is remembered in setting ``"sign_in_skipped"``), then runs ``app.exec()``
+  and returns its exit code. ``--selftest`` never signs in and never shows the dialog.
 * Unknown arguments -> usage on stderr, return 2.
 """
 from __future__ import annotations
@@ -75,8 +78,8 @@ def main(argv: list[str] | None = None) -> int:
         data_dir.mkdir(parents=True, exist_ok=True)
         if not selftest:
             _configure_logging("--debug" in flags, data_dir)
-        window, controller = _build(app, ConfigStore(data_dir / "config.json"), data_dir,
-                                    interactive=not selftest)
+        window, controller, accounts = _build(app, ConfigStore(data_dir / "config.json"), data_dir,
+                                              interactive=not selftest)
     except Exception:
         traceback.print_exc(file=sys.stderr)
         return 1
@@ -87,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     sys.excepthook = _log_unhandled
     try:
         window.show()
+        _start_account(window, accounts)
         return int(app.exec())
     finally:
         sys.excepthook = previous_hook
@@ -95,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
 def _build(app, store, data_dir, *, interactive: bool):
     """Create controller + main window; ``interactive`` adds the dark theme and the tray icon."""
     from tapo_desktop.core.auth.vault import CredentialVault
+    from tapo_desktop.services.account import AccountManager
     from tapo_desktop.services.controller import AppController
     from tapo_desktop.ui import _theme
     from tapo_desktop.ui.main_window import MainWindow
@@ -106,8 +111,28 @@ def _build(app, store, data_dir, *, interactive: bool):
         _theme.apply_theme(app)
         app.setQuitOnLastWindowClosed(False)  # the tray keeps the app alive
     controller = AppController(store, CredentialVault(data_dir / "vault.json"))
-    window = MainWindow(controller, tray_enabled=interactive)
-    return window, controller
+    accounts = AccountManager(controller, parent=controller)
+    window = MainWindow(controller, tray_enabled=interactive, accounts=accounts)
+    return window, controller, accounts
+
+
+def _start_account(window, accounts) -> None:
+    """Phase 2 startup, like the Tapo app: silent sign-in with the stored TP-Link ID, otherwise the
+    sign-in dialog. "Use without account" keeps the manual cameras only and is remembered (setting
+    ``"sign_in_skipped"``), so the dialog is not forced on every start; the account button still
+    offers "Sign in...". Never used by --selftest."""
+    try:
+        if accounts.restore_session():
+            return
+    except Exception:  # a broken vault/config must not keep the app from starting
+        log.exception("restoring the TP-Link ID session failed")
+    from tapo_desktop.services.account import SETTING_SIGN_IN_SKIPPED
+
+    store = accounts.config_store
+    if store.get_setting(SETTING_SIGN_IN_SKIPPED, False):
+        return
+    if not window.show_sign_in() and accounts.account() is None:
+        store.set_setting(SETTING_SIGN_IN_SKIPPED, True)
 
 
 def _run_selftest(app, window, controller) -> int:

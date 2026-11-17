@@ -7,6 +7,10 @@ user change calls ``controller.set_day_night``), ``ptzPad`` (wired to ``controll
 ``ptz_stop``), ``presetCombo`` (item text = preset name, ``itemData`` = preset id) and
 ``gotoPresetButton`` (calls ``controller.goto_preset`` with the current preset id).
 
+Lane P2-app: ``snapshotButton`` saves the selected camera's newest frame (``controller.latest_image``)
+as PNG via :func:`tapo_desktop.ui.snapshot.save_snapshot` and emits ``snapshot_taken(path, error)``
+(exactly one of the two is non-empty).
+
 ``set_camera(id)`` calls ``controller.refresh_status(id)`` and ``controller.load_presets(id)``.
 ``status_changed`` for the current camera updates the widgets WITHOUT calling the controller back;
 ``command_failed`` leaves the widgets showing the rolled-back status that follows it.
@@ -16,7 +20,9 @@ programmatic updates from ``status_changed`` never echo back to the camera.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QSignalBlocker
+import logging
+
+from PyQt6.QtCore import QSignalBlocker, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -30,7 +36,10 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.models import DayNightMode
+from tapo_desktop.ui import snapshot
 from tapo_desktop.ui.ptz_pad import PtzPad
+
+log = logging.getLogger(__name__)
 
 #: (objectName, label, status key, controller method, tooltip)
 _TOGGLES: tuple[tuple[str, str, str, str, str], ...] = (
@@ -46,6 +55,8 @@ _DAY_NIGHT: tuple[tuple[str, DayNightMode], ...] = (
 
 
 class ControlsPanel(QWidget):
+    snapshot_taken = pyqtSignal(str, str)  # path, error (lane P2-app)
+
     def __init__(self, controller, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("controlsPanel")
@@ -82,6 +93,24 @@ class ControlsPanel(QWidget):
         if self._camera_id is not None:
             self._ctrl.refresh_status(self._camera_id)
             self._ctrl.load_presets(self._camera_id)
+
+    def take_snapshot(self) -> str:
+        """Save the current camera's newest frame as PNG; returns the path ("" on failure)."""
+        if self._camera_id is None:
+            return ""
+        image = self._ctrl.latest_image(self._camera_id)
+        if image is None or image.isNull():
+            self.snapshot_taken.emit("", "No video yet - wait for the picture, then try again.")
+            return ""
+        name = next((c.name for c in self._ctrl.cameras() if c.id == self._camera_id), self._camera_id)
+        try:
+            path = str(snapshot.save_snapshot(image, name))
+        except (OSError, ValueError) as exc:
+            log.warning("snapshot failed: %s", exc)
+            self.snapshot_taken.emit("", f"Could not save the snapshot: {exc}")
+            return ""
+        self.snapshot_taken.emit(path, "")
+        return path
 
     # ------------------------------------------------------------------ construction
     def _build_ptz(self) -> QGroupBox:
@@ -130,6 +159,11 @@ class ControlsPanel(QWidget):
         self._day_night.activated.connect(self._on_day_night)
         form.addRow("Night vision", self._day_night)
         layout.addLayout(form)
+        self._snapshot = QPushButton("Snapshot", box)
+        self._snapshot.setObjectName("snapshotButton")
+        self._snapshot.setToolTip("Save the current picture to Pictures\\Tapo Desktop")
+        self._snapshot.clicked.connect(lambda _checked=False: self.take_snapshot())
+        layout.addWidget(self._snapshot)
         return box
 
     # ------------------------------------------------------------------ user actions
