@@ -73,11 +73,17 @@ def main(argv: list[str] | None = None) -> int:
     from tapo_desktop.services.config_store import ConfigStore, default_data_dir
 
     app = QApplication.instance() or QApplication(["tapo-desktop"])
+    guard = None
     try:
         data_dir = default_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         if not selftest:
             _configure_logging("--debug" in flags, data_dir)
+            from tapo_desktop.ui.single_instance import SingleInstance, default_instance_name
+
+            guard = SingleInstance(default_instance_name(data_dir), parent=app)
+            if not guard.acquire():
+                return 0  # the running instance shows its window instead
         window, controller, accounts = _build(app, ConfigStore(data_dir / "config.json"), data_dir,
                                               interactive=not selftest)
     except Exception:
@@ -88,12 +94,23 @@ def main(argv: list[str] | None = None) -> int:
         return _run_selftest(app, window, controller)
     previous_hook = sys.excepthook
     sys.excepthook = _log_unhandled
+    if guard is not None:
+        guard.activated.connect(lambda: _bring_to_front(window))
     try:
         window.show()
         _start_account(window, accounts)
         return int(app.exec())
     finally:
         sys.excepthook = previous_hook
+        if guard is not None:
+            guard.release()
+
+
+def _bring_to_front(window) -> None:
+    """Another start of the app asked this instance to show itself (also from the tray)."""
+    window.showNormal()
+    window.raise_()
+    window.activateWindow()
 
 
 def _build(app, store, data_dir, *, interactive: bool):
