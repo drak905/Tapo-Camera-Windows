@@ -20,6 +20,10 @@ cameras use the cloud path: cloud cameras not on this LAN, and shared cameras (`
 because the app only goes local for the owner and a local login with the user's own password would
 only burn the camera's lockout attempts [spec:remote.control.transport_selection, remote.shared.behaviour].
 :data:`NETWORK_ONLY` remains for providers whose cloud client has no passthrough API.
+
+Phase 5: :meth:`RelayProvider.create_playback` builds a
+:class:`~tapo_desktop.core.media_engine.playback_stream.RelayPlaybackStreamSupervisor` (SD playback
+streaming through a relay playback slot; ``playback_factory`` replaces it in tests).
 """
 from __future__ import annotations
 

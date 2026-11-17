@@ -237,6 +237,12 @@ class TapoCameraService(CameraService):
     :data:`~tapo_desktop.services.remote.SHARED_CLOUD_ONLY`. The per-camera auth breaker applies to the
     LAN client only.
 
+    Playback streaming (Phase 5, :meth:`start_playback` & co.) follows the same routing: owned LAN cameras
+    over :8800 (``playback_factory``, default PlaybackStreamSupervisor, limiter key = host so live view +
+    playback stay within the camera's two media sessions), cloud-routed cameras through
+    ``provider.create_playback`` (relay playback slot, no live-view gate slot). A camera refusing another
+    media session reports FAILED :data:`PLAYBACK_LIMIT_MESSAGE`.
+
     The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
 
     Credentials are read from ``vault.get(config.id, CredentialKind.CLOUD | CAMERA_ACCOUNT)``; a
