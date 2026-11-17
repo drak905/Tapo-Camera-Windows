@@ -95,6 +95,8 @@ class _Session:
         self.wlock = threading.Lock()
         self.encrypt = False
         self.key = self.iv = b""
+        self.hkdf_keys: tuple[bytes, bytes] | None = None
+        self.hkdf_parts = 0
         self.authenticated = False
         self.session_id: str | None = None
         self.sender: threading.Thread | None = None
@@ -204,7 +206,13 @@ class _Session:
                     pwd_t = crypto.media_password(self.cam.device_secret, self.cam.secure)
                     self.key, self.iv = crypto.media_keys(knonce, pwd_t, "admin")
                     self.encrypt = True
-                    hdrs.append(f'Key-Exchange: username="admin" nonce="{knonce}"')
+                    if getattr(self.cam, "media_kex_mode", "md5") == "hkdf":
+                        salt = secrets.token_hex(16)
+                        self.hkdf_keys = crypto.media_hkdf_keys(knonce, pwd_t, salt)
+                        hdrs.append(f'Key-Exchange: cipher="AES_128_CBC" username="admin" padding="PKCS7_16" '
+                                    f'algorithm="HKDF" encrypt_type="3" nonce="{knonce}" salt="{salt}"')
+                    else:
+                        hdrs.append(f'Key-Exchange: username="admin" nonce="{knonce}"')
                 self.http("200 OK", hdrs)
             self._parts(reader)
         except _Closed:
@@ -219,6 +227,17 @@ class _Session:
                 self.server.release()
 
     # -- multipart control ----------------------------------------------------------------
+    def _encrypt_part(self, data: bytes) -> tuple[bytes, dict]:
+        """Encrypt one media part per the negotiated Key-Exchange mode (MD5 fixed IV or HKDF)."""
+        if not self.encrypt:
+            return data, {}
+        if self.hkdf_keys is None:
+            return crypto.aes_cbc_encrypt(self.key, self.iv, data), {}
+        self.hkdf_parts += 1
+        every = int(getattr(self.cam, "media_corrupt_hmac_every", 0) or 0)
+        return crypto.media_hkdf_encrypt(*self.hkdf_keys, data,
+                                         corrupt_hmac=bool(every) and self.hkdf_parts % every == 0)
+
     def _parts(self, reader: _Reader) -> None:
         while True:
             ln = reader.line()
@@ -313,8 +332,8 @@ class _Session:
             for i, data in enumerate(chunks, start=1):
                 if not self._wait_window(i):
                     return
-                body = crypto.aes_cbc_encrypt(self.key, self.iv, data) if self.encrypt else data
-                hdr = {"Content-Type": "video/mp2t", "X-If-Encrypt": "1" if self.encrypt else "0",
+                body, extra = self._encrypt_part(data)
+                hdr = {"Content-Type": "video/mp2t", "X-If-Encrypt": "1" if self.encrypt else "0", **extra,
                        "X-Session-Id": self.session_id or "", "X-Data-Sequence": str(i),
                        "X-Data-PTS": str(int(total_pts * (i - 1) / len(chunks))),
                        "X-If-IFrame": "1" if i == 1 else "0", "X-Stream-Type": "0"}
@@ -363,8 +382,8 @@ class _Session:
                     return
                 if self.stop_stream.is_set() or not self._wait_window(i):
                     return
-                body = crypto.aes_cbc_encrypt(self.key, self.iv, unit.data) if self.encrypt else unit.data
-                hdr = {"Content-Type": "video/mp2t", "X-If-Encrypt": "1" if self.encrypt else "0",
+                body, extra = self._encrypt_part(unit.data)
+                hdr = {"Content-Type": "video/mp2t", "X-If-Encrypt": "1" if self.encrypt else "0", **extra,
                        "X-Session-Id": self.session_id or "", "X-Data-Sequence": str(i),
                        "X-Data-PTS": str(unit.pts), "X-If-IFrame": "1" if unit.keyframe else "0",
                        "X-Stream-Type": "0"}

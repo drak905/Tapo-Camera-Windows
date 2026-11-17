@@ -90,6 +90,33 @@ def media_keys(nonce: str, password_t: str, username: str = "admin") -> tuple[by
     return key, iv
 
 
+def media_hkdf_keys(nonce: str, password_t: str, salt: str) -> tuple[bytes, bytes]:
+    """[spec:stream.local8800.encryption.hkdf] (aes_key, hmac_key) = HKDF-SHA256(nonce:pwd', salt, info)."""
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    ikm = (nonce + ":" + password_t).encode("utf-8")
+
+    def _k(info: bytes) -> bytes:
+        return HKDF(algorithm=hashes.SHA256(), length=16, salt=salt.encode("utf-8"), info=info).derive(ikm)
+
+    return _k(b"stream_hkdf_aes_key"), _k(b"stream_hkdf_hmac_key")
+
+
+def media_hkdf_encrypt(aes_key: bytes, hmac_key: bytes, data: bytes, *, corrupt_hmac: bool = False
+                       ) -> tuple[bytes, dict[str, str]]:
+    """Encrypt one part with a fresh random IV; returns (ciphertext, {X-Nonce, X-Data-Hmac})."""
+    import hmac as _hmac
+    import os
+
+    iv = os.urandom(16)
+    ct = aes_cbc_encrypt(aes_key, iv, data)
+    mac = _hmac.new(hmac_key, ct, hashlib.sha256).digest()
+    if corrupt_hmac:
+        mac = bytes(b ^ 0xFF for b in mac)
+    return ct, {"X-Nonce": iv.hex(), "X-Data-Hmac": base64.b64encode(mac).decode("ascii")}
+
+
 def compact_json(obj) -> str:
     import json
 

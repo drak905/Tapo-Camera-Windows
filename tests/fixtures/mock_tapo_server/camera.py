@@ -70,6 +70,8 @@ class MockTapoCamera:
         self.fixed_nonce: str | None = None
         self.fixed_start_seq: int | None = None
         self.media_digest_algorithm = "MD5"
+        self.media_kex_mode = "md5"           # "md5" (fixed IV) | "hkdf" (C200 fw 1.5.x)
+        self.media_corrupt_hmac_every = 0     # HKDF: every Nth part gets a wrong X-Data-Hmac
         self.media_ack_window = 50
         self.media_ack_timeout = 5.0
         self.media_chunk_size = 188 * 32
