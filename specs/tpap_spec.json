@@ -1,0 +1,518 @@
+{
+  "spec_id": "tpap_spec",
+  "apk": {
+    "package": "com.tplink.iot",
+    "version_name": "3.22.806",
+    "version_code": "7276"
+  },
+  "summary": "TPAP local login of encrypt_type ['4'] cameras: SPAKE2+ (P-256, RFC 9383) pake_register/pake_share with md5/sha256 passcodes and extra_crypt shadows, then an AES-128-CCM binary /stok/ds channel.",
+  "items": [
+    {
+      "id": "tpap.selection",
+      "kind": "state_machine",
+      "description": "Which login to use. TDP advertises encrypt_type ['4'] and tpap {pake:[2], tls, noc, port:443, user_hash_type}. If tpap.pake is non-empty or encrypt_type contains '4', go straight to TPAP. Otherwise send the v3 step 1; a TPAP-only camera answers -40211 and the client switches to TPAP. A camera that answers pake_register with -40413 + data.encrypt_type ['3'] wants v3.",
+      "value": {
+        "v3_step1_reply_on_tpap_firmware": -40211,
+        "register_reply_wanting_v3": -40413,
+        "tdp_fields": [
+          "encrypt_type",
+          "tpap.pake",
+          "tpap.port",
+          "tpap.user_hash_type"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+          "line": 277,
+          "snippet": "if (pake.contains(2)) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 35,
+          "snippet": "MISSING_NECESSARY_PARAMS(-40211),"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 1/4: V3 clients get -40211; switch to V4 on -40211; -40413 on register asks for V3"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.pake_register.request",
+      "kind": "request",
+      "description": "POST / (JSON) {method:'login', params:{sub_method:'pake_register', username, user_random (base64 of 32 random bytes), cipher_suites:[1], encryption:['aes_128_ccm'], passcode_type:'userpw'}}. username = md5_hex('admin') (SHA256_HEX_UPPER('admin') when tpap.user_hash_type == 1); some firmware wants the literal 'admin' (-40209 otherwise).",
+      "value": {
+        "sub_method": "pake_register",
+        "cipher_suites": [
+          1
+        ],
+        "encryption": [
+          "aes_128_ccm"
+        ],
+        "passcode_type": "userpw",
+        "username_md5_admin": "21232f297a57a5a743894a0e4a801fc3"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pBean.java",
+          "line": 9,
+          "snippet": "METHOD_TLA_SPAKE2P_REGISTER = \"pake_register\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pRegisterParams.java",
+          "line": 23,
+          "snippet": "@SerializedName(\"user_random\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pRegisterParams.java",
+          "line": 17,
+          "snippet": "@SerializedName(\"passcode_type\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+          "line": 310,
+          "snippet": "if (tDPTpapInfo.getUserHashType() == 1) {"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 4: username md5hex('admin'); literal admin works on C510W"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.pake_register.reply",
+      "kind": "response",
+      "description": "result {dev_salt, dev_random, dev_share (base64 SEC1 point), cipher_suites, iterations (default 10000), encryption, extra_crypt?, expired?}. Lock codes -40404/-40408 carry result.data.sec_left.",
+      "value": {
+        "fields": [
+          "dev_salt",
+          "dev_random",
+          "dev_share",
+          "cipher_suites",
+          "iterations",
+          "encryption",
+          "extra_crypt",
+          "expired"
+        ],
+        "iterations_default": 10000
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pRegisterResult.java",
+          "line": 31,
+          "snippet": "this.iterations = 10000;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pRegisterResult.java",
+          "line": 66,
+          "snippet": "public String getSpake2pCredentials(String str, String str2, String str3) {"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.credentials.userpw",
+      "kind": "algorithm",
+      "description": "Passcode candidates for pake 2 (the app's order): md5_hex(cloud password), SHA256_HEX_UPPER(local access token) if any, SHA256_HEX_UPPER(cloud password). This client tries at most 2 (md5, sha256); sha256 first when the register reply carries extra_crypt (C200 hw 5.0 behaviour), and after a success only the variant that worked.",
+      "value": {
+        "variants": [
+          "md5_hex",
+          "sha256_hex_upper"
+        ],
+        "max_attempts_per_login": 2
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+          "line": 278,
+          "snippet": "arrayList.add(t(strU, listE, \"userpw\", strH));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+          "line": 283,
+          "snippet": "k.h(dVar.d())  // SHA256 upper"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/util/l.java",
+          "line": 139,
+          "snippet": "SHA_256 ... toUpperCase"
+        },
+        {
+          "source": "jadx",
+          "file": "wc1/a.java",
+          "line": 99,
+          "snippet": "public static String h(String str) { md5 hex }"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 4.5: C200 hw 5.0 sends extra_crypt password_shadow id 5 and wants sha256_hex_upper"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.extra_crypt",
+      "kind": "algorithm",
+      "description": "extra_crypt {type, params} reshapes the passcode before PBKDF2 (cameras pass user=null): password_shadow passwd_id 1 = MD5-crypt with passwd_prefix ($1$, else raw passcode), 2 = sha1 hex, 3 = needs user (raw passcode), 5 = SHA-256-crypt ($5$, rounds= honoured, salt <= 16); password_authkey = dict[(c ^ k) % len(dict)] with 187 padding; password_sha_with_salt = sha256 hex of ('admin' if sha_name == 0 else 'user') + b64decode(sha_salt) + passcode.",
+      "value": {
+        "types": [
+          "password_shadow",
+          "password_authkey",
+          "password_sha_with_salt"
+        ],
+        "c200_example": {
+          "type": "password_shadow",
+          "params": {
+            "passwd_id": 5,
+            "passwd_prefix": "$5$<salt>$"
+          }
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pExtraCryptBean.java",
+          "line": 467,
+          "snippet": "public String buildShadow(String str, String str2, String str3) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pExtraCryptBean.java",
+          "line": 394,
+          "snippet": "return isShadowSha256() ? sha256Shadow(str2, this.prefix) : str2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pExtraCryptBean.java",
+          "line": 189,
+          "snippet": "private static String sha256Shadow(String str, String str2) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pExtraCryptBean.java",
+          "line": 94,
+          "snippet": "private static String md5Shadow(String str, String str2) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pExtraCryptBean.java",
+          "line": 61,
+          "snippet": "private static String authKey(String str, String str2, String str3) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pExtraCryptBean.java",
+          "line": 445,
+          "snippet": "public String getShaSalt(String str) {"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.spake2p.algorithm",
+      "kind": "algorithm",
+      "description": "SPAKE2+ (RFC 9383) P-256/SHA-256/HKDF/HMAC, empty idProver/idVerifier. w0||w1 = PBKDF2-HMAC-SHA256(passcode, dev_salt, iterations, 80 bytes), each 40 bytes mod n. X = x*G + w0*M; Z = x*(Y - w0*N); V = w1*(Y - w0*N); TT = 8-byte LE length-prefixed context, '', '', M, N, X, Y, Z, V (uncompressed), w0 (32 bytes); K_main = SHA256(TT); KcP||KcV = HKDF(salt=none, K_main, 'ConfirmationKeys', 64); K_shared = HKDF(.., 'SharedKey', 32); user_confirm = HMAC(KcP, Y); dev_confirm must equal HMAC(KcV, X).",
+      "value": {
+        "cipher_suite": 1,
+        "pbkdf2_bytes": 80,
+        "hkdf_infos": [
+          "ConfirmationKeys",
+          "SharedKey"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "tm1/d.java",
+          "line": 28,
+          "snippet": "PKCS5S2 generator, (digest+8)*2 bytes, two halves mod n"
+        },
+        {
+          "source": "jadx",
+          "file": "tm1/a.java",
+          "line": 52,
+          "snippet": "transcript: 8-byte little-endian length prefixes, points l(false) uncompressed"
+        },
+        {
+          "source": "jadx",
+          "file": "tm1/a.java",
+          "line": 43,
+          "snippet": "kVar.c(bArrB, \"ConfirmationKeys\", true)"
+        },
+        {
+          "source": "jadx",
+          "file": "on1/a.java",
+          "line": 146,
+          "snippet": "different confirmV"
+        },
+        {
+          "source": "external",
+          "url": "https://www.rfc-editor.org/rfc/rfc9383",
+          "summary": "RFC 9383 protocol and Appendix C test vectors"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.spake2p.points",
+      "kind": "constant",
+      "description": "RFC 9383 P-256 M and N points (compressed SEC1).",
+      "value": {
+        "M": "02886e2f97ace46e55ba9dd7242579f2993b64e16ef3dcab95afd497333d8fa12f",
+        "N": "03d8bbd6c639c62937b04d997f38c3770719c629d7014d49a24b4f98baa1292b49"
+      },
+      "evidence": [
+        {
+          "source": "external",
+          "url": "https://www.rfc-editor.org/rfc/rfc9383",
+          "summary": "section 4, P-256 M/N"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 4: M/N as in RFC 9383"
+        }
+      ],
+      "confidence": "external"
+    },
+    {
+      "id": "tpap.context",
+      "kind": "algorithm",
+      "description": "SPAKE2+ context = SHA256('PAKE V1' || user_random || dev_random) (raw bytes of the base64 fields).",
+      "value": {
+        "tag": "PAKE V1"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pBean.java",
+          "line": 26,
+          "snippet": "SPAKE2P_CONTEXT_TAG = \"PAKE V1\""
+        },
+        {
+          "source": "jadx",
+          "file": "on1/a.java",
+          "line": 72,
+          "snippet": "Spake2pBean.SPAKE2P_CONTEXT_TAG.getBytes() + user_random + dev_random"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.pake_share.request",
+      "kind": "request",
+      "description": "POST / {method:'login', params:{sub_method:'pake_share', user_share: base64(X uncompressed), user_confirm: base64(confirmP)}} (dac_nonce only for tls 0 + dac 1 devices).",
+      "value": {
+        "sub_method": "pake_share",
+        "fields": [
+          "user_share",
+          "user_confirm"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pShareParams.java",
+          "line": 12,
+          "snippet": "@SerializedName(\"user_confirm\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pShareParams.java",
+          "line": 15,
+          "snippet": "@SerializedName(\"user_share\")"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.pake_share.reply",
+      "kind": "response",
+      "description": "result {dev_confirm, stok, start_seq, expired (s)}. Wrong passcode -> plain -40401 (counted as a failed login by the camera); dev_confirm mismatch -> credential/crypto error.",
+      "value": {
+        "fields": [
+          "dev_confirm",
+          "stok",
+          "start_seq",
+          "expired"
+        ],
+        "wrong_passcode": -40401
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pShareResult.java",
+          "line": 18,
+          "snippet": "@SerializedName(\"dev_confirm\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tls/codec/spake2p/bo/Spake2pShareResult.java",
+          "line": 27,
+          "snippet": "@SerializedName(\"start_seq\")"
+        },
+        {
+          "source": "jadx",
+          "file": "on1/a.java",
+          "line": 157,
+          "snippet": "setStartSequence(spake2pShareResult.getStartSeq())"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 4: wrong password -> pake_share {error_code:-40401}"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.session_cipher",
+      "kind": "algorithm",
+      "description": "AES-128-CCM, 16-byte tag, no AAD. key = HKDF-SHA256(K_shared, salt 'tp-kdf-salt-aes128-key', info 'tp-kdf-info-aes128-key', 32)[:16]; nonce base = HKDF(.., 'tp-kdf-salt-aes128-iv', 'tp-kdf-info-aes128-iv', 32)[:12]; nonce = base[0:8] || uint32_be(seq).",
+      "value": {
+        "encryption": "aes_128_ccm",
+        "tag_bytes": 16,
+        "nonce_bytes": 12
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/security/cipher/SecEncryptor.java",
+          "line": 18,
+          "snippet": "ENCRYPTOR_TYPE_AES_128(\"aes_128_ccm\", \"tp-kdf-salt-aes128-key\", ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/security/cipher/SecEncryptor.java",
+          "line": 174,
+          "snippet": "keyDerive: HKDF SHA-256, digest-size output"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/security/cipher/SecSessionCipher.java",
+          "line": 30,
+          "snippet": "nonce[0:len-4] + putInt(seq) big endian"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.ds.framing",
+      "kind": "request",
+      "description": "POST /stok=<stok>/ds, Content-Type and Accept application/octet-stream, body uint32_be(seq) || ciphertext || tag; first seq = start_seq, +1 per request (every attempt burns one). Inner JSON must be a multipleRequest. Reply has the same layout; decrypt with the reply's own seq.",
+      "value": {
+        "content_type": "application/octet-stream",
+        "first_seq": "start_seq"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapotpap/TpapAccessApi.java",
+          "line": 23,
+          "snippet": "Content-Type: application/octet-stream ... Accept: application/octet-stream"
+        },
+        {
+          "source": "jadx",
+          "file": "rn1/a0.java",
+          "line": 202,
+          "snippet": "int andIncrement = a0Var.f226440d.getAndIncrement();"
+        },
+        {
+          "source": "jadx",
+          "file": "rn1/a0.java",
+          "line": 205,
+          "snippet": "putInt(andIncrement).put(aVarEncrypt.a())"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 5: inner must be multipleRequest, else -40209"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.ds.errors",
+      "kind": "error_code",
+      "description": "A refusal is a plaintext JSON body {error_code} (try JSON first, an encrypted reply may start with '{'). -40401 / -40421 / -40420 / -40418 / -2402 = log in again; -40209 = inner not accepted. Any refusal ends the session camera-side.",
+      "value": {
+        "relogin_codes": [
+          -40401,
+          -40418,
+          -40420,
+          -40421,
+          -2402
+        ],
+        "bad_inner": -40209
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 34,
+          "snippet": "TPAP_SESSION_TOKEN_INVALID(-40421),"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/common/CameraErrorCode.java",
+          "line": 32,
+          "snippet": "TPAP_AUTHENTICATION_FAILED(-40418),"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 5.3: refusals and the session dying after one"
+        }
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "tpap.relogin",
+      "kind": "state_machine",
+      "description": "Keep the session until 'expired' seconds pass or a refusal; then log in once more with the known-good passcode. C200 refuses a share right after the previous session ended / while it is alive: wait ~2 s and repeat once with the same passcode. Never loop; lock codes -40404/-40408 stop at once.",
+      "value": {
+        "retry_delay_s": 2.0,
+        "max_attempts": 2,
+        "lock_codes": [
+          -40404,
+          -40408
+        ]
+      },
+      "evidence": [
+        {
+          "source": "external",
+          "url": "https://github.com/freeKC/tapo-v4-protocol/blob/main/PROTOCOL.md",
+          "summary": "section 4.5: fresh pake_share while the old session lives gets -40401; section 5.4 retry policy"
+        }
+      ],
+      "confidence": "external"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "NOC / DAC",
+      "detail": "tpap.noc == 1 cameras also offer a certificate-based (NOC) login and DAC proofs; not needed for userpw and not implemented."
+    },
+    {
+      "topic": "local access token",
+      "detail": "The app's second candidate SHA256_HEX_UPPER(local access token) is not available to this client."
+    }
+  ]
+}
