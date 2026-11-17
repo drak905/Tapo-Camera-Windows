@@ -1,0 +1,219 @@
+{
+  "agent_id": "Subagent-Impl-UI",
+  "status": "done_with_known_test_bugs",
+  "tests_targeted": 113,
+  "tests_passed": 78,
+  "tests_failed": 35,
+  "tests_skipped": 0,
+  "failing_tests": [
+    {
+      "id": "tests/e2e/test_controller.py::test_start_view_emits_qimage_of_requested_size_and_states",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_frame_qimage_is_deep_copy",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_service_calls_off_gui_thread_and_signals_on_gui_thread",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_events_started_after_connect_and_motion_forwarded",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_refresh_status_emits_full_dict",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_privacy-privacy-True]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_led-led-True]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_alarm-alarm-True]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_motion_detection-motion_detection-False]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_day_night-day_night-on]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_failure_emits_command_failed_then_rollback[set_privacy-privacy-True-False]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_failure_emits_command_failed_then_rollback[set_led-led-True-False]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_toggle_failure_emits_command_failed_then_rollback[set_day_night-day_night-off-auto]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_ptz_failure_reports_command_failed",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_presets_and_goto",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_load_recordings_emits_recordings_ready",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_load_recordings_failure",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_download_progress_and_finished",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controller.py::test_download_failure_reports_error",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_panel_reflects_status_without_calling_back",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_day_night_combo_items_and_user_change",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_privacy_toggle_optimistic",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_privacy_toggle_rolls_back_on_failure",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_other_toggles_forward[ledToggle-set_led-True]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_other_toggles_forward[alarmToggle-set_alarm-True]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_other_toggles_forward[motionToggle-set_motion_detection-False]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_presets_populate_and_goto",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzUp-signs0]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzDown-signs1]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzLeft-signs2]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzRight-signs3]",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_controls_panel.py::test_ptz_stop_button",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_grid_tiles.py::test_double_click_toggles_fullscreen_quality",
+      "reason": "test_harness_bug: qtbot.waitUntil(lambda: <list>) - pytest-qt 4.5.0 raises ValueError for any return value other than None/True/False (QtBot.waitUntil: `if result not in (None, True, False): raise ValueError`), so an empty OR non-empty list always fails on the first poll, independent of the implementation. Fix: wrap in bool() / use `len(...) > 0` in the test. Verified: with a scratch plugin that only coerces the callback result to bool (not committed), this test passes."
+    },
+    {
+      "id": "tests/e2e/test_playback_dialog_tray_app.py::test_app_main_selftest_in_process",
+      "reason": "needs_merge: main(['--selftest']) builds a real CredentialVault, which is a NotImplementedError stub in this worktree. Verified passing on a scratch copy of this lane overlaid with wave3/control's core/auth + core/control_client."
+    },
+    {
+      "id": "tests/e2e/test_playback_dialog_tray_app.py::test_python_m_tapo_desktop_selftest",
+      "reason": "needs_merge: main(['--selftest']) builds a real CredentialVault, which is a NotImplementedError stub in this worktree. Verified passing on a scratch copy of this lane overlaid with wave3/control's core/auth + core/control_client."
+    }
+  ],
+  "env_blocked": [],
+  "needs_merge": [
+    "tests/e2e/test_playback_dialog_tray_app.py::test_app_main_selftest_in_process",
+    "tests/e2e/test_playback_dialog_tray_app.py::test_python_m_tapo_desktop_selftest"
+  ],
+  "test_harness_bugs": [
+    "tests/e2e/test_controller.py::test_start_view_emits_qimage_of_requested_size_and_states",
+    "tests/e2e/test_controller.py::test_frame_qimage_is_deep_copy",
+    "tests/e2e/test_controller.py::test_service_calls_off_gui_thread_and_signals_on_gui_thread",
+    "tests/e2e/test_controller.py::test_events_started_after_connect_and_motion_forwarded",
+    "tests/e2e/test_controller.py::test_refresh_status_emits_full_dict",
+    "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_privacy-privacy-True]",
+    "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_led-led-True]",
+    "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_alarm-alarm-True]",
+    "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_motion_detection-motion_detection-False]",
+    "tests/e2e/test_controller.py::test_toggle_is_optimistic_and_forwarded[set_day_night-day_night-on]",
+    "tests/e2e/test_controller.py::test_toggle_failure_emits_command_failed_then_rollback[set_privacy-privacy-True-False]",
+    "tests/e2e/test_controller.py::test_toggle_failure_emits_command_failed_then_rollback[set_led-led-True-False]",
+    "tests/e2e/test_controller.py::test_toggle_failure_emits_command_failed_then_rollback[set_day_night-day_night-off-auto]",
+    "tests/e2e/test_controller.py::test_ptz_failure_reports_command_failed",
+    "tests/e2e/test_controller.py::test_presets_and_goto",
+    "tests/e2e/test_controller.py::test_load_recordings_emits_recordings_ready",
+    "tests/e2e/test_controller.py::test_load_recordings_failure",
+    "tests/e2e/test_controller.py::test_download_progress_and_finished",
+    "tests/e2e/test_controller.py::test_download_failure_reports_error",
+    "tests/e2e/test_controls_panel.py::test_panel_reflects_status_without_calling_back",
+    "tests/e2e/test_controls_panel.py::test_day_night_combo_items_and_user_change",
+    "tests/e2e/test_controls_panel.py::test_privacy_toggle_optimistic",
+    "tests/e2e/test_controls_panel.py::test_privacy_toggle_rolls_back_on_failure",
+    "tests/e2e/test_controls_panel.py::test_other_toggles_forward[ledToggle-set_led-True]",
+    "tests/e2e/test_controls_panel.py::test_other_toggles_forward[alarmToggle-set_alarm-True]",
+    "tests/e2e/test_controls_panel.py::test_other_toggles_forward[motionToggle-set_motion_detection-False]",
+    "tests/e2e/test_controls_panel.py::test_presets_populate_and_goto",
+    "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzUp-signs0]",
+    "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzDown-signs1]",
+    "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzLeft-signs2]",
+    "tests/e2e/test_controls_panel.py::test_ptz_buttons_hold_to_move[ptzRight-signs3]",
+    "tests/e2e/test_controls_panel.py::test_ptz_stop_button",
+    "tests/e2e/test_grid_tiles.py::test_double_click_toggles_fullscreen_quality"
+  ],
+  "files": [
+    "src/tapo_desktop/services/config_store.py",
+    "src/tapo_desktop/services/_workers.py",
+    "src/tapo_desktop/services/controller.py",
+    "src/tapo_desktop/services/camera_service.py",
+    "src/tapo_desktop/ui/_theme.py",
+    "src/tapo_desktop/ui/video_tile.py",
+    "src/tapo_desktop/ui/grid.py",
+    "src/tapo_desktop/ui/ptz_pad.py",
+    "src/tapo_desktop/ui/controls_panel.py",
+    "src/tapo_desktop/ui/playback_panel.py",
+    "src/tapo_desktop/ui/camera_dialog.py",
+    "src/tapo_desktop/ui/tray.py",
+    "src/tapo_desktop/ui/main_window.py",
+    "src/tapo_desktop/app.py",
+    "artifacts/subagent_reports/Subagent-Impl-UI.json"
+  ],
+  "notes": [
+    "Run twice each: as-is 78 passed / 35 failed (stable); with the scratch bool-coercing waitUntil plugin 111 passed / 2 failed (the 2 selftest needs_merge), stable over 2 runs. tests/ untouched.",
+    "33 harness-bug failures: 19 in test_controller.py, 13 in test_controls_panel.py (the _panel() helper's waitUntil returns a list), 1 in test_grid_tiles.py::test_double_click_toggles_fullscreen_quality.",
+    "Controller: private daemon WorkerPool (idle expiry, joinable) + per-camera serial strands: 'control' (connect/stream/PTZ/status/presets/recordings) and 'io' (downloads, so a long download never blocks PTZ). GUI marshalling through a private queued pyqtSignal(object). Frames: newest-frame slot per camera with at most one queued delivery (stale frames dropped, never unbounded); QImage built on the GUI thread with .copy().",
+    "stop_all waits for per-camera stop jobs with a 10 s total bound (STOP_ALL_TIMEOUT_S). Unknown camera ids in operational methods are logged and ignored; update_camera/remove_camera raise KeyError. update_camera restarts a running view after replacing the service. stop_view failures are only logged (no command_failed).",
+    "TapoCameraService PTZ: spec control.ptz.move says +x right, +y UP (y = (taps_up - taps_down)*step), so dy>0 maps to positive y_coord, no sign flip. Single-axis hold-to-move uses client.step(direction) (singalMove, the app's press-and-hold request [spec:control.ptz.move_step]: 0 right, 90 up, 180 left, 270 down); diagonals use client.move(dx*10, dy*10). Deviation from the orchestrator's 'use move(x,y)' suggestion: motorMove is a relative 10-unit nudge, not a continuous move.",
+    "TapoCameraService: get_status tolerates TapoDeviceError per getter (default value) so a model without e.g. an LED still syncs; alarm = last value set (no getter). recordings_for_day passes the local tz. start_stream reuses the supervisor via switch() unless FAILED/STOPPED; stale supervisor callbacks muted by a generation counter. close() cancels downloads (threading.Event), stops events/stream and closes the control client.",
+    "Smoke-tested TapoCameraService and MainWindow+AppController(default factory) against MockTapoCamera on a scratch copy merged with wave3/control and wave3/onvif: login, device info, status get/set, PTZ (singalMove/stopMove/motorMove), presets, days/clips search and an ONVIF motion event all worked. Live video and downloads not smoke-tested: media lane was not committed yet.",
+    "Default factory builds one shared StreamLimiter and PinStore(<data dir>/pins.json) lazily; if the media lane's StreamLimiter fails, every service creation fails (seen before merge).",
+    "Lane additions: AppController.camera(id); CameraGrid.tile(), toggle_fullscreen(), fullscreen_camera_id(); VideoTile.set_name/name/stream_state/set_selected/is_selected; MainWindow.selected_camera_id(), editCameraButton + list double-click edit; PlaybackPanel refreshRecordingsButton, downloadStatus label; TrayController.hide()/show_window()/is_available(); app.main accepts --debug and -h/--help (0). Closing to tray is skipped (quits instead) when a TrayController exists but the platform has no system tray.",
+    "Decode sizes are fixed per quality (HD/TELE_HD 1280x720, SD/TELE_SD 640x360), so resizing never restarts ffmpeg."
+  ]
+}
