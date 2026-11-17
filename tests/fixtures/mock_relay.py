@@ -21,6 +21,13 @@ the X-token of an issued slot. Answers:
   plaintext MPEG-TS of the mock media assets (``X-If-Encrypt: 0``; ``mode="encrypted"`` sends
   ``1``) paced in real time (``speed`` multiplier). Heartbeats, acks and stop requests are recorded.
 
+Phase 4 (additive): slots issued with ``stream_type`` 1 (SD playback, path ``type=sdvod``) or 3 (download,
+``type=download``) expect a first ``get playback`` / ``get download`` request (``start_time`` string > 0)
+instead of the preview; the answer carries a ``session_id``, then plaintext TS follows: download = the
+cached clip in 6 KiB parts, playback = the PTS-continuous clip loop for ``end - start`` seconds (unpaced),
+both ended by ``stream_status``/``finished`` (``playback_finishes=False``: playback keeps going past the
+clip end). ``vod_refuse`` = verbs answered with error -52402; ``vod_requests`` records the requests.
+
 The implementation is independent of ``tapo_desktop`` on purpose (own multipart parser).
 """
 from __future__ import annotations
@@ -220,7 +227,8 @@ class _Tunnel:
             if redirect:
                 relay.redirects -= 1
                 new = relay._new_slot(slot["deviceId"], slot["resolution"], slot["cloudType"], slot["trackId"],
-                                      redirect_times=slot["redirectTimes"] + 1)
+                                      redirect_times=slot["redirectTimes"] + 1,
+                                      stream_type=slot.get("streamType", 0))
         if redirect:
             entry["status"] = "304"
             self.answer("304 Not Modified", new)
@@ -266,13 +274,19 @@ class _Tunnel:
                 continue
             if msg.get("type") != "request":
                 continue
+            stream_type = (self.slot or {}).get("streamType", 0)
             if first:
                 first = False
-                if params.get("method") != "get" or "preview" not in params:
+                verb = {0: "preview", 1: "playback", 3: "download"}.get(stream_type)
+                if params.get("method") != "get" or verb not in params:
                     self.send_json({"type": "response", "seq": msg.get("seq"), "result": {"error_code": -40106}})
                     continue
-            if params.get("method") == "get" and isinstance(params.get("preview"), dict):
+            if params.get("method") == "get" and stream_type == 0 and isinstance(params.get("preview"), dict):
                 self.start_preview(msg.get("seq"), params["preview"])
+            elif params.get("method") == "get" and stream_type in (1, 3):
+                verb = "playback" if stream_type == 1 else "download"
+                if isinstance(params.get(verb), dict):
+                    self.start_vod(msg.get("seq"), verb, params[verb])
             elif params.get("method") == "do" and "stop" in params:
                 with self.relay.lock:
                     self.relay.stops += 1
@@ -329,6 +343,77 @@ class _Tunnel:
                                        daemon=True)
         self.sender.start()
 
+    def start_vod(self, seq, verb: str, p: dict) -> None:
+        """SD playback (streamType 1) / download (streamType 3) inside the tunnel [spec:remote.relay.playback_download.tunnel]."""
+        relay = self.relay
+        try:
+            start = int(p["start_time"])
+            end = int(p.get("end_time", start))
+        except (KeyError, TypeError, ValueError):
+            start, end = 0, -1
+        with relay.lock:
+            relay.vod_requests.append({"verb": verb, "params": dict(p), "time": time.monotonic()})
+            refused = verb in relay.vod_refuse
+        if not isinstance(p.get("start_time"), str) or start <= 0 or end < start or refused:
+            self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52402}})
+            return
+        with relay.lock:
+            relay.session_counter += 1
+            self.session_id = str(relay.session_counter)
+        result = {"error_code": 0, "session_id": self.session_id}
+        if verb == "playback":
+            result["speed"] = p.get("scale", "1/1")
+        self.send_json({"type": "response", "seq": seq, "result": result})
+        self.stop_media.clear()
+        target = self.download_loop if verb == "download" else self.playback_loop
+        self.sender = threading.Thread(target=target, args=(max(1, end - start),), name=f"mock-relay-{verb}",
+                                       daemon=True)
+        self.sender.start()
+
+    def _send_media(self, i: int, data: bytes, pts: int, keyframe: bool) -> None:
+        self.send_part({"Content-Type": "video/mp2t", "X-If-Encrypt": "0", "X-Session-Id": self.session_id or "",
+                        "X-Data-Sequence": str(i), "X-Data-PTS": str(pts), "X-If-IFrame": "1" if keyframe else "0"},
+                       data)
+        with self.relay.lock:
+            self.relay.media_parts_sent += 1
+
+    def _finished(self) -> None:
+        self.send_json({"type": "notification", "params": {"event_type": "stream_status", "status": "finished"}})
+
+    def download_loop(self, _duration: int) -> None:
+        """The cached clip in 188*32-byte parts (like the LAN :8800 download), then ``finished``."""
+        try:
+            ts = media_assets.load_ts()
+            chunk = 188 * 32
+            chunks = [ts[i:i + chunk] for i in range(0, len(ts), chunk)]
+            total_pts = media_assets.TS_SECONDS * 90000
+            for i, data in enumerate(chunks, start=1):
+                if self.stop_media.is_set() or self.relay.stopping.is_set():
+                    return
+                self._send_media(i, data, int(total_pts * (i - 1) / len(chunks)), i == 1)
+            self._finished()
+        except (OSError, ssl.SSLError):
+            pass
+
+    def playback_loop(self, duration: int) -> None:
+        """Continuous TS (PTS-continuous loop of the cached clip) for ``duration`` s of stream time, unpaced;
+        then ``finished`` - or, with ``playback_finishes=False``, it keeps streaming (the client must stop
+        at the clip end) up to a safety cap."""
+        try:
+            template = ts_loop.template_for(media_assets.load_ts())
+            finishes = self.relay.playback_finishes
+            limit = duration if finishes else duration * 20 + 30
+            for i, unit in enumerate(ts_loop.TsLoop(template), start=1):
+                if self.stop_media.is_set() or self.relay.stopping.is_set():
+                    return
+                if unit.elapsed >= limit:
+                    break
+                self._send_media(i, unit.data, unit.pts, unit.keyframe)
+            if finishes and not self.stop_media.is_set():
+                self._finished()
+        except (OSError, ssl.SSLError):
+            pass
+
     def media_loop(self, resolution: str) -> None:
         template = ts_loop.template_for(media_assets.load_ts(*PREVIEW_SIZES[resolution]))
         speed = max(0.01, float(self.relay.speed))
@@ -375,6 +460,9 @@ class MockRelay:
         self.open_tunnels = 0
         self.media_parts_sent = 0
         self.session_counter = 0
+        self.vod_requests: list[dict] = []  # Phase 4: in-tunnel "get playback" / "get download" params
+        self.vod_refuse: set[str] = set()  # verbs ("playback" / "download") answered with error -52402
+        self.playback_finishes = True  # False: playback streams past the clip end (client must stop)
         self.stopping = threading.Event()
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
@@ -434,22 +522,28 @@ class MockRelay:
 
     # ---------------------------------------------------------------- slots (used by MockTapoCloud)
     def _new_slot(self, device_id: str, resolution: str, cloud_type: int, track_id: str, *,
-                  redirect_times: int = 0) -> dict:
+                  redirect_times: int = 0, stream_type: int = 0) -> dict:
         token = secrets.token_hex(16)
-        path = f"/relayservice?deviceid={device_id}&type=video&resolution={resolution}"
+        if stream_type == 1:
+            path = f"/relayservice?deviceid={device_id}&type=sdvod&playerid={secrets.token_hex(16)}"
+        elif stream_type == 3:
+            path = f"/relayservice?deviceid={device_id}&type=download&bidirectionid={secrets.token_hex(16)}"
+        else:
+            path = f"/relayservice?deviceid={device_id}&type=video&resolution={resolution}"
         result = {"relayUrl": f"https://{RELAY_HOST}:{self.port}{path}", "relayIp": "127.0.0.1",
                   "relayToken": token}
         if self.elb_cookie:
             result["elbCookie"] = self.elb_cookie
         self.slots[token] = {"deviceId": device_id, "resolution": resolution, "cloudType": cloud_type,
                              "trackId": track_id, "redirectTimes": redirect_times,
-                             "elbCookie": self.elb_cookie}
+                             "elbCookie": self.elb_cookie, "streamType": stream_type}
         return result
 
-    def issue_slot(self, device_id: str, resolution: str, cloud_type: int, track_id: str) -> dict:
+    def issue_slot(self, device_id: str, resolution: str, cloud_type: int, track_id: str, *,
+                   stream_type: int = 0) -> dict:
         """RequestUrlResult for a new slot (called by the mock cloud's /v2/relay/request)."""
         with self.lock:
-            return self._new_slot(device_id, resolution, cloud_type, track_id)
+            return self._new_slot(device_id, resolution, cloud_type, track_id, stream_type=stream_type)
 
     # ---------------------------------------------------------------- server
     def _accept_loop(self) -> None:

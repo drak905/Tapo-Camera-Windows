@@ -42,7 +42,7 @@ from cryptography.x509.oid import NameOID
 
 from . import crypto
 from ._net import TrackedHTTPServer
-from .dispatcher import dispatch
+from .dispatcher import dispatch  # noqa: F401 (kept for importers; commands run via MockTapoCamera.execute)
 from .tpap_server import TpapEndpoint
 
 if TYPE_CHECKING:
@@ -284,16 +284,7 @@ class HttpsServer:
         return {"error_code": code, "method": method, "result": result}
 
     def _one(self, method: Any, params: Any) -> tuple[int, dict]:
-        cam = self.cam
-        cam._log_request(method, params)
-        injected = cam._take_injected_error(method)
-        if injected is not None:
-            return injected, {}
-        code, result = dispatch(cam.state, method, params)
-        if code == 0 and method == "rebootDevice":
-            # firmware reboots: every session is gone afterwards
-            self.expire_sessions()
-        return code, result
+        return self.cam.execute(method, params)
 
 
 class _Handler(BaseHTTPRequestHandler):

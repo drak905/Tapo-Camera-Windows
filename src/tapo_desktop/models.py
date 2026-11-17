@@ -65,6 +65,9 @@ class CameraConfig:
     lan_found: bool = True  # host was located on the LAN (TDP or manual); False -> host is stale/empty
     live_transport: str = "auto"  # "auto": RTSP if a camera account exists, else local :8800 | "local" | "rtsp"
     control_protocol: str = ""  # "" = auto (v3, TPAP after -40211) | "tpap" (TDP advertised encrypt_type "4")
+    # Phase 4 (remote control / shared cameras): from the IoT thing list (fallback: the device list)
+    role: int = 0  # 0 = owned by the signed-in account; otherwise shared to it (control/video via the cloud only)
+    share_type: str = ""  # "deviceShare" | "familyShare" | "" (owned)
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,22 @@ class CloudDevice:
     hw_version: str = ""
     role: int = 0  # 0 = owner, otherwise shared
     raw: dict = field(default_factory=dict, compare=False, repr=False)
+
+
+@dataclass(frozen=True)
+class ThingInfo:
+    """One camera of the IoT thing list (``GET /v2/things``) [spec:remote.client_recipe.control step 2].
+
+    ``app_server_url`` is the thing's ``appServerUrlV2`` (fallback ``appServerUrl``): the base of its
+    ``/v1/things/{thing_name}/services-sync`` passthrough. Holds no secret (the LAT is kept apart)."""
+
+    thing_name: str
+    app_server_url: str = ""
+    role: int = 0  # 0 = ROLE_OWNER, 1 = ROLE_USER (shared to this account)
+    share_type: str = ""  # "deviceShare" | "familyShare" | ""
+    device_type: str = ""
+    model: str = ""
+    online: bool | None = None  # status == 1; None if the record has no status
 
 
 @dataclass(frozen=True)

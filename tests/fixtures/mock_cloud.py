@@ -33,6 +33,22 @@ Phase 3 (remote live view, additive) [spec:remote.relay.cipc.*]:
   (bad headers -> HTTP 400) and the RequestUrlParam body; answers ``relay.issue_slot(...)`` of the
   attached :class:`tests.fixtures.mock_relay.MockRelay` (``relay`` attribute) or
   ``relay_errors[deviceId]`` as ``errorCode``.
+
+Phase 4 (remote control / recordings, additive) [spec:remote.control.*, remote.relay.playback_download.*]:
+* ``/v2/relay/request`` also accepts ``streamType`` 1 (SD playback) and 3 (download, ``subType: "cover"``):
+  no ``resolution`` / ``preConnection``, ``channelId: "0"``, ``customParams`` = JSON object string.
+  ``relay_refuse_stream_types`` = streamTypes answered with ``errorCode`` -1.
+* ``POST /eu/v1/things/{thingName}/services-sync`` - NOT signed; same IoT header / ``ut|<token>`` check
+  as ``/v2/things`` (401 ``{"code": -20651}``) plus ``Content-Type: application/json``. Body must be
+  ``{"serviceId":"passthrough","inputParams":{"requestData":{"method":"multipleRequest",...}}}``; every
+  inner request runs on the camera registered with :meth:`MockTapoCloud.register_camera` through
+  ``MockTapoCamera.execute`` (real shadow state, injected errors, the -71103 knob). Reply
+  ``{"outputParams":{"responseData":{"error_code":0,"result":{"responses":[...]}}},"requestId":..}``
+  (``passthrough_shape="direct"``: ``outputParams`` is the responseData itself). Device not in the
+  account -> 404 ``{"code":-20580}``; device ``status`` != 1 -> 400 ``{"code":-20571}`` (offline);
+  no registered camera -> 500 ``{"code":-20002}`` (did not answer). ``passthrough_errors[thing] =
+  (status, code)`` forces an answer (status 200 -> ``{"errorCode": code}``). The real IoT error shapes
+  for offline / timeout are not known (spec unresolved); these are assumptions.
 """
 from __future__ import annotations
 
@@ -45,7 +61,7 @@ import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 # Production keys [spec:cloud.signing.keys] (deliberately duplicated, not imported).
 ACCESS_KEY = "4d11b6b9d5ea4d19a829adbb9714b057"
@@ -57,9 +73,21 @@ CIPC_PREFIX = "/cipc"
 CIPC_SERVICE_ID = "cipc.api.cloud"
 APP_TYPE = "TP-Link_Tapo_Android"
 _SIGNATURE_RE = re.compile(r"^[A-Za-z0-9]{10}$")
+#: ``{appServerUrlV2}/v1/things/{thingName}/services-sync`` (appServerUrlV2 = regional URL = ``/eu``).
+_SERVICES_SYNC_RE = re.compile(r"^" + re.escape(REGION_PREFIX) + r"/v1/things/([^/]+)/services-sync$")
 
 _AUTH_RE = re.compile(
     r"^Timestamp=(?P<ts>[^,]+), Nonce=(?P<nonce>[^,]+), AccessKey=(?P<ak>[^,]+), Signature=(?P<sig>[0-9a-f]+)$")
+
+
+def _json_string(value: Any) -> bool:
+    """True if ``value`` is a string holding a JSON object (the relay API's ``customParams``)."""
+    if not isinstance(value, str):
+        return False
+    try:
+        return isinstance(json.loads(value), dict)
+    except ValueError:
+        return False
 
 
 def make_cloud_device(index: int, **overrides: Any) -> dict:
@@ -101,7 +129,10 @@ class _Handler(BaseHTTPRequestHandler):
             length = 0
         body = self.rfile.read(length) if length > 0 else b""
         parts = urlsplit(self.path)
-        if parts.path.startswith(CIPC_PREFIX + "/"):
+        sync = _SERVICES_SYNC_RE.match(parts.path)
+        if sync is not None:
+            status, payload = cloud._handle_services_sync(unquote(sync.group(1)), body, dict(self.headers.items()))
+        elif parts.path.startswith(CIPC_PREFIX + "/"):
             status, payload = cloud._handle_cipc(parts.path[len(CIPC_PREFIX):], body, dict(self.headers.items()))
         else:
             status, payload = cloud._handle(parts.path, parse_qs(parts.query), body, dict(self.headers.items()))
@@ -154,6 +185,11 @@ class MockTapoCloud:
         self.things_max_page_size = 100
         self.relay: Any = None  # MockRelay serving /v2/relay/request slots (Phase 3)
         self.relay_errors: dict[str, int] = {}  # deviceId -> errorCode answered by /v2/relay/request
+        self.relay_refuse_stream_types: set[int] = set()  # streamTypes /v2/relay/request refuses (errorCode -1)
+        self.cameras: dict[str, Any] = {}  # deviceId -> MockTapoCamera serving services-sync (Phase 4)
+        self.passthrough_errors: dict[str, tuple[int, int]] = {}  # deviceId -> (HTTP status, code) answer
+        self.passthrough_shape = "responseData"  # "responseData" | "direct" (outputParams = responseData)
+        self.passthrough_log: list[dict] = []  # {"thing", "requests"} per accepted services-sync call
         self.cipc_service_url: str | None = None  # None -> cipc_url; "" -> not listed
         self.request_log: list[dict] = []
         self.sent_codes: list[tuple[int, str]] = []
@@ -403,22 +439,99 @@ class MockTapoCloud:
         if not isinstance(params, dict):
             return 400, {"errorCode": -1, "msg": "bad json"}
         known = {d["deviceId"] for d in self.devices}
-        valid = (params.get("deviceId") in known and params.get("cloudType") in (1, 2)
-                 and params.get("deviceType") and params.get("playerId") == hdr.get("x-client-id")
-                 and params.get("rootCaVer") == "1" and params.get("streamType") == 0
-                 and params.get("preConnection") == 0 and params.get("resolution") in ("HD", "VGA")
-                 and params.get("customParams") == "{}" and params.get("trackId")
-                 and params.get("dataTimeoutCount") == 0)
+        stream_type = params.get("streamType")
+        common = (params.get("deviceId") in known and params.get("cloudType") in (1, 2)
+                  and params.get("deviceType") and params.get("playerId") == hdr.get("x-client-id")
+                  and params.get("rootCaVer") == "1" and params.get("trackId")
+                  and params.get("dataTimeoutCount") == 0)
+        if stream_type == 0:  # live preview
+            valid = (common and params.get("preConnection") == 0 and params.get("resolution") in ("HD", "VGA")
+                     and params.get("customParams") == "{}")
+        elif stream_type in (1, 3):  # SD playback / download [spec:remote.relay.playback_download.request_params]
+            valid = (common and "resolution" not in params and "preConnection" not in params
+                     and params.get("channelId") == "0" and _json_string(params.get("customParams"))
+                     and (stream_type != 3 or params.get("subType") == "cover"))
+        else:
+            valid = False
         if not valid:
             return 200, {"errorCode": -1, "msg": "bad relay request params"}
+        if stream_type in self.relay_refuse_stream_types:
+            return 200, {"errorCode": -1, "msg": f"streamType {stream_type} not supported"}
         code = self.relay_errors.get(params["deviceId"])
         if code:
             return 200, {"errorCode": code, "msg": "relay request refused"}
         if self.relay is None:
             return 200, {"errorCode": -1014, "msg": "no relay node"}
-        result = self.relay.issue_slot(params["deviceId"], params["resolution"], params["cloudType"],
-                                       params["trackId"])
+        if stream_type == 0:
+            result = self.relay.issue_slot(params["deviceId"], params["resolution"], params["cloudType"],
+                                           params["trackId"])
+        else:
+            result = self.relay.issue_slot(params["deviceId"], "", params["cloudType"], params["trackId"],
+                                           stream_type=stream_type)
         return 200, {"errorCode": 0, "msg": "Success", "result": result}
+
+    # ---------------------------------------------------------------- IoT services-sync passthrough (Phase 4)
+    def register_camera(self, device_id: str, camera: Any) -> None:
+        """Route ``services-sync`` passthrough requests for ``device_id`` to ``camera`` (a MockTapoCamera)."""
+        with self._lock:
+            self.cameras[device_id] = camera
+
+    def _iot_auth(self, hdr: dict[str, str]) -> tuple[int, dict] | None:
+        """IoT header + token check shared by the IoT endpoints: None = ok, else the error answer."""
+        term = hdr.get("x-term-id", "")
+        if (not term or hdr.get("x-app-name") != APP_TYPE or hdr.get("x-strict") != "0"
+                or hdr.get("app-cid") != f"app:{APP_TYPE}:{term}" or not hdr.get("x-app-version")):
+            return 400, {"code": -20104, "message": "missing app headers"}
+        auth = hdr.get("authorization", "")
+        with self._lock:
+            email = self._tokens.get(auth[3:]) if auth.startswith("ut|") else None
+        if email is None:
+            return 401, {"code": -20651, "message": "Token expired", "data": None}
+        return None
+
+    def _handle_services_sync(self, thing: str, body: bytes, headers: dict[str, str]) -> tuple[int, dict]:
+        hdr = {k.lower(): v for k, v in headers.items()}
+        try:
+            params = json.loads(body.decode("utf-8")) if body else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            params = None
+        with self._lock:
+            self.request_log.append({"method": "POST", "path": f"{REGION_PREFIX}/v1/things/{thing}/services-sync",
+                                     "query": {}, "body": params, "headers": headers, "signature_ok": None})
+        problem = self._iot_auth(hdr)
+        if problem is not None:
+            return problem
+        if not hdr.get("content-type", "").startswith("application/json"):
+            return 400, {"code": 11000, "message": "bad content type"}
+        request = ((params or {}).get("inputParams") or {}).get("requestData") if isinstance(params, dict) else None
+        if (not isinstance(params, dict) or params.get("serviceId") != "passthrough" or not isinstance(request, dict)
+                or request.get("method") != "multipleRequest"
+                or not isinstance((request.get("params") or {}).get("requests"), list)):
+            return 400, {"code": 11000, "message": "bad passthrough body"}
+        with self._lock:
+            self.passthrough_log.append({"thing": thing, "requests": request["params"]["requests"]})
+            injected = self.passthrough_errors.get(thing)
+            device = next((d for d in self.devices if d.get("deviceId") == thing), None)
+            camera = self.cameras.get(thing)
+        if injected is not None:
+            status, code = injected
+            if status == 200:
+                return 200, {"errorCode": code, "msg": "passthrough refused"}
+            return status, {"code": code, "message": "passthrough refused"}
+        if device is None:
+            return 404, {"code": -20580, "message": "device not bound to this account"}
+        if device.get("status", 1) != 1:
+            return 400, {"code": -20571, "message": "device is offline"}
+        if camera is None:
+            return 500, {"code": -20002, "message": "device did not answer in time"}
+        responses = []
+        for item in request["params"]["requests"]:
+            method = item.get("method") if isinstance(item, dict) else None
+            code, result = camera.execute(method, item.get("params") if isinstance(item, dict) else None)
+            responses.append({"method": method, "result": result, "error_code": code})
+        response_data = {"error_code": 0, "result": {"responses": responses}}
+        output = response_data if self.passthrough_shape == "direct" else {"responseData": response_data}
+        return 200, {"outputParams": output, "requestId": secrets.token_hex(8)}
 
     # ---------------------------------------------------------------- IoT app server (GET, unsigned)
     def _handle_iot_get(self, path: str, query: dict[str, list[str]],
@@ -454,5 +567,6 @@ class MockTapoCloud:
         return {"thingName": d["deviceId"], "localAccessToken": self.local_tokens.get(d["deviceId"]),
                 "appServerUrl": self.regional_url, "appServerUrlV2": self.regional_url,
                 "ownerAccountId": "12345678", "role": d.get("role", 0), "deviceType": d.get("deviceType"),
+                "shareType": d.get("shareType") or ("deviceShare" if d.get("role", 0) else None),
                 "model": d.get("deviceModel"), "mac": d.get("deviceMac"), "fwVer": d.get("fwVer"),
                 "hwVer": d.get("deviceHwVer"), "region": "eu-west-1", "status": d.get("status", 1)}

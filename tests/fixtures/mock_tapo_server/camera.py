@@ -7,11 +7,15 @@ from typing import Any
 from urllib.parse import quote
 
 from . import media_assets
+from .dispatcher import dispatch
 from .https_server import HttpsServer
 from .media_server import MediaServer
 from .onvif_server import OnvifServer
 from .rtsp_server import RtspServer
 from .shadow import DeviceShadow, default_components
+
+#: Error of real C510W firmware for ``searchVideoWithUTC`` without ``player_id`` (legacy ``"id": 1`` form).
+CLIP_SEARCH_FORM_ERROR = -71103
 
 
 class MockTapoCamera:
@@ -40,6 +44,11 @@ class MockTapoCamera:
     the passcode SHA256_HEX_UPPER(LAT); the v3 secure login and the :8800 digest use the raw LAT as the
     password (:8800 encrypt_type 3 -> SHA256_HEX_UPPER(LAT)). ``local_token`` may be changed while
     running (token rotation). The legacy MD5 login keeps using ``cloud_password``.
+
+    Remote control (additive, Phase 4): :meth:`execute` runs one command exactly like the HTTPS
+    ``/ds`` path (the mock cloud's ``services-sync`` passthrough calls it, so LAN and cloud share one
+    state). ``clip_search_requires_player_id = True`` makes ``searchVideoWithUTC`` without a
+    ``player_id`` answer -71103, like real C510W firmware does for the legacy ``"id": 1`` form.
     """
 
     def __init__(self, cloud_password: str = "cloudpass", camera_user: str = "camuser",
@@ -79,6 +88,7 @@ class MockTapoCamera:
         self.media_preview_speed = 1.0  # live preview pacing multiplier (1.0 = real time)
         self.max_failed_logins = 0
         self.lockout_seconds = 1800.0
+        self.clip_search_requires_player_id = False  # True -> searchVideoWithUTC with "id" only -> -71103
         # TPAP knobs / counters (protocol="tpap" only)
         self.tpap_iterations = 1000
         self.tpap_username = "md5"
@@ -256,6 +266,27 @@ class MockTapoCamera:
     def device_secret(self) -> str:
         """Password the camera's v3 login and :8800 digest expect: the LAT in LAT mode, else the cloud password."""
         return self.local_token if self.tpap_credential == "lat" else self.cloud_password
+
+    # -- command execution (HTTPS /ds and the mock cloud's services-sync passthrough) -------
+    def execute(self, method: Any, params: Any) -> tuple[int, dict]:
+        """Run one control command against the shadow: logs it, applies injected errors and the
+        ``clip_search_requires_player_id`` knob, dispatches, and expires sessions after a reboot.
+        Returns ``(error_code, result)``. Used by the HTTPS server and by
+        :class:`tests.fixtures.mock_cloud.MockTapoCloud` (remote passthrough), so both see the same state."""
+        self._log_request(method, params)
+        injected = self._take_injected_error(method)
+        if injected is not None:
+            return injected, {}
+        if self.clip_search_requires_player_id and method == "searchVideoWithUTC":
+            inner = ((params or {}).get("playback") or {}).get("search_video_with_utc") \
+                if isinstance(params, dict) and isinstance(params.get("playback"), dict) else None
+            if isinstance(inner, dict) and "player_id" not in inner:
+                return CLIP_SEARCH_FORM_ERROR, {}  # real C510W answer to the legacy "id": 1 form
+        code, result = dispatch(self.state, method, params)
+        if code == 0 and method == "rebootDevice":
+            # firmware reboots: every session is gone afterwards
+            self.expire_sessions()
+        return code, result
 
     # -- internal hooks used by the servers -----------------------------------------------
     def _count(self, name: str, n: int = 1) -> None:
