@@ -1,0 +1,57 @@
+{
+  "agent_id": "Subagent-Impl-Media",
+  "status": "done",
+  "tests_targeted": 216,
+  "tests_passed": 212,
+  "tests_failed": 4,
+  "tests_skipped": 0,
+  "breakdown": {
+    "unit (test_media_*, test_vod_*)": "187 passed, 1 failed (env_blocked)",
+    "integration test_media_supervisor.py": "14/14",
+    "integration test_media_chaos.py": "6/6",
+    "integration test_vod_download.py": "4 passed, 3 failed (env_blocked)",
+    "soak (TAPO_SOAK_SECONDS=120, -m soak tests/soak)": "1/1"
+  },
+  "runs": "lane set (215 tests) run 3 times (1 before refactor, 2 after): 211 passed / 4 failed each time, same 4. Soak run twice (before and after refactor): passed both times.",
+  "failing_tests": [
+    {"id": "tests/unit/test_vod_session.py::test_send_json_adds_incrementing_seq_and_frames_parts", "reason": "env_blocked: AdGuard holds client bytes sent after the HTTP 200 on loopback TCP"},
+    {"id": "tests/integration/test_vod_download.py::test_media_session_download_handshake", "reason": "env_blocked: same; the download request never reaches the mock, parts() times out"},
+    {"id": "tests/integration/test_vod_download.py::test_download_seeded_clip_to_valid_mp4", "reason": "env_blocked: same"},
+    {"id": "tests/integration/test_vod_download.py::test_download_every_seeded_clip", "reason": "env_blocked: same"}
+  ],
+  "env_blocked": [
+    "tests/unit/test_vod_session.py::test_send_json_adds_incrementing_seq_and_frames_parts",
+    "tests/integration/test_vod_download.py::test_media_session_download_handshake",
+    "tests/integration/test_vod_download.py::test_download_seeded_clip_to_valid_mp4",
+    "tests/integration/test_vod_download.py::test_download_every_seeded_clip"
+  ],
+  "env_blocked_evidence": "artifacts/subagent_reports/Subagent-Impl-Media_adguard_proof.py: (1) tests.fixtures.raw_clients.loopback_http_stream_passthrough() returns False (raw sockets, no project code; Adguard.exe and AdguardSvc are running). (2) It runs the 4 test functions unchanged with socket.create_connection returning one end of the fixture's in-memory socket pair, the other end served by the same handler (mock camera _media._handle / FakeMediaServer._serve): all 4 PASS, output 'PASS ...' x4. Fix: exclude python.exe and ffmpeg.exe from AdGuard filtering.",
+  "files": [
+    "src/tapo_desktop/core/media_engine/profiles.py",
+    "src/tapo_desktop/core/media_engine/limiter.py",
+    "src/tapo_desktop/core/media_engine/alaw.py",
+    "src/tapo_desktop/core/media_engine/ffmpeg.py",
+    "src/tapo_desktop/core/media_engine/job_object.py",
+    "src/tapo_desktop/core/media_engine/supervisor.py",
+    "src/tapo_desktop/core/media_engine/_decoder.py",
+    "src/tapo_desktop/core/media_engine/_netprobe.py",
+    "src/tapo_desktop/core/vod/session.py",
+    "src/tapo_desktop/core/vod/downloader.py",
+    "artifacts/subagent_reports/Subagent-Impl-Media_adguard_proof.py",
+    "artifacts/subagent_reports/Subagent-Impl-Media.json"
+  ],
+  "soak_numbers_120s": "Python private 47.8-47.9 MB flat (growth -0.25 %), base 43.6 MB; ffmpeg 102-103 MB per child with d3d11va, summed growth 0.003 %; handles 220 baseline, 262-263 while running; 15.0 fps per stream, 0 reconnects, decoder d3d11va on all 4.",
+  "notes": [
+    "Supervisor: one worker thread per stream owns the state machine; each attempt is a private FfmpegDecoder (_decoder.py) with a frames reader (readinto into one reused bytearray, one bytes copy per frame), a stderr drain (ring of 24 lines) and, only when on_audio is set, an audio thread on a loopback TCP listener (audio_url tcp://127.0.0.1:<port>, loopback peers only, even-length chunks). Popen uses CREATE_NO_WINDOW, stdin DEVNULL, bufsize 0 and is assigned to the job right after spawn. The worker polls every 100 ms (woken early by first frame / EOF / stop / switch) for exit, stall (no frame or no first frame for stall_timeout) and switch. stop() kills the child, joins the worker (which reaps ffmpeg and joins drain threads), releases the lease and sets STOPPED; no on_frame after it returns.",
+    "Measured: ffmpeg's own TCP connect on Windows never reports a refused port and waits for its -timeout (5.5 s with -timeout 5000000; it hung >30 s without one), which broke test_max_retries (3 attempts > 15 s). Each attempt therefore first does a non-blocking Python TCP probe (_netprobe.py, abortable by stop, ~2 s on refusal) and skips the ffmpeg spawn when the camera is unreachable. build_ffmpeg_args adds '-timeout 5000000' for rtsp URLs as a backstop, plus -hide_banner -nostdin -loglevel error and the low-probe flags.",
+    "ffmpeg stderr echoes the full RTSP URL with the password ('Error opening input file rtsp://user:pass@...'). All stderr text is scrubbed (raw URL, raw and percent-decoded password) before it goes into reasons or logs.",
+    "hwaccel fallback: an attempt with hardware decoding that dies before its first frame and whose stderr mentions hwaccel/hardware/d3d11/dxva/the hwaccel name switches to software at once (not counted as a retry or reconnect). Network failures (refused, 404, 453) do not trigger it, so a camera that is down at startup keeps d3d11va. If ffmpeg reports 'Failed setup for format' (it silently decodes in software), stats()['decoder'] says 'software'.",
+    "If the camera has no audio track, ffmpeg 8.1 refuses '-map 0:a:0?' with 'Output file does not contain any stream' and exits. The supervisor detects this and continues video-only (not counted as a failure).",
+    "Backoff: doubles per failed attempt up to backoff_max, resets after a frame; while the last frame is < 30 s old the delay is capped at 0.5 s. max_retries counts consecutive attempts with no frame; FAILED releases the lease. stats()['reconnects'] counts retries after a failure or drop.",
+    "Pipe reads: ffmpeg writes rawvideo in 32 KiB blocks, so a 640x360 frame takes ~22 readinto calls and 1280x720 ~85. Acceptable at 15 fps; not tuned further.",
+    "RecordingDownloader writes to hidden temp files beside out_path (.<stem>.<token>.part.ts / .part.mp4), remuxes to the temp mp4 and os.replace()s it, so a failed download never touches an existing out_path. Cancel raises DownloadCancelled (new TapoError subclass in downloader.py, listed in __all__). Progress comes from X-Data-PTS relative to the first part over the clip duration (capped at 0.99, 33-bit wrap handled), then exactly 1.0 after the MP4 is in place. The remux ffmpeg is assigned to default_job(). Notifications disk_status/offline, stream_finish and connection_closed raise; heartbeat/unknown are ignored.",
+    "MediaSession: Digest over one keep-alive connection (reconnects if the 401 says Connection: close), maps 401-after-auth -> TapoAuthError, 503 or -52407 -> StreamLimitError, socket errors/timeouts -> TapoConnectionError with no secret in the message. parts() raises TapoConnectionError when no data arrives within the session timeout. It remembers session_id from the first JSON result and adds X-Session-Id to later send_json calls when absent.",
+    "find_ffmpeg: a TAPO_FFMPEG that points to a missing file is logged and the search continues (was an open contract question; not tested).",
+    "Known limit: cancel is checked between parts, so a cancel during a silent camera waits up to the session timeout (10 s default)."
+  ]
+}
