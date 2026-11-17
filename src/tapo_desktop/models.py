@@ -27,6 +27,9 @@ class DayNightMode(str, enum.Enum):
 class CredentialKind(str, enum.Enum):
     CLOUD = "cloud"  # TP-Link cloud account password; HTTPS :443 control + :8800 media (user "admin")
     CAMERA_ACCOUNT = "camera_account"  # local camera account; RTSP :554 + ONVIF :2020
+    # Cloud-issued local access token (LAT) of one camera [spec:lat.*]: username "admin", password =
+    # the raw LAT string. TPAP passcode SHA256_HEX_UPPER(LAT) and the :8800 digest secret in LAT mode.
+    LOCAL_TOKEN = "local_token"
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,13 @@ Routes (``REGION_PREFIX`` = ``/eu`` emulates the regional ``appServerUrlV2``):
   [spec:cloud.mfa] (``mfa=True``: login answers -20677 until the terminal is bound)
 * ``POST /eu/api/v2/common/getDeviceListByPage`` [spec:cloud.device_list] (``?token=`` required;
   unknown/expired token -> envelope errorCode -20651)
+* ``POST /eu/api/v2/common/getAppServiceUrl`` [spec:lat.cloud.base_url] (signed, ``?token=``) ->
+  ``serviceUrls`` with ``nbu.iot-app-server.app-v2`` = :attr:`MockTapoCloud.iot_url`
+* ``GET /iot/v2/things?page=&pageSize=&deviceTypes=`` [spec:lat.source.thing_list] - NOT signed; checks
+  the IoT app headers [spec:lat.cloud.headers] (``Authorization: ut|<token>``, ``app-cid``,
+  ``x-app-name``, ``x-app-version``, ``x-term-id``, ``x-strict: 0``). Bad/expired token -> HTTP 401
+  ``{"code": -20651, "message": ...}``; bad headers -> HTTP 400. Each ThingInfo carries
+  ``localAccessToken`` from :attr:`MockTapoCloud.local_tokens` (deviceId -> LAT; absent -> null).
 """
 from __future__ import annotations
 
@@ -34,6 +41,8 @@ from urllib.parse import parse_qs, urlsplit
 ACCESS_KEY = "4d11b6b9d5ea4d19a829adbb9714b057"
 SECRET_KEY = "6ed7d97f3e73467f8a5bab90b577ba4c"
 REGION_PREFIX = "/eu"
+IOT_PREFIX = "/iot"
+IOT_SERVICE_ID = "nbu.iot-app-server.app-v2"
 APP_TYPE = "TP-Link_Tapo_Android"
 
 _AUTH_RE = re.compile(
@@ -88,8 +97,16 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:  # noqa: N802
-        data = b'{"errorCode":-1,"msg":"method not allowed"}'
-        self.send_response(405)
+        cloud: MockTapoCloud = self.server.cloud  # type: ignore[attr-defined]
+        parts = urlsplit(self.path)
+        if parts.path.startswith(IOT_PREFIX + "/"):
+            status, payload = cloud._handle_iot_get(parts.path[len(IOT_PREFIX):], parse_qs(parts.query),
+                                                    dict(self.headers.items()))
+            data = json.dumps(payload).encode("utf-8")
+        else:
+            status, data = 405, b'{"errorCode":-1,"msg":"method not allowed"}'
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json;charset=UTF-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -100,14 +117,15 @@ class MockTapoCloud:
 
     Mutable attributes (may be changed while running): ``accounts`` ({email: password}),
     ``devices`` (DeviceInfoResult dicts), ``mfa``, ``mfa_types``, ``mfa_code``, ``region_redirect``,
-    ``locked`` (emails answering -20661). Inspection: ``request_log`` (list of dicts with ``path``,
-    ``query``, ``body``, ``headers``, ``signature_ok``), ``sent_codes`` ([(mfa_type, email)]),
-    ``bound_terminals``.
+    ``locked`` (emails answering -20661), ``local_tokens`` ({deviceId: LAT}), ``things_max_page_size``
+    (server-side cap of ``/v2/things`` pages). Inspection: ``request_log`` (list of dicts with
+    ``path``, ``query``, ``body``, ``headers``, ``signature_ok``; GETs also have ``method="GET"``),
+    ``sent_codes`` ([(mfa_type, email)]), ``bound_terminals``.
     """
 
     def __init__(self, accounts: dict[str, str] | None = None, devices: list[dict] | None = None,
                  mfa: bool = False, region_redirect: bool = False, *, mfa_types: list[int] | None = None,
-                 mfa_code: str = "123456", nickname: str = "Tester"):
+                 mfa_code: str = "123456", nickname: str = "Tester", local_tokens: dict[str, str] | None = None):
         self.accounts: dict[str, str] = dict(accounts or {})
         self.devices: list[dict] = list(devices or [])
         self.mfa = mfa
@@ -116,6 +134,8 @@ class MockTapoCloud:
         self.region_redirect = region_redirect
         self.nickname = nickname
         self.locked: set[str] = set()
+        self.local_tokens: dict[str, str] = dict(local_tokens or {})
+        self.things_max_page_size = 100
         self.request_log: list[dict] = []
         self.sent_codes: list[tuple[int, str]] = []
         self.bound_terminals: set[str] = set()
@@ -165,6 +185,11 @@ class MockTapoCloud:
     def regional_url(self) -> str:
         """The ``appServerUrlV2`` the mock hands out."""
         return self.base_url + REGION_PREFIX
+
+    @property
+    def iot_url(self) -> str:
+        """IoT app server URL handed out by ``getAppServiceUrl``."""
+        return self.base_url + IOT_PREFIX
 
     def expire_tokens(self) -> None:
         """Invalidate every issued token (next device call answers -20651)."""
@@ -230,6 +255,8 @@ class MockTapoCloud:
             return 200, self._check_mfa(params, q)
         if route == "/api/v2/common/getDeviceListByPage":
             return 200, self._device_page(q, params)
+        if route == "/api/v2/common/getAppServiceUrl":
+            return 200, self._service_urls(q, params)
         return 404, {"errorCode": -1, "msg": "not found"}
 
     @staticmethod
@@ -313,3 +340,51 @@ class MockTapoCloud:
         devices = [d for d in self.devices if not types or d.get("deviceType") in types]
         page = devices[index:index + limit] if limit > 0 else []
         return self._ok({"currentIndex": index, "totalNum": len(devices), "deviceList": page})
+
+    def _service_urls(self, q: dict[str, str], params: dict) -> dict:
+        with self._lock:
+            email = self._tokens.get(q.get("token", ""))
+        if email is None:
+            return {"errorCode": -20651, "msg": "Token expired"}
+        ids = params.get("serviceIds")
+        if not isinstance(ids, list) or not ids:
+            return {"errorCode": -20104, "msg": "serviceIds missing"}
+        urls = {sid: self.iot_url for sid in ids if sid == IOT_SERVICE_ID}
+        return self._ok({"regionCode": "EU", "serviceUrls": urls})
+
+    # ---------------------------------------------------------------- IoT app server (GET, unsigned)
+    def _handle_iot_get(self, path: str, query: dict[str, list[str]],
+                        headers: dict[str, str]) -> tuple[int, dict]:
+        q = {k: v[0] for k, v in query.items()}
+        hdr = {k.lower(): v for k, v in headers.items()}
+        with self._lock:
+            self.request_log.append({"method": "GET", "path": IOT_PREFIX + path, "query": q, "body": None,
+                                     "headers": headers, "signature_ok": None})
+        if path != "/v2/things":
+            return 404, {"code": -1, "message": "not found"}
+        term = hdr.get("x-term-id", "")
+        if (not term or hdr.get("x-app-name") != APP_TYPE or hdr.get("x-strict") != "0"
+                or hdr.get("app-cid") != f"app:{APP_TYPE}:{term}" or not hdr.get("x-app-version")):
+            return 400, {"code": -20104, "message": "missing app headers"}
+        auth = hdr.get("authorization", "")
+        with self._lock:
+            email = self._tokens.get(auth[3:]) if auth.startswith("ut|") else None
+        if email is None:
+            return 401, {"code": -20651, "message": "Token expired", "data": None}
+        try:
+            page = int(q.get("page", "0"))
+            size = min(int(q.get("pageSize", "20")), int(self.things_max_page_size))
+        except ValueError:
+            return 400, {"code": -20104, "message": "bad paging"}
+        types = [s for s in q.get("deviceTypes", "").split(",") if s]
+        things = [self._thing(d) for d in self.devices if not types or d.get("deviceType") in types]
+        chunk = things[page * size:(page + 1) * size] if size > 0 and page >= 0 else []
+        return 200, {"data": chunk, "page": page, "pageSize": size, "total": len(things)}
+
+    def _thing(self, d: dict) -> dict:
+        """ThingInfo-shaped dict [spec:lat.source.thing_list] (thingName == deviceId)."""
+        return {"thingName": d["deviceId"], "localAccessToken": self.local_tokens.get(d["deviceId"]),
+                "appServerUrl": self.regional_url, "appServerUrlV2": self.regional_url,
+                "ownerAccountId": "12345678", "role": d.get("role", 0), "deviceType": d.get("deviceType"),
+                "model": d.get("deviceModel"), "mac": d.get("deviceMac"), "fwVer": d.get("fwVer"),
+                "hwVer": d.get("deviceHwVer"), "region": "eu-west-1", "status": d.get("status", 1)}

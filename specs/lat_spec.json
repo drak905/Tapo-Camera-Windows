@@ -1,0 +1,803 @@
+{
+ "spec_id": "lat_spec",
+ "apk": {
+  "package": "com.tplink.iot",
+  "version_name": "3.22.806",
+  "version_code": "7276"
+ },
+ "summary": "Local Access Token (LAT): an opaque per-device string issued by the TP-Link IoT cloud in ThingInfo.localAccessToken (GET {iot-app-server}/v2/things, Authorization 'ut|<token>'). For TPAP pake 2 the app offers passcodes [md5_hex(cloud pw), SHA256_HEX_UPPER(LAT), SHA256_HEX_UPPER(cloud pw)]. The owner app moves the camera's admin credential to the LAT by sending changeAdminPassword (old 'empty', passwd SHA256_HEX_UPPER(LAT)) over the cloud passthrough, so after that only the LAT candidate works locally. Media :8800 digest uses SHA256_HEX_UPPER(LAT) in LAT mode.",
+ "items": [
+  {
+   "id": "lat.source.thing_list",
+   "kind": "endpoint",
+   "description": "The local access token (LAT) is issued by the TP-Link IoT cloud and delivered as field 'localAccessToken' of each ThingInfo in the IoT thing list. Gson default naming, so the JSON key is literally 'localAccessToken'. Only the thing list (and the QR-code bind reply) carries it; ThingDetail does not.",
+   "value": {
+    "method": "GET",
+    "path": "{iotAppServer}/v2/things",
+    "query": {
+     "page": 0,
+     "pageSize": "20 or 100",
+     "deviceTypes": "comma-joined device types, includes 'SMART.IPCAMERA'",
+     "includePcDevice": "bool",
+     "includeKasaShareDevices": true,
+     "includeMatterDevice": "bool",
+     "includeExternalVendorDeviceInfo": true
+    },
+    "response": {
+     "data": [
+      {
+       "thingName": "str",
+       "deviceId?": "n/a",
+       "localAccessToken": "str|null",
+       "appServerUrl": "str",
+       "appServerUrlV2": "str",
+       "ownerAccountId": "str|null",
+       "role": "int",
+       "deviceType": "str",
+       "model": "str",
+       "mac": "str",
+       "fwVer": "str",
+       "hwVer": "str",
+       "region": "str",
+       "status": "int"
+      }
+     ],
+     "page": 0,
+     "pageSize": 20,
+     "total": 1
+    },
+    "error_body": {
+     "code": "int",
+     "message": "str",
+     "data": "obj"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/api/ThingApi.java",
+     "line": 340,
+     "snippet": "@f(\"{url}/v2/things\") r<PageListResult<ThingInfo>> getThingList(... @t(\"page\") ... @t(\"pageSize\") ... @t(\"deviceTypes\")"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/common/ThingInfo.java",
+     "line": 41,
+     "snippet": "private String localAccessToken;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/common/PageListResult.java",
+     "line": 9,
+     "snippet": "private List<T> data = new ArrayList(); (+ page, pageSize, total)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/ThingCloudRepository.java",
+     "line": 302,
+     "snippet": "thingApi.getThingList(str2, page2, pageSize2, ..., true, B3(), true)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/ThingCloudRepository.java",
+     "line": 2096,
+     "snippet": "c1(new ThingListPageParams(0, 100), me1.a.b(), z12)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libutility/enumerate/EnumDeviceType.java",
+     "line": 13,
+     "snippet": "TAPO_CAMERA(\"SMART.IPCAMERA\")"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/exception/IoTCloudException.java",
+     "line": 9,
+     "snippet": "fields code, message, data, serverUrl"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.source.qr_bind",
+   "kind": "response",
+   "description": "A second LAT source: the QR-code bind reply (POST {url}/v1/things/QRCode/bindDevice) returns localAccessToken, used by remote/SIM/NVR onboarding.",
+   "value": {
+    "ThingBindByQRCodeResult": {
+     "deviceId": "str",
+     "deviceType": "str",
+     "errorCode": "int",
+     "localAccessToken": "str",
+     "status": "int"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/result/ThingBindByQRCodeResult.java",
+     "line": 9,
+     "snippet": "private String localAccessToken;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/viewmodel/ipcamera/onboardingv2/screendoorbell/RemoteOnboardingViewModel.java",
+     "line": 333,
+     "snippet": "localAccessToken = thingBindByQRCodeResult.getLocalAccessToken();"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/api/ThingApi.java",
+     "line": 157,
+     "snippet": "@o(\"{url}/v1/things/QRCode/bindDevice\")"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.cloud.base_url",
+   "kind": "endpoint",
+   "description": "{iotAppServer} is not a literal host. Retrofit base is 'https://nbu.iot-app-server.app-v2' (a service id used as a placeholder host). An interceptor swaps that host for the real URL found in the account's appServerMap, which comes from POST {accountAppServerUrl}/api/v2/common/getAppServiceUrl {serviceIds:[...]} -> result.serviceUrls{serviceId:url}. Cached with an expiry; HTTP 422 or a missing/expired entry triggers a refresh.",
+   "value": {
+    "service_id_production": "nbu.iot-app-server.app-v2",
+    "service_id_redblue": "nbu.iot-app-server.app-v2.redblue",
+    "other_ids": [
+     "nbu.iot-cloud-gateway.app-v2",
+     "nbu.iot-security.appdevice-v2"
+    ],
+    "resolve_request": {
+     "method": "POST",
+     "path": "{accountAppServerUrl}/api/v2/common/getAppServiceUrl",
+     "signed": "same HMAC signing as cloud_account_spec (signature-required:true), token in query",
+     "body": {
+      "serviceIds": [
+       "nbu.iot-app-server.app-v2"
+      ]
+     }
+    },
+    "resolve_response": {
+     "error_code": 0,
+     "result": {
+      "regionCode": "str",
+      "serviceUrls": {
+       "nbu.iot-app-server.app-v2": "https://<regional host>"
+      }
+     }
+    },
+    "tls_pins": {
+     "*.iot.i.tplinknbu.com": "3 sha256 pins",
+     "*.i.tplinknbu.com": "3 sha256 pins",
+     "*.i.tplinkcloud.com": "2 sha256 pins"
+    },
+    "trust_roots": "tp-link-CA (RSA, 2018-2068) and 'TP-Link Cloud Root CA' (EC P-256, 2025-2055) PEMs embedded"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/repository/AbstractIoTCloudRepository.java",
+     "line": 39,
+     "snippet": "protected r o() { return r.D0(b.x()); }"
+    },
+    {
+     "source": "jadx",
+     "file": "bs0/b.java",
+     "line": 30,
+     "snippet": "\"nbu.iot-app-server.app-v2.redblue\" : \"nbu.iot-app-server.app-v2\""
+    },
+    {
+     "source": "jadx",
+     "file": "bs0/b.java",
+     "line": 388,
+     "snippet": "x(): HTTPS_PREFIX + C() / D()"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/a.java",
+     "line": 124,
+     "snippet": "builderNewBuilder.url(request.url().newBuilder().host(HttpUrl.get(str).host()).build());"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libcloud/datapartition/PartitionIsolationGetManager.java",
+     "line": 186,
+     "snippet": "webServiceV2Api.getAppServiceUrl(this.f213340b.l(), new AppServiceUrlParams(arrayList))"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libcloud/datapartition/PartitionIsolationGetManager.java",
+     "line": 227,
+     "snippet": "map2.put(str, new Pair<>(map.get(str), now + ttl)); setAppServerMap(map2)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/cloud/bean/webservice/result/AppServiceUrlResult.java",
+     "line": 10,
+     "snippet": "private Map<String, String> serviceUrls"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/cloud/api/WebServiceV2Api.java",
+     "line": 46,
+     "snippet": "@o(\"{url}/api/v2/common/getAppServiceUrl\")"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/r.java",
+     "line": 94,
+     "snippet": "CertificatePinner add(\"*.iot.i.tplinknbu.com\", ...).add(\"*.i.tplinkcloud.com\", ...)"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.cloud.headers",
+   "kind": "header",
+   "description": "IoT cloud (ThingApi) requests are NOT HMAC-signed; they carry the TP-Link ID token as a bearer-like header plus app identification headers. Added by interceptor xq.a when not already present.",
+   "value": {
+    "Authorization": "ut|<cloud token from TP-Link ID login>",
+    "app-cid": "app:<appType>:<termId/uuid>",
+    "x-app-name": "<appType, e.g. TP-Link_Tapo_Android>",
+    "x-app-version": "<app version>",
+    "x-term-id": "<terminal uuid>",
+    "x-ospf": "Android <release>",
+    "x-net-type": "<wifi|...>",
+    "x-strict": "0",
+    "x-locale": "<locale e.g. en_US>",
+    "User-Agent": "<appType>/<ver>(<model>/;<netType>)",
+    "Content-Type": "application/json;charset=UTF-8 (only with body)",
+    "missing_token": "client-side 401 'app missing token'"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "wq/b.java",
+     "line": 136,
+     "snippet": "this.f237231c = String.format(\"ut|%s\", str);"
+    },
+    {
+     "source": "jadx",
+     "file": "wq/a.java",
+     "line": 32,
+     "snippet": "new b(str, ioTWebServiceIdParams, tCAccountBean.getToken(), aVar, this)"
+    },
+    {
+     "source": "jadx",
+     "file": "wq/b.java",
+     "line": 62,
+     "snippet": "String.format(\"app:%1$s:%2$s\", strB, strU)"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/a.java",
+     "line": 68,
+     "snippet": "builderNewBuilder.addHeader(\"Authorization\", this.f239756a.e());"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/a.java",
+     "line": 85,
+     "snippet": "app-cid, x-app-name, x-app-version, x-term-id, x-ospf, x-net-type, x-strict=0"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.app.cache",
+   "kind": "state_machine",
+   "description": "How the app holds the LAT. ALCameraDevice.setThingDevice() copies ThingInfo.localAccessToken into CameraLATInfo (cloudRequestSuccess=true). CameraLATInfo is persisted in the device cache with cameraPasswordMode (lat|tp_password) and lastSyncLATTime. The cloud only hands out a LAT to accounts/devices inside a staged rollout ('LAT gray'); an empty LAT after a successful cloud fetch means the rollout is off for this device.",
+   "value": {
+    "CameraLATInfo": {
+     "localAccessToken": "str|null",
+     "lastSyncLATTime": "ms epoch, INVALID_TIME=-10086",
+     "cameraPasswordMode": "LAT('lat') | TP_PASSWORD('tp_password'), default TP_PASSWORD",
+     "cloudRequestSuccess": "bool",
+     "LAT_SYNC_TIME_LIMIT_ms": 86400000
+    },
+    "gray_transitions": {
+     "cloud LAT now set, cache empty": "latGrayChanged (rollout on)",
+     "cloud LAT empty, cache set": "latGrayChanged (rollout rolled back)",
+     "both set but different": "latGrayChanged, lastSyncLATTime=INVALID (account password changed)"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/bean/ALCameraDevice.java",
+     "line": 257,
+     "snippet": "cameraLATInfo.setCloudRequestSuccess(true); cameraLATInfo.setLocalAccessToken(thingInfo.getLocalAccessToken());"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/bean/ALCameraDevice.java",
+     "line": 1827,
+     "snippet": "setThingDevice: updateLatGrayChanged(); updateCameraALTInfo();"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/bean/ALCameraDevice.java",
+     "line": 288,
+     "snippet": "setLastSyncLATTime(INVALID_TIME) ... 'lat info changed, account password change scenario'"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/bean/CameraLATInfo.java",
+     "line": 8,
+     "snippet": "INVALID_TIME = -10086; LAT_SYNC_TIME_LIMIT = 86400000"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.tpap.account",
+   "kind": "request",
+   "description": "TPAP (encrypt_type 4 / tdp.tpap present) account object built by qv0.i1.b(): url https://<ip>, port = tpap.port or http_port, username 'admin', password = TP-Link ID plaintext password, lat = CameraLATInfo.localAccessToken (may be null), setupCode = account password, authType '0'|'2'|'3'.",
+   "value": {
+    "TpapAccount": {
+     "url": "https://<camera ip>",
+     "port": "tpap.port (443)",
+     "username": "admin",
+     "password": "<TP-Link ID plaintext password>",
+     "macAddress": "tdp mac",
+     "lat": "<localAccessToken or null>",
+     "setupCode": "account.password or null",
+     "authType": "'3' QRCODE, '2' MANUALLY, else '0'"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "qv0/i1.java",
+     "line": 73,
+     "snippet": "new o21.d(str2, httpPort, \"admin\", strL, mac, ... cameraLATInfo.getLocalAccessToken(), ...)"
+    },
+    {
+     "source": "jadx",
+     "file": "gs0/a.java",
+     "line": 141,
+     "snippet": "tCAccountBeanF.getPassword()"
+    },
+    {
+     "source": "jadx",
+     "file": "o21/d.java",
+     "line": 99,
+     "snippet": "TpapAccount(url=, port=, username=, password=, macAddress=, lat=, setupCode=, authType=)"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.tpap.passcode_candidates",
+   "kind": "algorithm",
+   "description": "SPAKE2+ credentials offered by the app for tpap.pake containing 2 (passcode_type 'userpw'), in this order. The LAT candidate is SHA256 of the raw LAT string, hex, UPPER case (Locale default upper). Username for pake_register is md5_hex('admin') (lower) unless tpap.user_hash_type == 1, then SHA256_HEX_UPPER('admin'). Cipher suite [1], encryption aes_128_ccm, auth methods ['noc','spake2'].",
+   "value": {
+    "username": "user_hash_type==1 ? SHA256_HEX_UPPER('admin') : md5_hex('admin')",
+    "candidates": [
+     {
+      "order": 1,
+      "passcode_type": "userpw",
+      "passcode": "md5_hex_lower(cloud_password)"
+     },
+     {
+      "order": 2,
+      "passcode_type": "userpw",
+      "passcode": "SHA256_HEX_UPPER(localAccessToken)",
+      "only_if": "LAT non-empty"
+     },
+     {
+      "order": 3,
+      "passcode_type": "userpw",
+      "passcode": "SHA256_HEX_UPPER(cloud_password)"
+     }
+    ],
+    "other_pake_types": {
+     "1": "setupcode: from setup code",
+     "0": "default_userpw",
+     "3": "shared_token: md5_hex(cloud_password)"
+    },
+    "md5_hex": "lowercase, 2-digit zero padded",
+    "sha256_hex_upper": "UTF-8 bytes, uppercase"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+     "line": 274,
+     "snippet": "String strH = wc1.a.h(dVar.d());"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+     "line": 278,
+     "snippet": "arrayList.add(t(strU, listE, \"userpw\", strH)); ... k.h(strB) ... k.h(dVar.d())"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+     "line": 310,
+     "snippet": "getUserHashType() == 1 ? k.h(dVar.h()) : wc1.a.h(dVar.h())"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/util/l.java",
+     "line": 146,
+     "snippet": "MessageDigest.getInstance(SHA_256).digest(bytes) ... toUpperCase(locale)"
+    },
+    {
+     "source": "jadx",
+     "file": "wc1/a.java",
+     "line": 94,
+     "snippet": "MessageDigest.getInstance(\"md5\") -> l(): lowercase hex"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.legacy_secure.login",
+   "kind": "state_machine",
+   "description": "For encrypt_type 3 (non-TPAP secure login) the app first logs in, reads nonce/device_confirm, and tests whether the camera still uses the TP-Link password (device_confirm starts with SHA256_UPPER(cnonce + SHA256_UPPER(pw) + nonce)). If not, it assumes LAT mode. In LAT mode the digest password is the raw LAT (hashed the same way as a password).",
+   "value": {
+    "device_uses_tp_password": {
+     "cached_LAT_empty": "login with TP password",
+     "sync_within_24h": "old-app rollback: login with TP password",
+     "cached_LAT_present": "push LAT to camera via cloud (sync), then log in with LAT"
+    },
+    "device_uses_other_password": {
+     "cached_LAT_present_and_matches": "login with LAT",
+     "cached_LAT_present_mismatch": "push cached LAT via cloud, then log in with LAT",
+     "LAT_empty_cloud_ok": "rollout off: push TP password via cloud, then log in with it",
+     "LAT_empty_cloud_unknown": "push TP password once to avoid lock-out"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+     "line": 105,
+     "snippet": "if (i.s(account.getPassword(), f157861d)) return x(...); return w(...);"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+     "line": 219,
+     "snippet": "if (i.s(str2, f157861d)) ... return G(str2, secureAccount);"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/LocalSecureSession.java",
+     "line": 235,
+     "snippet": "lastSyncLATTime != INVALID_TIME && now - lastSyncLATTime < 86400000"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/util/SecureUtils__SecureUtilsKt.java",
+     "line": 324,
+     "snippet": "i.p(cnonceString + strP + nonceString); deviceConfirm startsWith"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.sync.change_admin_password",
+   "kind": "request",
+   "description": "How the camera's admin credential becomes the LAT. Only the OWNER app does this, and only over a CLOUD transport (IoT-remote passthrough first, else legacy remote passthrough), never over LAN. The request is changeAdminPassword with old password literally 'empty' (hashed). After success the app stores cameraPasswordMode=LAT and lastSyncLATTime=now. A periodic job (needSyncDevicePasswordV3) re-pushes the cached LAT when the last sync is older than 24 h; when the rollout is off it pushes the TP-Link password instead.",
+   "value": {
+    "inner_request": {
+     "method": "changeAdminPassword",
+     "params": {
+      "user_management": {
+       "change_admin_password": {
+        "secname": "root",
+        "username": "admin",
+        "old_passwd": "V3 ? SHA256_HEX_UPPER('empty') : md5_hex('empty')",
+        "passwd": "V3 ? SHA256_HEX_UPPER(LAT) : md5_hex(LAT)",
+        "ciphertext": "base64(RSA/ECB/PKCS1(app public key, passwd))",
+        "encrypt_type": "'3' when V3, else absent"
+       }
+      }
+     }
+    },
+    "V3_flag": "iot-remote: cameraDevice.isEncryptTypeV3(); legacy remote: z21.a.a(...)",
+    "caller_guard": "tPCameraDeviceContext.isOwner() must be true",
+    "on_success": {
+     "lastSyncLATTime": "now if isLat else INVALID",
+     "cameraPasswordMode": "LAT if isLat else TP_PASSWORD",
+     "localAccessToken": "set to pushed value if isLat"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 4164,
+     "snippet": "if (!tPCameraDeviceContext.isOwner()) { ... return FALSE; }"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 4173,
+     "snippet": "this.f5689e.ma(\"empty\", str) // iot-remote; 4198 this.f5688d.ma(\"empty\", str) // remote"
+    },
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 674,
+     "snippet": "Request(CHANGE_ADMIN_PASSWORD, Wrapper(USER_MANAGEMENT, CHANGE_ADMIN_PASSWORD, AccountInfo(Account(\"admin\", k.h(str)), str2, true)))"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/AccountInfo.java",
+     "line": 249,
+     "snippet": "(\"root\", username, z12 ? k.h(new) : k.a(new), old.getPassword(), k.d(k.h(new)), z12 ? \"3\" : null, ...)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/AccountInfo.java",
+     "line": 18,
+     "snippet": "encrypt_type, secname, passwd, old_passwd, ciphertext, public_key, unique_key"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/util/l.java",
+     "line": 92,
+     "snippet": "Cipher.getInstance(\"RSA/ECB/PKCS1Padding\") ... Base64.encode(..., NO_WRAP)"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 1099,
+     "snippet": "setLastSyncLATTime(z12 ? now : INVALID_TIME); setCameraPasswordMode(z12 ? LAT : TP_PASSWORD)"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 602,
+     "snippet": "needSyncDevicePasswordV3: LAT empty & cloud ok -> push getPassword(); LAT older than 86400000 -> re-push LAT"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/a.java",
+     "line": 70,
+     "snippet": "jg(): getCameraDevice().isEncryptTypeV3()"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.sync.iot_passthrough",
+   "kind": "endpoint",
+   "description": "Transport used for the sync on IoT-cloud cameras: the camera JSON request is wrapped as a thing service call.",
+   "value": {
+    "method": "POST",
+    "path": "{thing.appServerUrlV2 or appServerUrl}/v1/things/{thingName}/services-sync (v2 variant /v2/things/{thingName}/services-sync exists)",
+    "body": {
+     "serviceId": "passthrough",
+     "inputParams": {
+      "requestData": "<camera request JSON, e.g. multipleRequest wrapping changeAdminPassword>"
+     }
+    },
+    "response": {
+     "outputParams": "obj containing the camera response"
+    },
+    "headers": "lat.cloud.headers"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 97,
+     "snippet": "setServiceId(\"passthrough\"); setInputParams(toJsonTree(new PassThroughRequestData(request, null)))"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/api/ThingApi.java",
+     "line": 208,
+     "snippet": "@o(\"{url}/v1/things/{thingName}/services-sync\")"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/ThingCloudRepository.java",
+     "line": 1882,
+     "snippet": "str = thingInfo.getAppServerUrlRenewal(); // V2 url if set"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/PassThroughRequestData.java",
+     "line": 13,
+     "snippet": "fields deviceId, requestData"
+    }
+   ],
+   "confidence": "inferred"
+  },
+  {
+   "id": "lat.onboarding.set_local_ctrl",
+   "kind": "request",
+   "description": "At onboarding, cameras that support local_ctrl get a SPAKE2+ verifier instead of (or with) changeAdminPassword. The verifier is derived from md5_hex(cloud password), 16 random salt bytes, 5000 iterations. This is why candidate 1 (md5 of cloud password) works on freshly bound cameras that never received a LAT.",
+   "value": {
+    "method": "setLocalCtrl",
+    "params": {
+     "local_ctrl": {
+      "set_local_ctrl": {
+       "pake_verify": {
+        "iterations": 5000,
+        "salt": "base64(16 random bytes)",
+        "verify_w0": "base64(w0)",
+        "verify_L": "base64(L)",
+        "verify_w1": "base64(w1)"
+       },
+       "pake_password": "md5_hex(cloud_password)"
+      }
+     }
+    },
+    "suite": "SPAKE2+-P256-SHA256-HKDF-SHA256-HMAC-SHA256"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 421,
+     "snippet": "Request(SET_LOCAL_CTRL, Wrapper(LOCAL_CTRL, SET_LOCAL_CTRL, qv0.i1.c()))"
+    },
+    {
+     "source": "jadx",
+     "file": "qv0/i1.java",
+     "line": 88,
+     "snippet": "strH = wc1.a.h(gs0.a.l()); new tm1.d(gVar, strH, bArrF, 5000)"
+    },
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 4062,
+     "snippet": "!isSupportLocalCtrl() && !z13 ? CHANGE_ADMIN_PASSWORD : z0()"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/LocalCtrlParams.java",
+     "line": 14,
+     "snippet": "pake_password, pake_verify{iterations, salt, verify_L, verify_w0, verify_w1}, shared_token"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.media.digest",
+   "kind": "algorithm",
+   "description": "Local media (:8800 POST /stream) digest auth also follows the LAT. When the WWW-Authenticate challenge marks encrypt V3 and the device is in LAT mode, the digest password is SHA256_HEX_UPPER(LAT); otherwise SHA256_HEX_UPPER(cloud password) (non-V3: MD5_UPPER).",
+   "value": {
+    "v3_lat_mode": "SHA256_HEX_UPPER(LAT)",
+    "v3_tp_mode": "SHA256_HEX_UPPER(cloud_password)",
+    "non_v3": "MD5_HEX_UPPER(cloud_password)",
+    "username": "admin"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "ie1/e.java",
+     "line": 335,
+     "snippet": "if (passwordMode == MediaPasswordMode.LAT) str8 = localAccessToken;"
+    },
+    {
+     "source": "jadx",
+     "file": "tb1/a.java",
+     "line": 522,
+     "snippet": "if (!zIsEmpty) str2 = str3; ... str2 = o81.c.f(str2);"
+    },
+    {
+     "source": "jadx",
+     "file": "o81/c.java",
+     "line": 62,
+     "snippet": "f(): SHA-256 hex toUpperCase()"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.tdp.owner",
+   "kind": "constant",
+   "description": "TDP 'owner' (32 hex) = md5_hex(localUserName) of the binding TP-Link account (email for email accounts). The app disables the LOCAL transport when it does not match the signed-in account, so only the owner logs in locally with these credentials.",
+   "value": {
+    "owner": "md5_hex_lower(TCAccountBean.getLocalUserName())",
+    "compare": "equalsIgnoreCase"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6667,
+     "snippet": "strH = wc1.a.h(getLocalUserName()); if (!strH.equalsIgnoreCase(tdp.getOwner())) disable LOCAL"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/cloud/context/TCAccountBean.java",
+     "line": 98,
+     "snippet": "getLocalUserName(): email for EMAIL register type"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.iot_device.sync_lat",
+   "kind": "endpoint",
+   "description": "For non-camera IoT things (bulb quick setup) the app itself registers a LAT with the cloud: POST {thingUrl}/v2/things/{thingName}/sync-lat {localAccessToken: sha1_hex(cloud password)}. Not called for cameras; shown to explain the cloud field, not to derive the camera LAT.",
+   "value": {
+    "method": "POST",
+    "path": "{url}/v2/things/{thingName}/sync-lat",
+    "body": {
+     "localAccessToken": "sha1_hex_lower(cloud_password)"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/api/ThingApi.java",
+     "line": 439,
+     "snippet": "@o(\"{url}/v2/things/{thingName}/sync-lat\")"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapoiotapi/repository/parent/QuickSetupRepository.java",
+     "line": 826,
+     "snippet": "new ThingSyncLatParams(wc1.a.i(getCloudPassword()))"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/viewmodel/quicksetup/bulb/BulbQuickSetupViewModel.java",
+     "line": 991,
+     "snippet": "QuickSetupRepository.p7() (only caller)"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "lat.client.recommended_flow",
+   "kind": "state_machine",
+   "description": "What a desktop client should do for an encrypt_type ['4'] camera that rejects md5/sha256(cloud password) with -40401.",
+   "value": {
+    "steps": [
+     "1. TP-Link ID login (cloud_account_spec) -> token, accountAppServerUrl.",
+     "2. POST {accountAppServerUrl}/api/v2/common/getAppServiceUrl {serviceIds:['nbu.iot-app-server.app-v2']} (signed) -> serviceUrls[...] = iotAppServer.",
+     "3. GET {iotAppServer}/v2/things?page=0&pageSize=100&deviceTypes=SMART.IPCAMERA&includeKasaShareDevices=true&includeExternalVendorDeviceInfo=true with Authorization 'ut|<token>' + app headers; page until total.",
+     "4. Pick the ThingInfo for the camera (thingName == cloud deviceId; check md5(thingName) against TDP device_id md5 if needed). Read localAccessToken.",
+     "5. TPAP pake_register/pake_share with passcode SHA256_HEX_UPPER(localAccessToken) (user md5_hex('admin')). Try it FIRST when a LAT exists: every wrong share counts toward the camera lock (-40404/-40408 sec_left).",
+     "6. If LAT is empty and both password candidates fail, the camera holds a LAT or password from an earlier sync. Only the owner can reset it, by pushing changeAdminPassword through the cloud passthrough (lat.sync.*). That overwrites the camera credential and needs explicit user consent."
+    ],
+    "cache": "Store the LAT with fetch time; re-fetch when login fails or after 24 h."
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/local/j2.java",
+     "line": 281,
+     "snippet": "arrayList.add(t(strU, listE, \"userpw\", k.h(strB)));"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpnetwork/Utils/e.java",
+     "line": 42,
+     "snippet": "!isEmpty(lat) && (mode == LAT || lastSyncLATTime != INVALID_TIME) -> return lat"
+    }
+   ],
+   "confidence": "inferred"
+  }
+ ],
+ "unresolved": [
+  {
+   "topic": "LAT generation",
+   "detail": "The camera LAT is generated server-side; the APK never derives it locally for cameras (the bulb sync-lat path uses sha1_hex(cloud password), but there is no evidence that cameras use the same value). The client must fetch it from /v2/things."
+  },
+  {
+   "topic": "thingName vs deviceId",
+   "detail": "Assumed thingName == cloud deviceId for cameras (ThingInfo has no deviceId field). Not traced; check against a live /v2/things reply."
+  },
+  {
+   "topic": "Candidate iteration",
+   "detail": "The order of the j2 candidate list is verified. Whether com.tplink.tls tries every candidate after a -40401, or stops at the first failure, was not traced."
+  },
+  {
+   "topic": "ciphertext RSA key",
+   "detail": "changeAdminPassword.ciphertext uses the RSA public key held in util.l (f158146d). The key literal was not extracted because the client only needs it for the optional sync path."
+  },
+  {
+   "topic": "REA",
+   "detail": "No REA commands were run. REA android commands do not work in this environment (orchestrator note), so all evidence is from JADX source."
+  }
+ ]
+}

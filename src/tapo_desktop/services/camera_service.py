@@ -279,6 +279,10 @@ class TapoCameraService(CameraService):
             return "local"
         return "rtsp" if self._has_camera_account() else "local"
 
+    def diagnostics(self) -> str:
+        """One-line, secret-free diagnostic text, e.g. ``"transport: local; using local access token: yes"``."""
+        raise NotImplementedError
+
     # ------------------------------------------------------------------ control
     def connect(self) -> DeviceInfo:
         self._check_on_network()

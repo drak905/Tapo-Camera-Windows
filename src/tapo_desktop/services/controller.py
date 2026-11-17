@@ -246,7 +246,8 @@ class AppController(QObject):
         """The credential vault given to ``__init__`` (AccountManager stores the account secret)."""
         return self._vault
 
-    def upsert_cameras(self, configs: list[CameraConfig], cloud: Credentials | None = None) -> None:
+    def upsert_cameras(self, configs: list[CameraConfig], cloud: Credentials | None = None,
+                       local_tokens: dict[str, str | None] | None = None) -> None:
         """Add or replace several cameras at once (cloud camera sync); one save, one
         ``cameras_changed``.
 
@@ -300,6 +301,10 @@ class AppController(QObject):
         """The newest frame delivered for ``camera_id`` (for snapshots), or None."""
         cam = self._cams.get(camera_id)
         return cam.last_image if cam is not None else None
+
+    def uses_local_token(self, camera_id: str) -> bool:
+        """True if a local access token is stored for ``camera_id`` (the token itself is never exposed)."""
+        raise NotImplementedError
 
     def _detach(self, camera_id: str) -> None:
         cam = self._cams.pop(camera_id)

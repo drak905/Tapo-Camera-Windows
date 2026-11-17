@@ -20,6 +20,8 @@ Credential modes (``cam.tpap_credential``):
   "sha256_extra"  passcode = sha256_crypt(SHA256_HEX_UPPER(cloud password), prefix); the register
                   reply carries extra_crypt {"type":"password_shadow","params":{"passwd_id":5,
                   "passwd_prefix":prefix}} (C200 hw 5.0 style)
+  "lat"           passcode = SHA256_HEX_UPPER(cam.local_token) (camera synced to the cloud LAT,
+                  [spec:lat.tpap.passcode_candidates]); no extra_crypt
 """
 from __future__ import annotations
 
@@ -236,6 +238,8 @@ class TpapEndpoint:
 
     def passcode(self) -> str:
         pw = self.cam.cloud_password
+        if self.cam.tpap_credential == "lat":
+            return sha256_hex_upper(self.cam.local_token)
         if self.cam.tpap_credential == "sha256_extra":
             return sha256_crypt(sha256_hex_upper(pw), self.prefix)
         return md5_hex(pw)

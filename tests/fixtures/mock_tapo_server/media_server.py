@@ -164,7 +164,7 @@ class _Session:
         uri = p.get("uri", "")
         if not uri.startswith("/stream"):
             return False
-        pwd_t = crypto.media_password(self.cam.cloud_password, self.cam.secure)
+        pwd_t = crypto.media_password(self.cam.device_secret, self.cam.secure)
         ha1 = self._hash(alg, f"admin:{REALM}:{pwd_t}")
         ha2 = self._hash(alg, f"POST:{uri}")
         expected = self._hash(alg, f"{ha1}:{nonce}:{p['nc']}:{p['cnonce']}:{p['qop']}:{ha2}")
@@ -201,7 +201,7 @@ class _Session:
                 hdrs = ["Content-Type: multipart/mixed;boundary=" + DEVICE_BOUNDARY.decode(), "Connection: keep-alive"]
                 if h.get("x-key-exchange") == "1":
                     knonce = secrets.token_hex(16)
-                    pwd_t = crypto.media_password(self.cam.cloud_password, self.cam.secure)
+                    pwd_t = crypto.media_password(self.cam.device_secret, self.cam.secure)
                     self.key, self.iv = crypto.media_keys(knonce, pwd_t, "admin")
                     self.encrypt = True
                     hdrs.append(f'Key-Exchange: username="admin" nonce="{knonce}"')

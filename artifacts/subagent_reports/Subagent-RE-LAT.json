@@ -1,0 +1,24 @@
+{
+ "agent_id": "Subagent-RE-LAT",
+ "status": "ok",
+ "spec_file": "specs/lat_spec.json",
+ "items_total": 15,
+ "items_verified": 13,
+ "rea_commands_run": [],
+ "key_findings": [
+  "The LAT comes from the IoT cloud as ThingInfo.localAccessToken. Request: GET {iotAppServer}/v2/things?page&pageSize&deviceTypes=...SMART.IPCAMERA... with headers 'Authorization: ut|<TP-Link ID token>' and app-cid/x-app-name/x-term-id. The response is {data:[ThingInfo], page, pageSize, total}. The QR-bind reply also carries the LAT.",
+  "iotAppServer is the placeholder host 'nbu.iot-app-server.app-v2'. Resolve it with signed POST {accountAppServerUrl}/api/v2/common/getAppServiceUrl {serviceIds:[...]}, which returns result.serviceUrls.",
+  "TPAP pake 2 candidate order (j2.java:274-283): md5_hex(cloud pw), SHA256_HEX_UPPER(LAT), SHA256_HEX_UPPER(cloud pw). User is md5_hex('admin'), or SHA256_HEX_UPPER('admin') when user_hash_type==1.",
+  "The owner app rewrites the camera admin credential to the LAT over the cloud only: changeAdminPassword {secname root, username admin, old_passwd SHA256_HEX_UPPER('empty'), passwd SHA256_HEX_UPPER(LAT), ciphertext RSA, encrypt_type '3'} sent through the services-sync 'passthrough' call. It re-pushes every 24 h, and pushes the TP-Link password back if the cloud LAT is gone.",
+  "Onboarding set_local_ctrl stores a SPAKE2+ verifier from md5_hex(cloud pw) (5000 iterations, 16-byte salt). That explains why md5 works on cameras that never got a LAT and fails once a LAT sync has happened.",
+  "Media :8800 digest in LAT mode uses SHA256_HEX_UPPER(LAT). TDP owner = md5_hex(account email/localUserName).",
+  "Symptom fit: C200 rejecting md5 and sha256 of the cloud password with -40401 is consistent with the camera being in LAT mode. Fix: fetch localAccessToken and try SHA256_HEX_UPPER(LAT) first."
+ ],
+ "unresolved": [
+  "The LAT is generated server-side and cannot be derived offline; the bulb sync-lat path uses sha1_hex(cloud pw), but nothing shows cameras use the same value.",
+  "thingName == deviceId mapping is assumed, not traced.",
+  "Whether the TLS lib tries all candidates after -40401 was not traced.",
+  "The RSA public key for changeAdminPassword.ciphertext was not extracted.",
+  "No REA commands were run; REA android commands are unavailable in this environment."
+ ]
+}

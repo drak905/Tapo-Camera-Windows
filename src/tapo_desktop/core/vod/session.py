@@ -356,11 +356,13 @@ class MediaSession:
         port: int = 8800,
         username: str = DEFAULT_MEDIA_USERNAME,
         timeout: float = 10.0,
+        local_token: str | None = None,
     ):
         """``password`` = cloud password (plaintext)."""
         self._host = host
         self._port = int(port)
         self._password = password
+        self._local_token = local_token or None
         self._username = username
         self._timeout = timeout
         self._sock: socket.socket | None = None

@@ -132,11 +132,12 @@ class TapoControlClient:
     def __init__(self, host: str, password: str, *, username: str = "admin", port: int = 443,
                  transport: HttpsTransport | None = None, pin_store: PinStore | None = None,
                  timeout: float = 10.0, tpap: dict | None = None, encrypt_type: Any = None,
-                 auth_retry_after: float = 120.0):
+                 auth_retry_after: float = 120.0, local_token: str | None = None):
         self._host = host
         self._port = int(port)
         self._username = username
         self._password = password
+        self._local_token = local_token or None
         self._tpap_info = dict(tpap) if isinstance(tpap, dict) else None
         self._use_tpap = tpap_mod.tpap_requested(self._tpap_info, encrypt_type)
         self._transport = transport if transport is not None else HttpsTransport(

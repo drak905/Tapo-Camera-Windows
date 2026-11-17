@@ -287,6 +287,14 @@ class TapoCloudClient:
             log.info("cloud device list: %d cameras", len(devices))
             return list(devices.values())
 
+    def get_service_urls(self, service_ids: list[str] | tuple[str, ...]) -> dict[str, str]:
+        """``getAppServiceUrl``: service id -> regional URL [spec:lat.cloud.base_url]."""
+        raise NotImplementedError
+
+    def local_access_tokens(self) -> dict[str, str]:
+        """deviceId (thingName) -> local access token from the IoT thing list [spec:lat.source.thing_list]."""
+        raise NotImplementedError
+
     # ------------------------------------------------------------------ internals
     def _pending_mfa(self) -> _PendingMfa:
         if self.__mfa is None:

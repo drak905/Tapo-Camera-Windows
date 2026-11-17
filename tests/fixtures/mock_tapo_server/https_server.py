@@ -163,7 +163,7 @@ class HttpsServer:
             self.pending[cnonce] = nonce
         return {"error_code": -40413, "result": {"data": {
             "code": -40401, "encrypt_type": ["3"], "key": secrets.token_urlsafe(24), "nonce": nonce,
-            "device_confirm": crypto.device_confirm(self.cam.cloud_password, cnonce, nonce)}}}
+            "device_confirm": crypto.device_confirm(self.cam.device_secret, cnonce, nonce)}}}
 
     def _secure_login(self, params: dict) -> dict:
         cnonce = params.get("cnonce")
@@ -180,7 +180,7 @@ class HttpsServer:
             nonce = self.pending.pop(cnonce, None)
         if nonce is None:
             return self._challenge(cnonce)  # unknown / consumed nonce: fresh challenge
-        pwd = self.cam.cloud_password
+        pwd = self.cam.device_secret
         if not isinstance(dp, str) or not hmac.compare_digest(dp, crypto.digest_passwd(pwd, cnonce, nonce)):
             return self._failed()
         lsk, ivb = crypto.session_keys(pwd, cnonce, nonce)

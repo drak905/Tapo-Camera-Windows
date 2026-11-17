@@ -194,6 +194,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         backoff_max: float = 10.0,
         stall_timeout: float = 5.0,
         max_retries: int | None = None,
+        local_token: str | None = None,
     ):
         if not host or not isinstance(host, str):
             raise ValueError("host must be a non-empty string")

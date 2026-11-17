@@ -128,6 +128,7 @@ class RecordingDownloader:
         port: int = 8800,
         ffmpeg_path: str | None = None,
         session_factory: Callable[..., MediaSession] | None = None,
+        local_token: str | None = None,
     ):
         """``session_factory(host, password, port=port)`` creates the MediaSession (default: MediaSession)."""
         self._host = host

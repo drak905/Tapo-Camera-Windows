@@ -562,9 +562,10 @@ class TpapAuthenticator:
 
     def __init__(self, post_login: Callable[[dict], dict], password: str, *, tpap: dict | None = None,
                  rng: Callable[[int], bytes] = os.urandom, sleep: Callable[[float], None] | None = None,
-                 mac: str = ""):
+                 mac: str = "", local_token: str | None = None):
         self._post = post_login
         self._password = password
+        self._local_token = local_token or None
         self._rng = rng
         self._sleep = sleep if sleep is not None else time.sleep
         self._mac = mac

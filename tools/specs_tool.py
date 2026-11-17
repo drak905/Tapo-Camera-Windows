@@ -28,6 +28,7 @@ LANES = {
     "vod": "sd_vod_playback_spec.json",
     "cloud": "cloud_account_spec.json",
     "tpap": "tpap_spec.json",
+    "lat": "lat_spec.json",
 }
 MERGED = SPECS / "tapo_protocol_spec.json"
 CONFIDENCE = {"verified", "inferred", "external"}

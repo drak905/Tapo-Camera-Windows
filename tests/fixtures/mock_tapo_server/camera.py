@@ -34,23 +34,32 @@ class MockTapoCamera:
     "admin" = literal), ``tpap_bad_dev_confirm``, ``tpap_refuse_shares`` (refuse the next N correct
     pake_share with -40401), ``tpap_session_expired``. Counters: ``v3_probe_count``,
     ``tpap_register_count``, ``tpap_share_attempts``, ``tpap_ds_seqs``.
+
+    LAT mode (additive, [spec:lat.*]): ``tpap_credential="lat"`` with ``local_token="..."`` emulates a
+    camera whose admin credential was moved to the cloud-issued local access token: TPAP accepts only
+    the passcode SHA256_HEX_UPPER(LAT); the v3 secure login and the :8800 digest use the raw LAT as the
+    password (:8800 encrypt_type 3 -> SHA256_HEX_UPPER(LAT)). ``local_token`` may be changed while
+    running (token rotation). The legacy MD5 login keeps using ``cloud_password``.
     """
 
     def __init__(self, cloud_password: str = "cloudpass", camera_user: str = "camuser",
                  camera_password: str = "campass", secure: bool = True, model: str = "C210",
                  dual_lens: bool = False, max_rtsp_clients: int = 2, https_port: int = 0, rtsp_port: int = 0,
                  onvif_port: int = 0, media_port: int = 0, host: str = "127.0.0.1",
-                 protocol: str | None = None, tpap_credential: str = "md5"):
+                 protocol: str | None = None, tpap_credential: str = "md5", local_token: str = ""):
         self.cloud_password = cloud_password
         self.camera_user = camera_user
         self.camera_password = camera_password
         self.secure = secure
         if protocol not in (None, "secure", "legacy", "tpap"):
             raise ValueError(f"unknown protocol {protocol!r}")
-        if tpap_credential not in ("md5", "sha256_extra"):
+        if tpap_credential not in ("md5", "sha256_extra", "lat"):
             raise ValueError(f"unknown tpap_credential {tpap_credential!r}")
+        if tpap_credential == "lat" and not local_token:
+            raise ValueError('tpap_credential="lat" needs a local_token')
         self.protocol = protocol or ("secure" if secure else "legacy")
         self.tpap_credential = tpap_credential
+        self.local_token = local_token  # LAT mode: the camera's admin secret is this string
         self.model = model
         self.dual_lens = dual_lens
         self.max_rtsp_clients = max_rtsp_clients
@@ -240,6 +249,11 @@ class MockTapoCamera:
         """Reset every open :8800 connection (TCP RST), like a camera-side network drop."""
         if self._media:
             self._media.drop_all()
+
+    @property
+    def device_secret(self) -> str:
+        """Password the camera's v3 login and :8800 digest expect: the LAT in LAT mode, else the cloud password."""
+        return self.local_token if self.tpap_credential == "lat" else self.cloud_password
 
     # -- internal hooks used by the servers -----------------------------------------------
     def _count(self, name: str, n: int = 1) -> None:
