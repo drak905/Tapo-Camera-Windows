@@ -48,7 +48,7 @@ def _load_day(env, qtbot, panel):
     date_edit.setDate(QDate(RECORDING_DAY.year, RECORDING_DAY.month, RECORDING_DAY.day))
     lst = panel.findChild(QListWidget, "recordingsList")
     assert lst is not None
-    qtbot.waitUntil(lambda: lst.count() == 2, timeout=3000)
+    qtbot.waitUntil(lambda: bool(lst.count() == 2), timeout=3000)
     return lst
 
 
@@ -70,7 +70,7 @@ def test_playback_empty_day_clears_list(make_env, qtbot):
     panel = _playback(env, qtbot)
     lst = _load_day(env, qtbot, panel)
     panel.findChild(QDateEdit, "recordingDate").setDate(QDate(2024, 3, 10))
-    qtbot.waitUntil(lambda: lst.count() == 0, timeout=3000)
+    qtbot.waitUntil(lambda: bool(lst.count() == 0), timeout=3000)
 
 
 def test_playback_download_progress_reaches_100(make_env, qtbot, tmp_path):
@@ -86,7 +86,7 @@ def test_playback_download_progress_reaches_100(make_env, qtbot, tmp_path):
     panel.choose_save_path = lambda clip: (asked.append(clip), out)[1]
     lst.setCurrentRow(1)
     panel.findChild(QAbstractButton, "downloadButton").click()
-    qtbot.waitUntil(lambda: bar.value() == bar.maximum() and out.exists(), timeout=5000)
+    qtbot.waitUntil(lambda: bool(bar.value() == bar.maximum() and out.exists()), timeout=5000)
     clip = default_recordings()[RECORDING_DAY][1]
     assert asked == [clip]
     assert bar.maximum() == 100

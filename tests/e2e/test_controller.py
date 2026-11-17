@@ -63,7 +63,7 @@ def _all_signals(ctrl) -> Recorder:
 
 def _primed_status(env, qtbot, rec, cam_id="cam0"):
     env.controller.refresh_status(cam_id)
-    qtbot.waitUntil(lambda: rec.of("status_changed"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("status_changed")), timeout=3000)
     rec.clear()
 
 
@@ -118,7 +118,7 @@ def test_remove_camera_stops_closes_and_forgets(make_env, tmp_path, qtbot):
     env = make_env(2)
     ctrl = env.controller
     ctrl.start_view("cam1", StreamQuality.SD, 64, 36)
-    qtbot.waitUntil(lambda: env.has_svc("cam1") and env.svc("cam1").frames_sent > 0, timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam1") and env.svc("cam1").frames_sent > 0), timeout=3000)
     rec = _all_signals(ctrl)
     ctrl.remove_camera("cam1")
     env.idle(qtbot)
@@ -138,8 +138,8 @@ def test_start_view_emits_qimage_of_requested_size_and_states(make_env, qtbot):
     ctrl = env.controller
     rec = _all_signals(ctrl)
     ctrl.start_view("cam0", StreamQuality.SD, 320, 180)
-    qtbot.waitUntil(lambda: rec.of("frame_ready"), timeout=3000)
-    qtbot.waitUntil(lambda: ("cam0", "PLAYING", "") in rec.of("stream_state"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("frame_ready")), timeout=3000)
+    qtbot.waitUntil(lambda: bool(("cam0", "PLAYING", "") in rec.of("stream_state")), timeout=3000)
     svc = env.svc("cam0")
     names = svc.call_names()
     assert names.index("connect") < names.index("start_stream")
@@ -160,7 +160,7 @@ def test_frame_qimage_is_deep_copy(make_env, qtbot):
     env = make_env(1)
     rec = _all_signals(env.controller)
     env.controller.start_view("cam0", StreamQuality.SD, 32, 18)
-    qtbot.waitUntil(lambda: rec.of("frame_ready"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("frame_ready")), timeout=3000)
     img = rec.of("frame_ready")[0][1]
     env.controller.stop_view("cam0")
     env.idle(qtbot)
@@ -174,9 +174,9 @@ def test_stream_state_reason_forwarded(make_env, qtbot):
     env = make_env(1)
     rec = _all_signals(env.controller)
     env.controller.start_view("cam0", StreamQuality.SD, 64, 36)
-    qtbot.waitUntil(lambda: env.has_svc("cam0") and env.svc("cam0").on_state is not None, timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam0") and env.svc("cam0").on_state is not None), timeout=3000)
     env.svc("cam0").emit_state("RECONNECTING", "stall timeout")
-    qtbot.waitUntil(lambda: ("cam0", "RECONNECTING", "stall timeout") in rec.of("stream_state"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(("cam0", "RECONNECTING", "stall timeout") in rec.of("stream_state")), timeout=3000)
 
 
 def test_start_view_connect_failure_emits_failed(make_env, qtbot):
@@ -184,7 +184,7 @@ def test_start_view_connect_failure_emits_failed(make_env, qtbot):
     env.factory.fail("cam0", "connect")
     rec = _all_signals(env.controller)
     env.controller.start_view("cam0", StreamQuality.SD, 64, 36)
-    qtbot.waitUntil(lambda: any(s == "FAILED" for (_c, s, _r) in rec.of("stream_state")), timeout=3000)
+    qtbot.waitUntil(lambda: bool(any(s == "FAILED" for (_c, s, _r) in rec.of("stream_state"))), timeout=3000)
     failed = [r for (c, s, r) in rec.of("stream_state") if s == "FAILED"]
     assert failed[0]  # reason = str(exc), non-empty
     assert "start_stream" not in env.svc("cam0").call_names()
@@ -193,7 +193,7 @@ def test_start_view_connect_failure_emits_failed(make_env, qtbot):
 def test_stop_view_stops_stream(make_env, qtbot):
     env = make_env(1)
     env.controller.start_view("cam0", StreamQuality.SD, 64, 36)
-    qtbot.waitUntil(lambda: env.has_svc("cam0") and env.svc("cam0").frames_sent > 0, timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam0") and env.svc("cam0").frames_sent > 0), timeout=3000)
     env.controller.stop_view("cam0")
     env.idle(qtbot)
     assert "stop_stream" in env.svc("cam0").call_names()
@@ -209,7 +209,7 @@ def test_service_calls_off_gui_thread_and_signals_on_gui_thread(make_env, qtbot)
     ctrl.ptz_move("cam0", 1, 0)
     ctrl.ptz_stop("cam0")
     ctrl.load_recordings("cam0", RECORDING_DAY)
-    qtbot.waitUntil(lambda: rec.of("frame_ready") and rec.of("status_changed") and rec.of("recordings_ready"),
+    qtbot.waitUntil(lambda: bool(rec.of("frame_ready") and rec.of("status_changed") and rec.of("recordings_ready")),
                     timeout=3000)
     env.idle(qtbot)
     calls = env.svc("cam0").calls
@@ -223,13 +223,13 @@ def test_events_started_after_connect_and_motion_forwarded(make_env, qtbot):
     env = make_env(1)
     rec = _all_signals(env.controller)
     env.controller.start_view("cam0", StreamQuality.SD, 64, 36)
-    qtbot.waitUntil(lambda: env.has_svc("cam0") and env.svc("cam0").on_event is not None, timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam0") and env.svc("cam0").on_event is not None), timeout=3000)
     names = env.svc("cam0").call_names()
     assert names.index("connect") < names.index("start_events")
     evt = MotionEvent(camera_host=env.cameras[0].host, topic="tns1:RuleEngine/CellMotionDetector/Motion",
                       active=True, timestamp=datetime(2024, 3, 9, 12, tzinfo=timezone.utc))
     env.svc("cam0").emit_event(evt)
-    qtbot.waitUntil(lambda: rec.of("motion_event"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("motion_event")), timeout=3000)
     assert rec.of("motion_event") == [("cam0", evt)]
 
 
@@ -246,8 +246,8 @@ def test_stop_all_is_synchronous(make_env, qtbot):
     ctrl = env.controller
     for cid in ("cam0", "cam1"):
         ctrl.start_view(cid, StreamQuality.SD, 64, 36)
-    qtbot.waitUntil(lambda: all(env.has_svc(c) and env.svc(c).on_event is not None and env.svc(c).frames_sent
-                                for c in ("cam0", "cam1")), timeout=3000)
+    qtbot.waitUntil(lambda: bool(all(env.has_svc(c) and env.svc(c).on_event is not None and env.svc(c).frames_sent
+                                for c in ("cam0", "cam1"))), timeout=3000)
     ctrl.stop_all()
     for cid in ("cam0", "cam1"):  # no event processing / waiting in between
         names = env.svc(cid).call_names()
@@ -260,7 +260,7 @@ def test_refresh_status_emits_full_dict(make_env, qtbot):
     env = make_env(1)
     rec = _all_signals(env.controller)
     env.controller.refresh_status("cam0")
-    qtbot.waitUntil(lambda: rec.of("status_changed"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("status_changed")), timeout=3000)
     cam_id, status = rec.of("status_changed")[0]
     assert cam_id == "cam0"
     assert status == {"privacy": False, "day_night": DayNightMode.AUTO, "led": False,
@@ -302,7 +302,7 @@ def test_toggle_failure_emits_command_failed_then_rollback(make_env, qtbot, meth
     _primed_status(env, qtbot, rec)
     env.factory.fail("cam0", method)
     getattr(env.controller, method)("cam0", value)
-    qtbot.waitUntil(lambda: rec.of("command_failed"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("command_failed")), timeout=3000)
     env.idle(qtbot)
     failed = rec.of("command_failed")
     assert failed[0][0] == "cam0" and failed[0][1] == method and failed[0][2]
@@ -331,7 +331,7 @@ def test_ptz_failure_reports_command_failed(make_env, qtbot):
     env.factory.fail("cam0", "ptz_move")
     rec = _all_signals(env.controller)
     env.controller.ptz_move("cam0", 1, 0)
-    qtbot.waitUntil(lambda: rec.of("command_failed"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("command_failed")), timeout=3000)
     assert rec.of("command_failed")[0][:2] == ("cam0", "ptz_move")
 
 
@@ -339,7 +339,7 @@ def test_presets_and_goto(make_env, qtbot):
     env = make_env(1)
     rec = _all_signals(env.controller)
     env.controller.load_presets("cam0")
-    qtbot.waitUntil(lambda: rec.of("presets_ready"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("presets_ready")), timeout=3000)
     cam_id, presets = rec.of("presets_ready")[0]
     assert cam_id == "cam0" and [p.name for p in presets] == ["Door", "Window", "Garden"]
     env.controller.goto_preset("cam0", "2")
@@ -352,7 +352,7 @@ def test_load_recordings_emits_recordings_ready(make_env, qtbot):
     env = make_env(1)
     rec = _all_signals(env.controller)
     env.controller.load_recordings("cam0", RECORDING_DAY)
-    qtbot.waitUntil(lambda: rec.of("recordings_ready"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("recordings_ready")), timeout=3000)
     assert rec.of("recordings_ready") == [("cam0", RECORDING_DAY, default_recordings()[RECORDING_DAY])]
     assert env.svc("cam0").calls_to("recordings_for_day")[0].args == (RECORDING_DAY,)
 
@@ -362,7 +362,7 @@ def test_load_recordings_failure(make_env, qtbot):
     env.factory.fail("cam0", "recordings_for_day")
     rec = _all_signals(env.controller)
     env.controller.load_recordings("cam0", RECORDING_DAY)
-    qtbot.waitUntil(lambda: rec.of("command_failed"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(rec.of("command_failed")), timeout=3000)
     assert rec.of("command_failed")[0][:2] == ("cam0", "load_recordings")
 
 
@@ -372,7 +372,7 @@ def test_download_progress_and_finished(make_env, qtbot, tmp_path):
     clip = default_recordings()[RECORDING_DAY][0]
     out = tmp_path / "clip.mp4"
     env.controller.download_recording("cam0", clip, out)
-    qtbot.waitUntil(lambda: rec.of("download_finished"), timeout=5000)
+    qtbot.waitUntil(lambda: bool(rec.of("download_finished")), timeout=5000)
     progress = [p for (c, p) in rec.of("download_progress") if c == "cam0"]
     assert progress and progress[-1] == pytest.approx(1.0)
     assert progress == sorted(progress) and all(0.0 <= p <= 1.0 for p in progress)
@@ -390,7 +390,7 @@ def test_download_failure_reports_error(make_env, qtbot, tmp_path):
     rec = _all_signals(env.controller)
     clip = default_recordings()[RECORDING_DAY][0]
     env.controller.download_recording("cam0", clip, tmp_path / "x.mp4")
-    qtbot.waitUntil(lambda: rec.of("download_finished"), timeout=5000)
+    qtbot.waitUntil(lambda: bool(rec.of("download_finished")), timeout=5000)
     cam_id, path, err = rec.of("download_finished")[0]
     assert cam_id == "cam0" and path == "" and err
 

@@ -124,11 +124,11 @@ def test_grid_tile_shows_controller_frames(make_env, qtbot):
     env = make_env(1, settings={"grid_size": 1})
     w = show_window(env, qtbot)
     tile = _tile(w, "cam0")
-    qtbot.waitUntil(lambda: tile.current_image() is not None, timeout=3000)
+    qtbot.waitUntil(lambda: bool(tile.current_image() is not None), timeout=3000)
     quality, width, height = env.svc("cam0").calls_to("start_stream")[-1].args
     assert quality is StreamQuality.SD
     assert (tile.current_image().width(), tile.current_image().height()) == (width, height)
-    qtbot.waitUntil(lambda: tile.status_text() == "", timeout=3000)
+    qtbot.waitUntil(lambda: bool(tile.status_text() == ""), timeout=3000)
     qtbot.wait(60)
     shot = tile.grab().toImage()
     assert _close(_rgb(shot.pixelColor(shot.width() // 2, shot.height() // 2)), DEFAULT_COLOR)
@@ -140,9 +140,9 @@ def test_grid_tile_overlay_from_stream_state(make_env, qtbot, state, reason, tex
     env = make_env(1, settings={"grid_size": 1})
     w = show_window(env, qtbot)
     tile = _tile(w, "cam0")
-    qtbot.waitUntil(lambda: tile.current_image() is not None and tile.status_text() == "", timeout=3000)
+    qtbot.waitUntil(lambda: bool(tile.current_image() is not None and tile.status_text() == ""), timeout=3000)
     env.svc("cam0").emit_state(state, reason)
-    qtbot.waitUntil(lambda: tile.status_text() == text, timeout=3000)
+    qtbot.waitUntil(lambda: bool(tile.status_text() == text), timeout=3000)
 
 
 def test_click_tile_selects_camera(make_env, qtbot):
@@ -154,27 +154,27 @@ def test_click_tile_selects_camera(make_env, qtbot):
     assert blocker.args == ["cam2"]
     assert grid.selected_camera_id() == "cam2"
     lst = w.findChild(QListWidget, "cameraList")
-    qtbot.waitUntil(lambda: lst.currentRow() == 2, timeout=2000)
+    qtbot.waitUntil(lambda: bool(lst.currentRow() == 2), timeout=2000)
 
 
 def test_double_click_toggles_fullscreen_quality(make_env, qtbot):
     env = make_env(4, settings={"grid_size": 2})
     w = show_window(env, qtbot)
     grid = _grid(w)
-    qtbot.waitUntil(lambda: env.has_svc("cam1") and env.svc("cam1").calls_to("start_stream"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam1") and env.svc("cam1").calls_to("start_stream")), timeout=3000)
 
     def visible():
         return [t.camera_id for t in grid.tiles() if t.isVisible()]
 
     assert visible() == ["cam0", "cam1", "cam2", "cam3"]
     qtbot.mouseDClick(_tile(w, "cam1"), Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: env.svc("cam1").calls_to("start_stream")[-1].args[0] is StreamQuality.HD,
+    qtbot.waitUntil(lambda: bool(env.svc("cam1").calls_to("start_stream")[-1].args[0] is StreamQuality.HD),
                     timeout=3000)
-    qtbot.waitUntil(lambda: visible() == ["cam1"], timeout=2000)
+    qtbot.waitUntil(lambda: bool(visible() == ["cam1"]), timeout=2000)
     qtbot.mouseDClick(_tile(w, "cam1"), Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(lambda: env.svc("cam1").calls_to("start_stream")[-1].args[0] is StreamQuality.SD,
+    qtbot.waitUntil(lambda: bool(env.svc("cam1").calls_to("start_stream")[-1].args[0] is StreamQuality.SD),
                     timeout=3000)
-    qtbot.waitUntil(lambda: visible() == ["cam0", "cam1", "cam2", "cam3"], timeout=2000)
+    qtbot.waitUntil(lambda: bool(visible() == ["cam0", "cam1", "cam2", "cam3"]), timeout=2000)
 
 
 def test_grid_set_grid_size_validates(make_env, qtbot):

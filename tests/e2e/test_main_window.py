@@ -77,7 +77,7 @@ def test_layout_buttons_set_tile_count_and_persist(make_env, qtbot, tmp_path, bu
     env = make_env(10, settings={"grid_size": 2 if n != 2 else 3})
     w = show_window(env, qtbot)
     _btn(w, button).click()
-    qtbot.waitUntil(lambda: len(_visible_ids(w)) == visible, timeout=3000)
+    qtbot.waitUntil(lambda: bool(len(_visible_ids(w)) == visible), timeout=3000)
     assert w.grid_size() == n
     assert _visible_ids(w) == [f"cam{i}" for i in range(visible)]
     assert len(_grid(w).tiles()) == 10
@@ -88,7 +88,7 @@ def test_grid_size_read_from_settings_and_validated(make_env, qtbot):
     env = make_env(10, settings={"grid_size": 3})
     w = show_window(env, qtbot)
     assert w.grid_size() == 3
-    qtbot.waitUntil(lambda: len(_visible_ids(w)) == 9, timeout=3000)
+    qtbot.waitUntil(lambda: bool(len(_visible_ids(w)) == 9), timeout=3000)
     for bad in (0, 4, -1):
         with pytest.raises(ValueError):
             w.set_grid_size(bad)
@@ -98,8 +98,8 @@ def test_grid_size_read_from_settings_and_validated(make_env, qtbot):
 def test_visible_tiles_streamed_hidden_tiles_stopped(make_env, qtbot):
     env = make_env(4, settings={"grid_size": 2})
     w = show_window(env, qtbot)
-    qtbot.waitUntil(lambda: all(env.has_svc(f"cam{i}") and env.svc(f"cam{i}").calls_to("start_stream")
-                                for i in range(4)), timeout=3000)
+    qtbot.waitUntil(lambda: bool(all(env.has_svc(f"cam{i}") and env.svc(f"cam{i}").calls_to("start_stream")
+                                for i in range(4))), timeout=3000)
     assert all(env.svc(f"cam{i}").calls_to("start_stream")[-1].args[0] is StreamQuality.SD for i in range(4))
     w.set_grid_size(1)
     env.idle(qtbot)
@@ -112,7 +112,7 @@ def test_list_selection_syncs_grid(make_env, qtbot):
     env = make_env(3)
     w = show_window(env, qtbot)
     _list(w).setCurrentRow(2)
-    qtbot.waitUntil(lambda: _grid(w).selected_camera_id() == "cam2", timeout=2000)
+    qtbot.waitUntil(lambda: bool(_grid(w).selected_camera_id() == "cam2"), timeout=2000)
 
 
 @pytest.mark.parametrize("key,signs", [
@@ -123,7 +123,7 @@ def test_keyboard_ptz_press_moves_release_stops(make_env, qtbot, key, signs):
     env = make_env(2)
     w = show_window(env, qtbot)
     _list(w).setCurrentRow(1)
-    qtbot.waitUntil(lambda: _grid(w).selected_camera_id() == "cam1", timeout=2000)
+    qtbot.waitUntil(lambda: bool(_grid(w).selected_camera_id() == "cam1"), timeout=2000)
     qtbot.keyPress(w, key)
     env.idle(qtbot)
     moves = env.svc("cam1").calls_to("ptz_move")
@@ -163,25 +163,25 @@ def test_add_camera_button(make_env, qtbot, monkeypatch):
     monkeypatch.setattr(camera_dialog.CameraDialog, "exec", lambda self: _ACCEPTED)
     monkeypatch.setattr(camera_dialog.CameraDialog, "result_values", lambda self: (new, CLOUD, CAMERA))
     _btn(w, "addCameraButton").click()
-    qtbot.waitUntil(lambda: _list(w).count() == 2, timeout=2000)
+    qtbot.waitUntil(lambda: bool(_list(w).count() == 2), timeout=2000)
     assert [c.id for c in env.controller.cameras()] == ["cam0", "cam5"]
     assert _list(w).item(1).text() == "Shed"
     assert env.vault.get("cam5", "cloud") == CLOUD
-    qtbot.waitUntil(lambda: "cam5" in [t.camera_id for t in _grid(w).tiles()], timeout=2000)
+    qtbot.waitUntil(lambda: bool("cam5" in [t.camera_id for t in _grid(w).tiles()]), timeout=2000)
 
 
 def test_remove_camera_button_confirms(make_env, qtbot, monkeypatch):
     env = make_env(2)
     w = show_window(env, qtbot)
     _list(w).setCurrentRow(1)
-    qtbot.waitUntil(lambda: _grid(w).selected_camera_id() == "cam1", timeout=2000)
+    qtbot.waitUntil(lambda: bool(_grid(w).selected_camera_id() == "cam1"), timeout=2000)
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
     _btn(w, "removeCameraButton").click()
     qtbot.wait(50)
     assert len(env.controller.cameras()) == 2
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
     _btn(w, "removeCameraButton").click()
-    qtbot.waitUntil(lambda: _list(w).count() == 1, timeout=2000)
+    qtbot.waitUntil(lambda: bool(_list(w).count() == 1), timeout=2000)
     assert [c.id for c in env.controller.cameras()] == ["cam0"]
     assert "cam1" not in env.vault.camera_ids()
     assert [t.camera_id for t in _grid(w).tiles()] == ["cam0"]
@@ -190,7 +190,7 @@ def test_remove_camera_button_confirms(make_env, qtbot, monkeypatch):
 def test_close_minimizes_to_tray(make_env, qtbot, no_app_quit):
     env = make_env(1, settings={"minimize_to_tray": True})
     w = show_window(env, qtbot)
-    qtbot.waitUntil(lambda: env.has_svc("cam0") and env.svc("cam0").frames_sent > 0, timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam0") and env.svc("cam0").frames_sent > 0), timeout=3000)
     assert w.close() is False  # close event ignored
     qtbot.wait(50)
     assert not w.isVisible()
@@ -201,9 +201,9 @@ def test_close_minimizes_to_tray(make_env, qtbot, no_app_quit):
 def test_close_quits_when_tray_disabled(make_env, qtbot, no_app_quit):
     env = make_env(1, settings={"minimize_to_tray": False})
     w = show_window(env, qtbot)
-    qtbot.waitUntil(lambda: env.has_svc("cam0") and env.svc("cam0").frames_sent > 0, timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc("cam0") and env.svc("cam0").frames_sent > 0), timeout=3000)
     w.close()
-    qtbot.waitUntil(lambda: no_app_quit != [], timeout=2000)
+    qtbot.waitUntil(lambda: bool(no_app_quit != []), timeout=2000)
     names = env.svc("cam0").call_names()
     assert "stop_stream" in names and "stop_events" in names
 
@@ -211,7 +211,7 @@ def test_close_quits_when_tray_disabled(make_env, qtbot, no_app_quit):
 def test_quit_stops_everything(make_env, qtbot, no_app_quit):
     env = make_env(2)
     w = show_window(env, qtbot)
-    qtbot.waitUntil(lambda: all(env.has_svc(c) and env.svc(c).frames_sent > 0 for c in ("cam0", "cam1")),
+    qtbot.waitUntil(lambda: bool(all(env.has_svc(c) and env.svc(c).frames_sent > 0 for c in ("cam0", "cam1"))),
                     timeout=3000)
     w.quit()
     for c in ("cam0", "cam1"):

@@ -29,8 +29,8 @@ def _panel(env, qtbot, camera_id="cam0"):
     panel.show()
     qtbot.waitExposed(panel)
     panel.set_camera(camera_id)
-    qtbot.waitUntil(lambda: env.has_svc(camera_id) and env.svc(camera_id).calls_to("get_status")
-                    and env.svc(camera_id).calls_to("get_presets"), timeout=3000)
+    qtbot.waitUntil(lambda: bool(env.has_svc(camera_id) and env.svc(camera_id).calls_to("get_status")
+                    and env.svc(camera_id).calls_to("get_presets")), timeout=3000)
     env.idle(qtbot)
     return panel
 
@@ -54,7 +54,7 @@ def test_panel_reflects_status_without_calling_back(make_env, qtbot):
     panel = _panel(env, qtbot)
     assert panel.objectName() == "controlsPanel"
     assert panel.camera_id() == "cam0"
-    qtbot.waitUntil(lambda: _btn(panel, "ledToggle").isChecked(), timeout=2000)
+    qtbot.waitUntil(lambda: bool(_btn(panel, "ledToggle").isChecked()), timeout=2000)
     assert _btn(panel, "privacyToggle").isChecked()
     assert _btn(panel, "motionToggle").isChecked()
     assert not _btn(panel, "alarmToggle").isChecked()
@@ -98,8 +98,8 @@ def test_privacy_toggle_rolls_back_on_failure(make_env, qtbot):
     toggle = _btn(panel, "privacyToggle")
     toggle.click()
     assert toggle.isChecked()  # optimistic
-    qtbot.waitUntil(lambda: failures, timeout=3000)
-    qtbot.waitUntil(lambda: not toggle.isChecked(), timeout=3000)
+    qtbot.waitUntil(lambda: bool(failures), timeout=3000)
+    qtbot.waitUntil(lambda: bool(not toggle.isChecked()), timeout=3000)
     env.idle(qtbot)
     assert not toggle.isChecked()
     assert failures[0][:2] == ("cam0", "set_privacy")
@@ -121,7 +121,7 @@ def test_presets_populate_and_goto(make_env, qtbot):
     env = make_env(1)
     panel = _panel(env, qtbot)
     combo = _combo(panel, "presetCombo")
-    qtbot.waitUntil(lambda: combo.count() == 3, timeout=2000)
+    qtbot.waitUntil(lambda: bool(combo.count() == 3), timeout=2000)
     assert [combo.itemText(i) for i in range(3)] == ["Door", "Window", "Garden"]
     assert [combo.itemData(i) for i in range(3)] == ["1", "2", "3"]
     combo.setCurrentIndex(2)
