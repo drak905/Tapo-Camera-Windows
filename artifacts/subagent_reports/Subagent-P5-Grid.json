@@ -8,9 +8,9 @@
                     "report"
                 ],
     "tests_added":  {
-                        "tests/phase5/test_grid_view_layout.py":  26,
+                        "tests/phase5/test_grid_view_layout.py":  25,
                         "tests/phase5/test_grid_sizes.py":  8,
-                        "tests/phase5/test_grid_slots.py":  23,
+                        "tests/phase5/test_grid_slots.py":  24,
                         "tests/phase5/test_grid_dnd.py":  10
                     },
     "phase5_result":  "67 passed",
@@ -43,3 +43,4 @@
                         "Real mouse drag (QDrag.exec) is not exercised in offscreen tests; the drop handlers and payloads are."
                     ]
 }
+
