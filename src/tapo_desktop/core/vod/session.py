@@ -37,6 +37,8 @@ __all__ = [
     "MediaPart",
     "MediaSession",
     "MultipartReader",
+    "derive_stream_hkdf_keys",
+    "decrypt_hkdf_part",
     "parse_www_authenticate",
     "transform_password",
     "generate_cnonce",
@@ -211,6 +213,60 @@ def derive_stream_key_iv(key_exchange: dict[str, str], transformed_password: str
     key = hashlib.md5(f"{nonce}:{secret}".encode("utf-8")).digest()
     iv = hashlib.md5(f"{username}:{nonce}".encode("utf-8")).digest()
     return key, iv
+
+
+def derive_stream_hkdf_keys(key_exchange: dict[str, str], transformed_password: str) -> tuple[bytes, bytes] | None:
+    """[spec:stream.local8800.encryption.hkdf] Return (aes_key, hmac_key) for ``algorithm=HKDF``.
+
+    ikm = nonce + ":" + secret (secret chosen like :func:`derive_stream_key_iv`), salt = Key-Exchange
+    ``salt`` (UTF-8 bytes), HKDF-SHA256 L=16 with info ``stream_hkdf_aes_key`` / ``stream_hkdf_hmac_key``.
+    The per-part IV is the part's ``X-Nonce`` header. Returns None when the exchange is not HKDF or
+    the user is unknown. Verified against a real Tapo C200 (fw 1.5.7) packet's X-Data-Hmac.
+    """
+    if str(key_exchange.get("algorithm", "")).upper() != "HKDF" or "nonce" not in key_exchange:
+        return None
+    username = key_exchange.get("username")
+    if username == "admin":
+        secret = transformed_password
+    elif username == "none":
+        secret = DEFAULT_MEDIA_PASSWORD
+    else:
+        return None
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    ikm = f"{key_exchange['nonce']}:{secret}".encode("utf-8")
+    salt = key_exchange.get("salt", "").encode("utf-8") or None
+
+    def _derive(info: bytes) -> bytes:
+        return HKDF(algorithm=hashes.SHA256(), length=16, salt=salt, info=info).derive(ikm)
+
+    return _derive(b"stream_hkdf_aes_key"), _derive(b"stream_hkdf_hmac_key")
+
+
+def decrypt_hkdf_part(body: bytes, aes_key: bytes, hmac_key: bytes, x_nonce: str | None,
+                      x_hmac: str | None) -> bytes:
+    """Verify ``X-Data-Hmac`` (if sent) over the ciphertext, then AES-128-CBC decrypt with IV = hex(X-Nonce).
+    Any failure -> TapoProtocolError (the caller drops the part, like the app)."""
+    import base64
+    import binascii
+    import hmac as _hmac
+
+    try:
+        iv = binascii.unhexlify(x_nonce or "")
+    except (binascii.Error, ValueError):
+        raise TapoProtocolError("encrypted part has an invalid X-Nonce") from None
+    if len(iv) != 16:
+        raise TapoProtocolError("encrypted part has an invalid X-Nonce")
+    if x_hmac:
+        want = _hmac.new(hmac_key, body, hashlib.sha256).digest()
+        try:
+            got = base64.b64decode(x_hmac, validate=True)
+        except (binascii.Error, ValueError):
+            got = b""
+        if not _hmac.compare_digest(want, got):
+            raise TapoProtocolError("encrypted part failed its integrity check (X-Data-Hmac)")
+    return decrypt_part(body, aes_key, iv)
 
 
 def decrypt_part(body: bytes, key: bytes, iv: bytes) -> bytes:
@@ -515,11 +571,15 @@ class MediaSession:
 
     def _setup_encryption(self, response: _HttpResponse, challenge: dict[str, str]) -> None:
         self._keys = None
+        self._hkdf_keys = None
         value = response.headers.get("key-exchange")
         if not value:
             return
         key_exchange = parse_key_exchange(value)
         transformed = transform_password(self._secret or DEFAULT_MEDIA_PASSWORD, challenge.get("encrypt_type"))
+        self._hkdf_keys = derive_stream_hkdf_keys(key_exchange, transformed)
+        if self._hkdf_keys is not None:
+            return
         self._keys = derive_stream_key_iv(key_exchange, transformed)
         if self._keys is None:
             logger.warning("camera %s offered an unsupported Key-Exchange user; encrypted parts cannot be read",
@@ -572,7 +632,9 @@ class MediaSession:
         self._rx.clear()
         while True:
             for part in self._reader.feed(data):
-                yield self._decode(part)
+                decoded = self._decode(part)
+                if decoded is not None:
+                    yield decoded
             sock = self._sock
             if sock is None:
                 return
@@ -589,11 +651,27 @@ class MediaSession:
             if not data:
                 return
 
-    def _decode(self, part: MediaPart) -> MediaPart:
+    _MAX_INTEGRITY_FAILURES = 50  # consecutive dropped parts before the session is declared broken
+
+    def _decode(self, part: MediaPart) -> MediaPart | None:
         if part.headers.get("X-If-Encrypt") == "1":
-            if self._keys is None:
+            hkdf_keys = getattr(self, "_hkdf_keys", None)
+            if hkdf_keys is not None:
+                try:
+                    body = decrypt_hkdf_part(part.body, *hkdf_keys, part.headers.get("X-Nonce"),
+                                             part.headers.get("X-Data-Hmac"))
+                except TapoProtocolError as exc:
+                    self._integrity_failures = getattr(self, "_integrity_failures", 0) + 1
+                    logger.debug("dropping media part from %s: %s", self._host, exc)
+                    if self._integrity_failures > self._MAX_INTEGRITY_FAILURES:
+                        raise TapoProtocolError("media parts keep failing their integrity check") from None
+                    return None
+                self._integrity_failures = 0
+                part = MediaPart(part.headers, body)
+            elif self._keys is None:
                 raise TapoProtocolError("encrypted media part but no stream key was negotiated")
-            part = MediaPart(part.headers, decrypt_part(part.body, *self._keys))
+            else:
+                part = MediaPart(part.headers, decrypt_part(part.body, *self._keys))
         if self._session_id is None and "json" in part.headers.get("Content-Type", ""):
             self._remember_session_id(part.body)
         return part

@@ -199,6 +199,7 @@ class TapoCloudClient:
         self._account: AccountInfo | None = None
         self.__mfa: _PendingMfa | None = None
         self._iot_url: str | None = None
+        self._thing_online: dict[str, bool] = {}
 
     def __repr__(self) -> str:
         return (f"TapoCloudClient(base_url={self.base_url!r}, signed_in={self.__token is not None}, "
@@ -370,7 +371,14 @@ class TapoCloudClient:
                 "User-Agent": f"{APP_TYPE}/{self.app_version}(Windows PC/;wifi)",
                 "Accept": "application/json", "Connection": "close"}
 
+    @property
+    def thing_online(self) -> dict[str, bool]:
+        """deviceId -> online, from the last IoT thing list fetch (``status == 1``). The v2 device list's
+        ``status`` is not a reliable online flag (it reads 0 for cameras that are streaming)."""
+        return dict(self._thing_online)
+
     def _fetch_local_tokens(self) -> dict[str, str]:
+        self._thing_online = {}
         base = self._iot_server()
         parts = urlsplit(base)
         tokens: dict[str, str] = {}
@@ -389,6 +397,10 @@ class TapoCloudClient:
             for item in items:
                 if not isinstance(item, dict):
                     continue
+                status = item.get("status")
+                name0 = item.get("thingName") or item.get("deviceId")
+                if isinstance(name0, str) and name0 and isinstance(status, int) and not isinstance(status, bool):
+                    self._thing_online[name0] = status == 1
                 lat = item.get("localAccessToken")
                 if not isinstance(lat, str) or not lat:
                     continue

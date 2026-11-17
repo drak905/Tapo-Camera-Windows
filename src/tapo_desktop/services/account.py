@@ -225,7 +225,7 @@ class AccountManager(QObject):
                 return
             self._finish_login(gen, client, account, email, password, remember)
 
-        self._strand.submit(job)
+        self._submit(job)
 
     def submit_mfa(self, code: str, mfa_type: int) -> None:
         """Send the verification code of the pending login (asynchronous)."""
@@ -245,7 +245,7 @@ class AccountManager(QObject):
                 return
             self._finish_login(gen, pending.client, account, pending.email, pending.password, pending.remember)
 
-        self._strand.submit(job)
+        self._submit(job)
 
     def request_mfa_code(self, mfa_type: int) -> None:
         """Ask the cloud to send a code (2 email, 4 SMS) for the pending login (asynchronous)."""
@@ -262,7 +262,7 @@ class AccountManager(QObject):
                 message = _user_message(exc, mfa=True)
                 self._post(lambda: self._emit_if_current(gen, message))
 
-        self._strand.submit(job)
+        self._submit(job)
 
     def restore_session(self) -> bool:
         """On startup: sign in silently with the stored account (asynchronous).
@@ -294,7 +294,7 @@ class AccountManager(QObject):
                 return
             self._finish_login(gen, client, account, email, password, True)
 
-        self._strand.submit(job)
+        self._submit(job)
         return True
 
     def refresh_cameras(self) -> None:
@@ -307,18 +307,21 @@ class AccountManager(QObject):
         def job() -> None:
             devices = None
             tokens = None
+            online_states: dict[str, bool] = {}
             try:
                 if client is not None:
                     if getattr(client, "token", None) is None:  # started offline: log in now
                         client.login(email, password)
                     devices = list(client.list_cameras())
                     tokens = self._fetch_local_tokens(client)
+                    online_states = self._online_states(client)
             except Exception as exc:
                 log.warning("cloud camera list unavailable, keeping the cached list: %s", exc)
             lan = self._run_discover()
-            self._post(lambda: self._apply_cameras(gen, devices, lan, password, tokens=tokens))
+            self._post(lambda: self._set_online(online_states) or
+                       self._apply_cameras(gen, devices, lan, password, tokens=tokens))
 
-        self._strand.submit(job)
+        self._submit(job)
 
     def sign_out(self) -> None:
         """Forget the account secret and the cloud cameras (their streams stop); manual cameras stay."""
@@ -350,19 +353,33 @@ class AccountManager(QObject):
                 time.sleep(0.005)
 
     # ================================================================== worker side
+    def _submit(self, job: Callable[[], None]) -> None:
+        """Queue an account job; an unexpected exception is logged (it would otherwise vanish in
+        the job's Future and leave the UI waiting for a result that never comes)."""
+
+        def guarded() -> None:
+            try:
+                job()
+            except Exception:
+                log.exception("account background job failed")
+
+        self._strand.submit(guarded)
+
     def _finish_login(self, gen: int, client: Any, account: AccountInfo, email: str, password: str,
                       remember: bool) -> None:
         devices = None
         tokens = None
+        online_states: dict[str, bool] = {}
         try:
             devices = list(client.list_cameras())
         except Exception as exc:
             log.warning("signed in, but the cloud camera list is unavailable: %s", exc)
         else:
             tokens = self._fetch_local_tokens(client)
+            online_states = self._online_states(client)
         lan = self._run_discover()
-        self._post(lambda: self._apply_signed_in(gen, client, account, email, password, remember, devices, lan,
-                                                 tokens))
+        self._post(lambda: self._set_online(online_states) or
+                   self._apply_signed_in(gen, client, account, email, password, remember, devices, lan, tokens))
 
     @staticmethod
     def _fetch_local_tokens(client: Any) -> dict[str, str] | None:
@@ -380,6 +397,18 @@ class AccountManager(QObject):
         if not isinstance(tokens, dict):
             return None
         return {str(k): v for k, v in tokens.items() if isinstance(v, str) and v}
+
+    def _set_online(self, states: dict[str, bool]) -> None:
+        if states:
+            self._thing_online = states
+
+    @staticmethod
+    def _online_states(client: Any) -> dict[str, bool]:
+        """deviceId -> online from the client's last IoT thing list (empty when unknown)."""
+        states = getattr(client, "thing_online", None)
+        if not isinstance(states, dict):
+            return {}
+        return {str(k): bool(v) for k, v in states.items()}
 
     def _run_discover(self) -> list[LanDevice]:
         try:
@@ -456,6 +485,9 @@ class AccountManager(QObject):
         if devices is None:
             devices = [CloudDevice(device_id=c.device_id or c.id, mac=c.mac, model=c.model, alias=c.name,
                                    online=c.online) for c in cached]
+        online = self._thing_online if isinstance(getattr(self, "_thing_online", None), dict) else {}
+        if online:
+            devices = [dataclasses.replace(d, online=online.get(d.device_id, d.online)) for d in devices]
         matches = _match(devices, lan)
         configs: list[CameraConfig] = []
         for dev in devices:
@@ -482,7 +514,8 @@ class AccountManager(QObject):
         return dataclasses.replace(
             base, name=dev.alias or base.name, source="cloud", device_id=dev.device_id,
             mac=_normalise_mac(dev.mac) if dev.mac else base.mac, model=dev.model or base.model,
-            online=bool(dev.online), host=hit.ip if hit is not None else "", lan_found=hit is not None,
+            online=bool(dev.online) or hit is not None,  # answering on the LAN means online
+            host=hit.ip if hit is not None else "", lan_found=hit is not None,
             https_port=(hit.http_port or 443) if hit is not None else base.https_port,
             control_protocol=_control_protocol(hit) if hit is not None else base.control_protocol)
 
