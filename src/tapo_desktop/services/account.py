@@ -10,7 +10,10 @@ Persistence:
 
 * vault ``ACCOUNT_VAULT_ID`` / ``CLOUD`` = ``(email, password)`` - only with "Keep me signed in";
 * setting ``"account"`` = non-secret :class:`AccountInfo` fields (cached for offline starts);
-* setting ``"terminal_uuid"`` = 32 upper-case hex chars, generated once [spec:cloud.terminal_uuid].
+* setting ``"terminal_uuid"`` = 32 upper-case hex chars, generated once [spec:cloud.terminal_uuid];
+* vault ``<deviceId>`` / ``LOCAL_TOKEN`` = ``("admin", <local access token>)`` for cameras the IoT
+  cloud lists with a ``localAccessToken`` [spec:lat.source.thing_list] (fetched after sign-in,
+  restore and refresh; removed when the cloud returns none; kept when the fetch fails).
 
 The password is never logged and never written outside the DPAPI vault; the cloud token stays in
 the cloud client's memory.

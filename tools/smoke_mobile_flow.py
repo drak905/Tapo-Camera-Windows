@@ -3,7 +3,9 @@ TPAP control client, :8800 LocalStreamSupervisor) against a mock TP-Link cloud, 
 and two mock cameras speaking TPAP on 127.0.0.2/127.0.0.3 (ports 443 + 8800, like real cameras).
 
 Flow checked: sign in with TP-Link ID -> cameras appear with cloud names -> found on LAN ->
-live video in the grid -> privacy toggle reaches the camera -> snapshot.
+live video in the grid -> privacy toggle reaches the camera -> snapshot. The first camera is in LAT
+mode (like the real C200 fw 1.5.7 that rejected the password with -40401): it accepts only the cloud
+local access token, which the app fetches from /v2/things and offers first [spec:lat.*].
 Run: .venv\\Scripts\\python.exe tools\\smoke_mobile_flow.py   (writes artifacts/screenshots/mobile_flow.png)
 """
 from __future__ import annotations
@@ -37,6 +39,7 @@ from tests.fixtures.mock_tdp import MockTdpResponder  # noqa: E402
 from tests.fixtures.phase2_fixtures import tdp_device_for  # noqa: E402
 
 EMAIL, PASSWORD = "owner@example.com", "Tapo-Pass-123"
+LAT = "f3a1c0de-local-access-token-7b2e"  # mock cloud LAT of the first camera
 
 
 def pump(app, cond, timeout):
@@ -55,10 +58,10 @@ def main() -> int:
     devices = [make_cloud_device(1, alias="Phòng khách", deviceModel="C200"),
                make_cloud_device(2, alias="Cổng trước", deviceModel="C200")]
     cams = [MockTapoCamera(cloud_password=PASSWORD, camera_user="u", camera_password="p", model="C200",
-                           host=ip, https_port=443, media_port=8800, protocol="tpap",
-                           tpap_credential="sha256_extra")
-            for ip in ("127.0.0.2", "127.0.0.3")]
-    cloud = MockTapoCloud(accounts={EMAIL: PASSWORD}, devices=devices)
+                           host=ip, https_port=443, media_port=8800, protocol="tpap", **cred)
+            for ip, cred in (("127.0.0.2", {"tpap_credential": "lat", "local_token": LAT}),
+                             ("127.0.0.3", {"tpap_credential": "sha256_extra"}))]
+    cloud = MockTapoCloud(accounts={EMAIL: PASSWORD}, devices=devices, local_tokens={devices[0]["deviceId"]: LAT})
     tdp = MockTdpResponder(devices=[tdp_device_for(d, ip=c.host, encrypt_type=["4"],
                                                    tpap={"pake": [2], "tls": 1, "noc": 1, "port": 443})
                                     for d, c in zip(devices, cams)])
@@ -98,6 +101,10 @@ def main() -> int:
                 pass
         results["live_video_over_8800"] = pump(app, lambda: all(frames.get(i, 0) > 10 for i in ids), 30)
         results["tpap_logins"] = [c.login_count for c in cams]
+        results["tpap_share_attempts"] = [c.tpap_share_attempts for c in cams]
+        results["lat_stored_for_lat_camera"] = ctl.uses_local_token(devices[0]["deviceId"]) is True
+        results["no_lat_for_password_camera"] = ctl.uses_local_token(devices[1]["deviceId"]) is False
+        results["lat_camera_one_share_per_login"] = cams[0].tpap_share_attempts == cams[0].login_count >= 1
 
         ctl.set_privacy(ids[0], True)
         target = next(c for c in cams if c.host == cfgs[0].host)

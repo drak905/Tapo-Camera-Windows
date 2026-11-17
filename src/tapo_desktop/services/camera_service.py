@@ -188,7 +188,10 @@ class TapoCameraService(CameraService):
 
     The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
 
-    Credentials are read from ``vault.get(config.id, CredentialKind.CLOUD | CAMERA_ACCOUNT)``.
+    Credentials are read from ``vault.get(config.id, CredentialKind.CLOUD | CAMERA_ACCOUNT)``; a
+    ``CredentialKind.LOCAL_TOKEN`` entry (cloud-issued LAT, [spec:lat.*]) is passed as ``local_token``
+    to the control client, the :8800 live view and the downloader, and a changed LAT rebuilds the
+    control client (fresh auth breaker) and restarts the live view.
     Construction performs no network I/O. Core modules are imported lazily so that this module
     (and the UI) import even when a core package is unavailable.
 

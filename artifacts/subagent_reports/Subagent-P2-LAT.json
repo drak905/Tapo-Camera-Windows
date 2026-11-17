@@ -1,0 +1,58 @@
+{
+  "agent_id": "Subagent-P2-LAT",
+  "status": "done",
+  "goal": "Local access token (LAT) support so LAT-mode cameras (C200 fw 1.5.7, TPAP pake [2], -40401 with the TP-Link ID password) log in and stream",
+  "commits": ["lat: red tests", "lat: green", "lat: refactor + smoke + report"],
+  "tests_added": {
+    "tests/phase2/test_lat_cloud.py": 12,
+    "tests/phase2/test_lat_tpap.py": 12,
+    "tests/phase2/test_lat_media.py": 8,
+    "tests/phase2/test_lat_camera_service.py": 8,
+    "tests/phase2/test_lat_account.py": 8,
+    "tests/phase2/test_lat_mobile_flow.py": 1
+  },
+  "results": {
+    "red": "41 failed / 8 passed (NotImplementedError, missing kwargs/behaviour)",
+    "lat_tests": "49 passed",
+    "full_regression": "pytest -m \"not soak and not hardware\": 1057 passed, 8 deselected (320 s)",
+    "gate1": "tools/specs_tool.py merge + verify: GATE 1 PASS (lane 'lat' added)",
+    "smoke_mobile_flow": "ok true (camera 1 in LAT mode: 1 pake_share per login; camera 2 password mode)"
+  },
+  "files": {
+    "src": [
+      "src/tapo_desktop/models.py (CredentialKind.LOCAL_TOKEN)",
+      "src/tapo_desktop/core/cloud/client.py (get_service_urls, local_access_tokens, _http_request)",
+      "src/tapo_desktop/core/control_client/tpap.py (local_token, LAT_VARIANT, candidate order)",
+      "src/tapo_desktop/core/control_client/client.py (local_token, uses_local_token, v3 secret selection)",
+      "src/tapo_desktop/core/vod/session.py (MediaSession local_token)",
+      "src/tapo_desktop/core/media_engine/local_stream.py (local_token, secret scrubbing)",
+      "src/tapo_desktop/core/vod/downloader.py (local_token)",
+      "src/tapo_desktop/core/auth/vault.py (delete_kind)",
+      "src/tapo_desktop/services/controller.py (upsert_cameras local_tokens, uses_local_token)",
+      "src/tapo_desktop/services/camera_service.py (LAT wiring, client rebuild, diagnostics)",
+      "src/tapo_desktop/services/account.py (fetch + store/rotate/remove LAT)",
+      "src/tapo_desktop/ui/main_window.py (row tooltip yes/no)"
+    ],
+    "fixtures_additive": [
+      "tests/fixtures/mock_cloud.py (getAppServiceUrl, GET /iot/v2/things with header checks, local_tokens, things_max_page_size)",
+      "tests/fixtures/mock_tapo_server/camera.py, tpap_server.py, https_server.py, media_server.py (tpap_credential='lat' + local_token, device_secret)"
+    ],
+    "tools": ["tools/specs_tool.py (LANES lat)", "tools/smoke_mobile_flow.py (camera 1 in LAT mode)"],
+    "specs": ["specs/lat_spec.json", "specs/tapo_protocol_spec.json (merged)"]
+  },
+  "decisions": [
+    "TPAP with a LAT: order [SHA256_HEX_UPPER(LAT), best password variant] (sha256 if extra_crypt else md5); MAX_ATTEMPTS=2 and the auth breaker are unchanged. Without a LAT the order and messages are unchanged. Extra_crypt shaping applies to the LAT passcode too (same as password candidates).",
+    "v3 secure login: device_confirm is checked locally against the LAT and the password (no attempt spent); the matching secret drives keys, digest_passwd and tapo_tag. Legacy MD5 login unchanged (spec only covers encrypt_type 3).",
+    ":8800: when a LAT exists it is the digest and stream-key secret (transform gives SHA256_HEX_UPPER(LAT) for encrypt_type 3); the cloud password only when no LAT.",
+    "IoT /v2/things is unsigned; HTTP 401 or -20651/-20652/-20675 -> one silent re-login (cached IoT URL dropped). With an https bootstrap URL, a non-https IoT URL is refused so the token is never sent in clear.",
+    "Token map keyed by thingName (and deviceId if present); thingName == cloud deviceId assumed (spec unresolved item).",
+    "AccountManager: fetch failure or a client without the API -> tokens unknown -> stored LATs kept; a successful fetch without a token for a camera removes its LAT. Vault changes go through AppController.upsert_cameras(local_tokens=...), which restarts only cameras whose LAT changed.",
+    "TapoCameraService re-reads the vault LAT on each control call and rebuilds the client (new breaker) when it changed; start_stream replaces a running local supervisor whose LAT differs. LAT kwargs are passed only when a LAT exists so older factories keep working.",
+    "Diagnostics: TapoCameraService.diagnostics(), connect() auth errors and the camera-list tooltip say only 'using local access token: yes/no'."
+  ],
+  "open_issues": [
+    "Not verified against the real cloud/cameras (by instruction). thingName == deviceId and the exact IoT error body for an expired token are assumptions from the spec.",
+    "If the cloud returns no LAT and both password candidates fail, the camera holds an older LAT/password; only the owner can reset it via changeAdminPassword over the cloud passthrough (lat.sync.*), not implemented (needs explicit user consent).",
+    "LAT is re-fetched on sign-in/restore/refresh only; no 24 h timer or automatic re-fetch after a TPAP -40401."
+  ]
+}

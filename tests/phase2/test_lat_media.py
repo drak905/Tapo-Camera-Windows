@@ -113,9 +113,6 @@ def test_wrong_lat_failure_reason_hides_the_token(lat_camera, ffmpeg_path):
 def test_downloader_passes_the_lat_to_the_session():
     made: list[tuple[tuple, dict]] = []
 
-    class Stop(Exception):
-        pass
-
     class FakeSession:
         def __init__(self, *args, **kwargs):
             made.append((args, kwargs))

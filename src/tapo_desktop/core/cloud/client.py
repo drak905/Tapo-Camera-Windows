@@ -11,6 +11,10 @@ Flow (same as the Tapo Android app 3.22.806, ``TCAccountRepository`` / ``TCDevic
 3. ``POST {regional}/api/v2/common/getDeviceListByPage?token=..`` pages of 20 [spec:cloud.device_list].
    ``-20651`` (token expired) -> ``captchaLogin`` with the stored password once, then retry
    [spec:cloud.token_refresh]; ``-20652`` / ``-20675`` -> one full login.
+4. Local access tokens [spec:lat.*]: ``POST {regional}/api/v2/common/getAppServiceUrl`` (signed)
+   resolves the IoT app server (``nbu.iot-app-server.app-v2``); ``GET {iot}/v2/things`` (NOT signed,
+   ``Authorization: ut|<token>`` + app headers) pages the thing list, whose ``localAccessToken`` is the
+   per-camera secret of cameras in LAT mode (:meth:`TapoCloudClient.local_access_tokens`).
 
 Every request is signed (:mod:`.signing`) and carries the app's common query parameters
 [spec:cloud.common_query_params]. TLS is verified against the system store plus TP-Link's private
