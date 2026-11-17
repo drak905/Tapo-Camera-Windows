@@ -8,7 +8,7 @@ text = camera name, ``Qt.UserRole`` data = camera id), ``addCameraButton``, ``re
 * Selection: selecting a row in ``cameraList`` selects that camera in the grid and vice versa; the
   selected camera is given to the controls/playback panels (``set_camera``).
 * Grid size is read from setting ``"grid_size"`` at start and persisted by ``set_grid_size``
-  (``ValueError`` for anything but 1, 2, 3). The layout buttons call ``set_grid_size``.
+  (``ValueError`` for anything but 1..5). The layout buttons call ``set_grid_size``.
 * ``addCameraButton`` runs ``CameraDialog(self).exec()``; on Accepted it calls
   ``controller.add_camera(*dialog.result_values())``. ``removeCameraButton`` asks
   ``QMessageBox.question(...)`` and on Yes calls ``controller.remove_camera(selected_id)``.
@@ -33,12 +33,18 @@ in :data:`STATUS_ROLE`. Snapshot results and account events are shown in the sta
 
 Phase 3: cameras that are not on the LAN but online and viewable through the TP-Link cloud relay
 (``controller.remote_available(id)``) show " (Remote)" instead of " (Not on this network)".
+
+Phase 5: ``layout4x4Button`` and ``layout5x5Button`` (grid sizes 1..5). The grid shows the cameras of its
+slot list (setting ``"grid_slots"``, see :mod:`tapo_desktop.ui.grid`). ``cameraList`` rows can be dragged
+onto a tile; their context menu (:meth:`MainWindow.camera_list_menu`) has "Add to view" and "Remove from
+view". Rows of cameras that are not in the current view are shown italic and dimmed (text and status
+suffix unchanged, tooltip says so); :data:`IN_VIEW_ROLE` holds True/False.
 """
 from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QEvent, QSignalBlocker, Qt, QTimer
+from PyQt6.QtCore import QEvent, QMimeData, QPoint, QSignalBlocker, Qt, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QKeyEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -62,9 +68,10 @@ from tapo_desktop.services.camera_service import NOT_ON_NETWORK
 from tapo_desktop.services.remote import REMOTE
 from tapo_desktop.ui import _theme, camera_dialog, sign_in_dialog
 from tapo_desktop.ui.controls_panel import ControlsPanel
-from tapo_desktop.ui.grid import CameraGrid, validate_grid_size
+from tapo_desktop.ui.grid import GRID_SIZES, CameraGrid, validate_grid_size
 from tapo_desktop.ui.playback_panel import PlaybackPanel
 from tapo_desktop.ui.ptz_pad import PTZ_UNIT
+from tapo_desktop.ui.video_tile import camera_mime_data
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +85,12 @@ PTZ_KEYS: dict[Qt.Key, tuple[int, int]] = {
 _STATUS_MS = 6000
 #: ``cameraList`` item role holding the row status (``""``, ``"Offline"``, ``"Remote"`` or ``NOT_ON_NETWORK``).
 STATUS_ROLE = Qt.ItemDataRole.UserRole + 1
+#: ``cameraList`` item role: True if the camera is in a visible grid slot (Phase 5).
 IN_VIEW_ROLE = Qt.ItemDataRole.UserRole + 2
+_BASE_TIP_ROLE = Qt.ItemDataRole.UserRole + 3
+_MUTED = QColor(140, 145, 152)
+_HIDDEN = QColor(110, 114, 120)
+_HIDDEN_TIP = "Not in the current view (right-click or drag it onto a tile to show it)"
 
 
 def camera_row_status(cfg, remote: bool = False) -> str:
@@ -89,6 +101,23 @@ def camera_row_status(cfg, remote: bool = False) -> str:
     if not cfg.lan_found or not cfg.host:
         return REMOTE if remote else NOT_ON_NETWORK
     return ""
+
+
+class CameraListWidget(QListWidget):
+    """``cameraList``: rows drag as :data:`~tapo_desktop.ui.video_tile.CAMERA_MIME` payloads."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+
+    def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt override)
+        for item in items:
+            camera_id = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(camera_id, str) and camera_id:
+                return camera_mime_data(camera_id)
+        return QMimeData()
 
 
 class MainWindow(QMainWindow):
@@ -120,6 +149,7 @@ class MainWindow(QMainWindow):
             self._tray = TrayController(self, controller)
 
         self._grid.camera_selected.connect(lambda cid: self._select(cid or None))
+        self._grid.view_changed.connect(self._sync_view_marks)
         self._list.currentRowChanged.connect(self._on_row_changed)
         controller.cameras_changed.connect(self._refresh_list)
         controller.command_failed.connect(self._on_command_failed)
@@ -197,7 +227,7 @@ class MainWindow(QMainWindow):
         group = QActionGroup(self)
         group.setExclusive(True)
         self._layout_actions: dict[int, QAction] = {}
-        for n in (1, 2, 3):
+        for n in GRID_SIZES:
             action = QAction(f"{n}\u00d7{n}", self)
             action.setCheckable(True)
             action.setToolTip(f"Show {n * n} camera{'s' if n > 1 else ''}")
@@ -237,8 +267,10 @@ class MainWindow(QMainWindow):
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(6, 6, 6, 6)
-        self._list = QListWidget(panel)
+        self._list = CameraListWidget(panel)
         self._list.setObjectName("cameraList")
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._show_list_menu)
         self._list.itemDoubleClicked.connect(lambda _item: self._edit_camera())
         layout.addWidget(self._list, 1)
         buttons = QHBoxLayout()
@@ -334,12 +366,60 @@ class MainWindow(QMainWindow):
                     if callable(uses):  # yes/no only: the token itself never reaches the UI
                         tip += f"\nusing local access token: {'yes' if uses(cfg.id) else 'no'}"
                 item.setToolTip(tip)
-                if status and status != REMOTE:
-                    item.setForeground(QColor(140, 145, 152))  # muted: not streamable right now
+                item.setData(_BASE_TIP_ROLE, tip)
                 self._list.addItem(item)
+        self._sync_view_marks()
         ids = [c.id for c in cams]
         keep = self._selected if self._selected in ids else (ids[0] if ids else None)
         self._select(keep, force=True)  # re-sync list row, grid and panels after the rebuild
+
+    def _sync_view_marks(self) -> None:
+        """Mark rows of cameras that are not in a visible grid slot (italic, dimmed, tooltip)."""
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            in_view = self._grid.in_view(item.data(Qt.ItemDataRole.UserRole))
+            status = item.data(STATUS_ROLE)
+            if item.data(IN_VIEW_ROLE) is in_view:
+                continue
+            item.setData(IN_VIEW_ROLE, in_view)
+            font = item.font()
+            font.setItalic(not in_view)
+            item.setFont(font)
+            if not in_view:
+                item.setForeground(_HIDDEN)
+            elif status and status != REMOTE:
+                item.setForeground(_MUTED)  # muted: not streamable right now
+            else:
+                item.setData(Qt.ItemDataRole.ForegroundRole, None)
+            tip = item.data(_BASE_TIP_ROLE) or ""
+            item.setToolTip(tip if in_view else f"{tip}\n{_HIDDEN_TIP}" if tip else _HIDDEN_TIP)
+
+    # ================================================================== view (Phase 5)
+    def camera_list_menu(self, camera_id: str) -> QMenu:
+        """Context menu of a ``cameraList`` row (the caller shows it; it is deleted on close)."""
+        menu = QMenu(self)
+        menu.setObjectName("cameraListMenu")
+        in_view = self._grid.in_view(camera_id)
+        add = menu.addAction("Add to view")
+        add.setObjectName("addToViewAction")
+        add.setEnabled(not in_view)
+        add.triggered.connect(lambda _checked=False: self._grid.add_to_view(camera_id))
+        remove = menu.addAction("Remove from view")
+        remove.setObjectName("removeFromViewAction")
+        remove.setEnabled(in_view)
+        remove.triggered.connect(lambda _checked=False: self._grid.remove_from_view(camera_id))
+        return menu
+
+    def _show_list_menu(self, pos: QPoint) -> None:
+        item = self._list.itemAt(pos)
+        camera_id = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not camera_id:
+            return
+        menu = self.camera_list_menu(camera_id)
+        try:
+            menu.exec(self._list.viewport().mapToGlobal(pos))
+        finally:
+            menu.deleteLater()
 
     # ================================================================== camera management
     def _add_camera(self) -> None:

@@ -65,7 +65,7 @@ def test_saved_slots_are_restored(make_env, qtbot):
     assert not env.has_svc("cam1") or env.svc("cam1").stream_args is None
     # layout order follows the slots, not the camera list
     pos = {cid: g.tile(cid).mapTo(g, g.tile(cid).rect().topLeft()) for cid in ("cam3", "cam0")}
-    assert pos["cam3"].x() < pos["cam0"].x()
+    assert pos["cam3"].y() < pos["cam0"].y() and pos["cam3"].x() == pos["cam0"].x()  # slot 0 vs slot 2 (row 1)
     assert g.slot_widget(1) is g.empty_tiles()[0]
 
 

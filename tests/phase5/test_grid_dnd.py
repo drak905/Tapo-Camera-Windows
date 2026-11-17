@@ -14,10 +14,20 @@ from tests.phase5._grid_helpers import SLOW, camera_list, grid, open_window, str
 pytestmark = [pytest.mark.ui, pytest.mark.timeout(120)]
 
 
+_KEEP: list[QMimeData] = []  # the events do not own their QMimeData: keep it alive until the test ends
+
+
 def _drop_event(widget, mime: QMimeData, cls=QDropEvent):
+    _KEEP.append(mime)
     pos = QPointF(widget.width() / 2, widget.height() / 2)
     return cls(pos.toPoint() if cls is QDragEnterEvent else pos, Qt.DropAction.MoveAction, mime,
                Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+
+
+@pytest.fixture(autouse=True)
+def _release_mime():
+    yield
+    _KEEP.clear()
 
 
 def test_camera_mime_round_trip():
