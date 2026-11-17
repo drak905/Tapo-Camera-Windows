@@ -216,6 +216,10 @@ class SignInDialog(QDialog):
         self._accounts.submit_mfa(code, kind)
 
     # ------------------------------------------------------------------ manager signals
+    def show_mfa(self, types: list[int]) -> None:
+        """Open directly on the two-step verification section (pending login in the manager)."""
+        self._on_mfa_required(types)
+
     def _on_signed_in(self, _account) -> None:
         self._set_busy(False)
         self.accept()

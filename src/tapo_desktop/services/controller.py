@@ -41,6 +41,12 @@ Lane-tdd-ui additions to the contract (needed by the UI, reported to the orchest
 ``config_store`` property (settings access for MainWindow/TrayController) and
 ``load_presets(camera_id)`` + ``presets_ready(camera_id, list[Preset])`` signal.
 
+Phase 2 additions (lane P2-app, docs/CONTRACT_PHASE2.md): ``vault`` property,
+``upsert_cameras(configs, cloud)`` / ``remove_cameras(ids)`` (batch add-or-replace / remove with a
+single save and ``cameras_changed``; used by AccountManager for cloud cameras) and
+``latest_image(id)`` (newest delivered frame, for snapshots). ``lan_found`` and ``live_transport``
+count as connection fields: changing them restarts the camera's service and visible stream.
+
 Implementation notes (Wave 3):
 
 * Threading: a private :class:`~tapo_desktop.services._workers.WorkerPool` of daemon threads. Each

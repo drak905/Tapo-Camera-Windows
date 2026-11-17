@@ -354,6 +354,7 @@ class TapoCameraService(CameraService):
         from tapo_desktop.core.vod.downloader import RecordingDownloader
 
         self._check_open()
+        self._check_on_network()
         cloud = self._creds(CredentialKind.CLOUD)
         downloader = RecordingDownloader(self.config.host, cloud.password, port=self.config.media_port)
         return downloader.download(clip, pathlib.Path(out_path), progress=progress, cancel=self._cancel)

@@ -91,6 +91,64 @@ def test_camera_rows_show_offline_and_not_on_network(app_env, qtbot):
     env.idle(qtbot)
 
 
+def test_sign_in_dialog_with_real_manager_lists_cameras(app_env, qtbot):
+    from PyQt6.QtWidgets import QDialog, QLineEdit
+
+    from tapo_desktop.ui.sign_in_dialog import SignInDialog
+
+    dev = cloud_device(0, alias="Porch")
+    env = app_env(devices=[dev], lan=[lan_for(dev, "192.168.1.44")])
+    w = show_main_window(env, qtbot)
+    dlg = SignInDialog(env.accounts, w)
+    qtbot.addWidget(dlg)
+    dlg.show()
+    dlg.findChild(QLineEdit, "emailEdit").setText(EMAIL)
+    dlg.findChild(QLineEdit, "passwordEdit").setText("wrong")
+    dlg.findChild(QAbstractButton, "signInButton").click()
+    qtbot.waitUntil(lambda: bool(dlg.findChild(QWidget, "errorLabel").isVisible()), timeout=3000)
+    assert "password" in dlg.findChild(QWidget, "errorLabel").text().lower()
+    dlg.findChild(QLineEdit, "passwordEdit").setText(PASSWORD)
+    dlg.findChild(QAbstractButton, "signInButton").click()
+    qtbot.waitUntil(lambda: bool(dlg.result() == QDialog.DialogCode.Accepted), timeout=3000)
+    qtbot.waitUntil(lambda: bool(_rows(w) == ["Porch"]), timeout=3000)
+    env.idle(qtbot)
+    # the visible tile was asked to stream right away (live view starts automatically)
+    qtbot.waitUntil(lambda: bool(dev.device_id in env.factory.services
+                                 and env.factory.services[dev.device_id].frames_sent > 0), timeout=3000)
+
+
+def test_silent_sign_in_mfa_challenge_opens_dialog_on_mfa(app_env, qtbot, monkeypatch):
+    from PyQt6.QtWidgets import QDialog
+
+    from tapo_desktop.models import ACCOUNT_VAULT_ID, CredentialKind, Credentials
+    from tapo_desktop.ui import sign_in_dialog
+
+    opened = []
+
+    class RecordingDialog:
+        def __init__(self, accounts, parent=None):
+            self.mfa = None
+            opened.append(self)
+
+        def show_mfa(self, types):
+            self.mfa = list(types)
+
+        def exec(self):
+            return QDialog.DialogCode.Rejected
+
+        def deleteLater(self):
+            pass
+
+    monkeypatch.setattr(sign_in_dialog, "SignInDialog", RecordingDialog)
+    env = app_env()
+    env.cloud.mfa_types = [2, 4]
+    env.vault.set(ACCOUNT_VAULT_ID, CredentialKind.CLOUD, Credentials(EMAIL, PASSWORD))
+    show_main_window(env, qtbot)
+    assert env.accounts.restore_session() is True
+    qtbot.waitUntil(lambda: bool(opened), timeout=3000)
+    assert opened[0].mfa == [2, 4]
+
+
 def test_snapshot_saves_png_of_current_frame(app_env, qtbot, tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
     env = app_env(1, frame_interval=0.02)

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QEvent, QSignalBlocker, Qt
+from PyQt6.QtCore import QEvent, QSignalBlocker, Qt, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QKeyEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
             accounts.signed_out.connect(self._on_signed_out)
             accounts.sign_in_failed.connect(self._on_sign_in_failed)
             accounts.cameras_refreshed.connect(self._on_cameras_refreshed)
+            accounts.mfa_required.connect(self._on_mfa_required)
         self._sync_account()
 
         self._grid.set_grid_size(self._initial_grid_size())
@@ -153,13 +154,17 @@ class MainWindow(QMainWindow):
         """The AccountManager given to ``__init__`` (None = manual cameras only)."""
         return self._accounts
 
-    def show_sign_in(self) -> bool:
-        """Run the SignInDialog modally; True when the user signed in."""
-        if self._accounts is None:
+    def show_sign_in(self, mfa_types: list[int] | None = None) -> bool:
+        """Run the SignInDialog modally; True when the user signed in. With ``mfa_types`` the
+        dialog opens on its two-step verification section (a silent sign-in at startup that the
+        cloud answered with an MFA challenge)."""
+        if self._accounts is None or self._sign_in_dialog is not None:
             return False
         dialog = sign_in_dialog.SignInDialog(self._accounts, self)
         self._sign_in_dialog = dialog
         try:
+            if mfa_types:
+                dialog.show_mfa(list(mfa_types))
             return dialog.exec() == QDialog.DialogCode.Accepted
         finally:
             self._sign_in_dialog = None
@@ -411,6 +416,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"{total} camera{'s' if total != 1 else ''} in your account, {found} found on this network",
             _STATUS_MS)
+
+    def _on_mfa_required(self, types) -> None:
+        if self._sign_in_dialog is None:  # silent sign-in hit an MFA challenge: ask for the code
+            mfa_types = [int(t) for t in (types or [])]
+            QTimer.singleShot(0, lambda: self.show_sign_in(mfa_types or [3]))
 
     # ================================================================== keyboard PTZ
     @staticmethod

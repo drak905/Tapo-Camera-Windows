@@ -10,7 +10,10 @@
   pending events, then ``controller.stop_all()`` and closes the window WITHOUT entering the event
   loop and WITHOUT any network I/O (no stream is started: the grid's ``start_view`` calls are
   allowed but must not block). Returns 0 on success, 1 if anything raised (error printed to stderr).
-* Without ``--selftest``: runs ``app.exec()`` and returns its exit code.
+* Without ``--selftest``: shows the window, then (Phase 2) restores the TP-Link ID session silently
+  (``AccountManager.restore_session``) or, when no account is stored, shows ``SignInDialog``
+  ("Use without account" is remembered in setting ``"sign_in_skipped"``), then runs ``app.exec()``
+  and returns its exit code. ``--selftest`` never signs in and never shows the dialog.
 * Unknown arguments -> usage on stderr, return 2.
 """
 from __future__ import annotations
