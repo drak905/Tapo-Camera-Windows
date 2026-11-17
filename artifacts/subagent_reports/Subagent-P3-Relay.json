@@ -1,0 +1,61 @@
+{
+  "agent_id": "Subagent-P3-Relay",
+  "status": "done",
+  "goal": "Remote (off-LAN) live view through the TP-Link cloud relay for cloud cameras that are online but not on the LAN",
+  "commits": [
+    "c615328 relay: red tests + mock relay + mock cloud CIPC (additive), remote spec lane merged",
+    "eae38af relay: green",
+    "89481d3 relay: refactor + regression, diag_relay --use-app-code"
+  ],
+  "tests_added": {
+    "tests/phase3/test_relay_client.py": 27,
+    "tests/phase3/test_relay_session.py": 9,
+    "tests/phase3/test_relay_stream.py": 9,
+    "tests/phase3/test_relay_service.py": 16,
+    "tests/phase3/test_relay_ui.py": 9
+  },
+  "results": {
+    "phase3": "70 passed",
+    "full_regression_not_soak_not_hardware": "1135 passed, 8 deselected (6 min)",
+    "gate1": "PASS (239 items, lane 'remote' added to tools/specs_tool.py LANES)",
+    "real_world_check": "python tools/diag_relay.py Remote --use-app-code (view-only, 10 s): C510W, cloudType 2, CONNECTING -> PLAYING after 4.26 s, 98 frames 640x360 (~17 fps, d3d11va), 0 reconnects, stop() 0.02 s"
+  },
+  "files": {
+    "new": [
+      "src/tapo_desktop/core/cloud/relay.py",
+      "src/tapo_desktop/core/media_engine/relay_stream.py",
+      "src/tapo_desktop/services/remote.py",
+      "tests/fixtures/mock_relay.py",
+      "tests/phase3/conftest.py",
+      "tests/phase3/__init__.py",
+      "tests/phase3/test_relay_*.py"
+    ],
+    "changed": [
+      "src/tapo_desktop/core/cloud/client.py (TapoCloudClient.refresh_session)",
+      "src/tapo_desktop/core/media_engine/local_stream.py (session_factory hook, _new_session/_probe, fatal TapoError -> FAILED)",
+      "src/tapo_desktop/services/camera_service.py (remote= getter, relay routing, gate, NETWORK_ONLY / Camera is offline)",
+      "src/tapo_desktop/services/controller.py (set_remote_provider, remote_provider, remote_available, view_remote_now)",
+      "src/tapo_desktop/services/account.py (RelayProvider attach/detach, relay_factory, relay_provider())",
+      "src/tapo_desktop/ui/main_window.py, ui/grid.py, ui/video_tile.py (Remote row text, 'Remote - click to view' tile, click/selection promotes)",
+      "tests/fixtures/mock_cloud.py (additive: cipc.api.cloud service URL, POST /cipc/v2/relay/request)",
+      "tools/specs_tool.py, specs/tapo_protocol_spec.json, tools/diag_relay.py (--use-app-code)"
+    ]
+  },
+  "decisions": [
+    "cloudType 2 by default; 1 only when the device-list entry says isSupportIoTCloud/is_support_iot_cloud == false (cloud_type_for).",
+    "Fatal relay codes (-1007 'Camera is offline', -1103, -52407, -52212, -100001, -20675, 3 illegal_request) go to FAILED without retry; drops / other errors reconnect with a fresh slot.",
+    "-1102 or HTTP 401 on /v2/relay/request: one silent re-login via TapoCloudClient.refresh_session(), one retry.",
+    "RelayMediaSession subclasses MediaSession (connect = slot + tunnel, heartbeat thread, plaintext only; X-If-Encrypt 1 -> TapoProtocolError). LocalStreamSupervisor got a session_factory hook; RelayStreamSupervisor only supplies it (public API and Phase 1/2 tests unchanged).",
+    "Tunnel response head is read byte-wise so no payload after the 200 is consumed; open_tunnel returns the bare SSLSocket.",
+    "Remote stream gate (default 4, setting max_remote_streams 1..16) lives in the per-account RelayProvider; full -> FAILED 'Remote - click to view'; a click/selection calls controller.view_remote_now -> start_stream(preempt=True), which evicts the longest-running remote stream (it then shows 'Remote - click to view'). Slots are released on stop/close/FAILED.",
+    "Remote cameras: connect() returns DeviceInfo from config without network I/O; control/PTZ/status/recordings/events raise 'Available on the camera's network only'. Offline cloud cameras: 'Camera is offline'. No provider: 'Not on this network' (Phase 2 behaviour kept).",
+    "AccountManager only creates a relay provider for clients with get_service_urls + refresh_session, so Phase 2 FakeCloud tests keep 'Not on this network'."
+  ],
+  "open_issues": [
+    "Python ssl: the pump thread reads while the heartbeat/ack/stop writes from other threads on the same SSLSocket (serialised among writers by MediaSession's send lock). Works in tests and the real check, but OpenSSL does not formally guarantee concurrent read/write on one SSL object.",
+    "Real-world check ran 10 s, so the 15 s heartbeat was not exercised against the real relay (only against the mock).",
+    "Slot request/tunnel connect are bounded by RelayClient timeout (15 s) but cannot be interrupted by stop(); stop() during that window returns after its 3 s join and the worker exits when the call times out.",
+    "Waiting remote tiles do not auto-start when a slot frees up; they start on click/selection (as specified).",
+    "Not implemented (out of scope): MQTT relay request, pre-connection batch, QUIC/CDN tunnels, remote controls/playback/talk."
+  ]
+}
