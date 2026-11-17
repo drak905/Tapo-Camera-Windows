@@ -1,0 +1,1019 @@
+{
+ "spec_id": "remote_control_spec",
+ "apk": {
+  "package": "com.tplink.iot",
+  "version_name": "3.22.806",
+  "version_code": "7276"
+ },
+ "summary": "Off-LAN camera control in the Tapo app. Every camera JSON command is the LAN request wrapped in multipleRequest. For cameras in the IoT thing list (all current Tapo cameras) it is sent as POST {thing appServerUrlV2||appServerUrl}/v1/things/{deviceId}/services-sync with body {serviceId:'passthrough',inputParams:{requestData:<object>}} and IoT headers (Authorization ut|token, no signing). The reply is outputParams.responseData = {error_code,result:{responses[]}}. The legacy signed POST {appServerUrl}/api/v2/common/passthrough?token=.. {requestData,deviceId} is used only when the camera has no thing record. The app routes LOCAL -> REMOTE -> IOT_REMOTE, and LOCAL is enabled only for the owner (TDP owner hash), so shared users always go through the cloud with their own token and the same body. No MQTT path carries commands. Remote SD playback/download uses the same CIPC /v2/relay/request with streamType 1 (playback) / 3 (+subType cover|video) and channelId '0', customParams JSON string (event_type etc.), then the tunnel carries the LAN 'get playback'/'get download' JSON parts, acks every 25 parts, heartbeats, and ends on stream_status finished. Talkback uses streamType 2 / type=dtspk with customParams mode half_duplex|aec.",
+ "items": [
+  {
+   "id": "remote.control.transport_selection",
+   "kind": "state_machine",
+   "description": "How the app picks the transport for every camera JSON command (getDeviceInfo, motorMove, setLedStatus, searchVideoWithUTC, ...). TPCameraClient.yj() builds up to four transports per camera; routing hf(null) tries them in a fixed order. There is no per-command choice: every command goes through the first ready transport.",
+   "value": {
+    "LOCAL": "enabled only if the TDP discovery record exists AND tdp.owner equalsIgnoreCase md5_hex(account localUserName). Shared users therefore never get a LAN transport in the app.",
+    "REMOTE (legacy)": "enabled only if the legacy cloud device (TCDeviceBean from the old device list) has appServerUrl(V2) AND the camera has NO IoT thing record (getMThingDevice()==null).",
+    "IOT_REMOTE": "enabled if the camera has a thing record with thingUrlRenewal (thingInfo.appServerUrlV2 || appServerUrl) and a non-empty deviceId.",
+    "BLE": "last resort (setup only).",
+    "routing_order_when_no_type_requested": [
+     "LOCAL (if ready and not degraded)",
+     "REMOTE",
+     "IOT_REMOTE",
+     "BLE"
+    ],
+    "effect": "Because REMOTE is switched off whenever a thing record exists, a current Tapo camera (isSupportIoTCloud) always uses IOT_REMOTE off-LAN. The legacy passthrough is only for old accounts or devices that are not in the IoT thing list.",
+    "transport_wait_timeout": "getting a transport times out after 30 s (Pc(): E1(30, SECONDS))",
+    "failure_retry": "on a failure the client re-initialises IOT_REMOTE first (log 'retry iot remote'), else REMOTE ('retry remote'), then retries"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6668,
+     "snippet": "if (tdpCameraDevice == null || !strH.equalsIgnoreCase(tdpCameraDevice.getOwner())) { ... v8(LOCAL)"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6679,
+     "snippet": "cloudCameraDevice == null || getAppServerUrlRenewal() == null || cameraDevice.getMThingDevice() != null -> disable REMOTE"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6686,
+     "snippet": "getMThingDevice() == null || getThingUrlRenewal() == null -> disable IOT_REMOTE"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 824,
+     "snippet": "hf(null): local x0 -> sv0.a (REMOTE) -> iotremote.a (IOT_REMOTE) -> BLE"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 577,
+     "snippet": ".E1(30L, TimeUnit.SECONDS)"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 872,
+     "snippet": "qv0.g1.R0(\"retry iot remote\") ... \"retry remote\""
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/bean/ALCameraDevice.java",
+     "line": 1508,
+     "snippet": "isSupportIoTCloud() { return this.thingDevice != null; }"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.control.inner_request_shape",
+   "kind": "request",
+   "description": "The camera command carried through the cloud is exactly the LAN JSON request object. The request factory wraps every single command in multipleRequest before handing it to any transport, so the cloud passthrough carries {method:'multipleRequest',params:{requests:[...]}}.",
+   "value": {
+    "example": {
+     "method": "multipleRequest",
+     "params": {
+      "requests": [
+       {
+        "method": "setLedStatus",
+        "params": {
+         "led": {
+          "config": {
+           "enabled": "on"
+          }
+         }
+        }
+       }
+      ]
+     }
+    },
+    "wrapping": "zk.i6(req) -> Wrappers list -> zk.j6 -> zk.k6 -> Request(MULTIPLE_REQUEST, MultipleRequest(list))",
+    "batching": "several inner requests may share one multipleRequest (app does this for settings pages)",
+    "encoding": "requestData is a JSON OBJECT (Gson toJsonTree / object serialisation), NOT a string-encoded JSON",
+    "no_secure_passthrough": "no securePassthrough/AES or stok is used on the cloud path; the cloud talks to the camera over its own channel"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 3679,
+     "snippet": "i6(request) { return j6(new Request(method, new Wrappers(singletonList(params)))); }"
+    },
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 3781,
+     "snippet": "j6(request) { return k6(Collections.singletonList(request)); }"
+    },
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 3855,
+     "snippet": "k6(list) { return new Request(Method.MULTIPLE_REQUEST, new MultipleRequest(list)); }"
+    },
+    {
+     "source": "jadx",
+     "file": "mv0/zk.java",
+     "line": 3859,
+     "snippet": "k8(str) { return i6(new Request(SET_LED_STATUS, new Wrapper(LED, CONFIG, new LedStatus(str)))); }"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/Request.java",
+     "line": 13,
+     "snippet": "private final String method; private final T params;"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.control.iot_passthrough.request",
+   "kind": "endpoint",
+   "description": "IoT-cloud path (IOT_REMOTE, used for all current Tapo cameras). One synchronous thing-service call per camera request.",
+   "value": {
+    "method": "POST",
+    "url_v1": "{thingUrl}/v1/things/{thingName}/services-sync",
+    "url_v2_variant": "{thingUrl}/v2/things/{thingName}/services-sync (only used by IoTRemoteSession.t() = Fg path; qk.Fg defaults to zg, i.e. v1)",
+    "thingUrl": "ThingInfo.appServerUrlV2 if non-empty else ThingInfo.appServerUrl (repository re-reads it from the cached ThingInfo for the thingName)",
+    "edge_variant": "if ThingInfo.edgeAppServerUrlV2 is set, an IoT JWT is available and the edge host is not banned (1 h ban after edge errors), the call goes to the edge URL with Authorization = JWT. A desktop client can ignore this and use appServerUrl(V2).",
+    "thingName": "the camera's cloud deviceId (IoTRemoteSession is constructed with cameraDevice.getDeviceId())",
+    "headers": "same IoT headers as /v2/things (Authorization: ut|<token>, app-cid, x-app-name, x-app-version, x-term-id, x-ospf, x-net-type, x-strict: 0, x-locale, User-Agent, Content-Type: application/json;charset=UTF-8). No HMAC signature.",
+    "body": {
+     "serviceId": "passthrough",
+     "inputParams": {
+      "requestData": {
+       "method": "multipleRequest",
+       "params": {
+        "requests": [
+         "<LAN request objects>"
+        ]
+       }
+      }
+     }
+    },
+    "body_notes": [
+     "PassThroughRequestData(requestData, deviceId=null): deviceId is null on this path, Gson omits it",
+     "ThingServiceParams.dedupId exists but is not set (omitted)"
+    ],
+    "timeouts": "OkHttp connect/read/write 30 s each; services-sync is retried once (b1(1)) only for edge-region errors",
+    "mqtt": "no MQTT topic carries camera commands; MQTT is only used for relay/sfu slot requests and events/shadow (see remote.control.mqtt_summary)"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/api/ThingApi.java",
+     "line": 208,
+     "snippet": "@o(\"{url}/v1/things/{thingName}/services-sync\") executeThingServiceSync(@i(\"isEdgeRequest\") ...)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/api/ThingApi.java",
+     "line": 211,
+     "snippet": "@o(\"{url}/v2/things/{thingName}/services-sync\") executeThingServiceSyncV2(...)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 97,
+     "snippet": "setServiceId(\"passthrough\"); setInputParams(toJsonTree(new PassThroughRequestData(request, null)))"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 62,
+     "snippet": "this.f157843d = tPCameraDeviceContext.getThingUrl();"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6695,
+     "snippet": "C8(new iotremote.j(cameraDevice.getDeviceId(), tPCameraDeviceContext))"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/ThingCloudRepository.java",
+     "line": 1877,
+     "snippet": "S0: thingInfo.getAppServerUrlRenewal(); edge = getEdgeAppServerUrlV2(); ...b1(1L, K2)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/ThingCloudRepository.java",
+     "line": 656,
+     "snippet": "executeThingServiceSync(zEquals /*isEdge*/, str, thingName, params)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/params/ThingServiceParams.java",
+     "line": 10,
+     "snippet": "String dedupId; g inputParams; String serviceId;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/PassThroughRequestData.java",
+     "line": 12,
+     "snippet": "private final String deviceId; private final T requestData;"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/a.java",
+     "line": 63,
+     "snippet": "isEdgeRequest != true -> addHeader(\"Authorization\", ut|token); else Authorization = JWT"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/r.java",
+     "line": 78,
+     "snippet": "connectTimeout(30L).readTimeout(30L).writeTimeout(30L)"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.control.iot_passthrough.response",
+   "kind": "response",
+   "description": "Response of services-sync passthrough and how the app extracts the camera result.",
+   "value": {
+    "http_200_body": {
+     "outputParams": {
+      "responseData": {
+       "error_code": 0,
+       "result": {
+        "responses": [
+         {
+          "method": "setLedStatus",
+          "result": {},
+          "error_code": 0
+         }
+        ]
+       }
+      }
+     }
+    },
+    "extraction": "outputParams -> responseData -> Response<MultipleResponse>; outer responseData.error_code must be 0 (else CameraException), then result.responses[] is the per-command list, each with its own error_code exactly as on LAN",
+    "variant": "one path (IoTRemoteSession.r(), used by a few setters) parses outputParams directly as {error_code,result}; the raw path h() unwraps responseData only if present. A client should unwrap 'responseData' when present and otherwise use outputParams as-is.",
+    "null_outputParams": "app raises IoTCloudException(-11,'service result error')",
+    "http_error": "non-2xx: body parsed as IoTCloudException {code, message, data, fromEdgeArea}; httpRespCode kept. HTTP 401 with token-expiry code triggers a token refresh in the account layer.",
+    "known_edge_codes": {
+     "429 (code != 15429)": "rate limited (no edge ban)",
+     "408/12202": "timeout",
+     "400/11000": "bad request",
+     "400/12201": "?",
+     "400/12204": "device not in current gateway -> ban edge 1 h",
+     "400/12101": "device model validate fail -> ban edge 1 h",
+     "401/10000": "edge auth failure"
+    },
+    "device_offline": "IoT cloud error code for an offline camera is not named in the APK (see unresolved); the legacy path uses -20571"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/result/ThingServiceSyncResult.java",
+     "line": 8,
+     "snippet": "private g outputParams;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/ThingCloudRepository.java",
+     "line": 505,
+     "snippet": "apply(ThingServiceSyncResult r) { return r.getOutputParams(); }"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 105,
+     "snippet": "fromJson(gVar, PassThroughResponseData<Response<MultipleResponse>>).getResponseData()"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 78,
+     "snippet": "gVar.g().v(\"responseData\") ? gVar.g().s(\"responseData\") : gVar"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 166,
+     "snippet": "r(): fromJson(gVar, Response<MultipleResponse>) (no responseData unwrap)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/PassThroughResponseData.java",
+     "line": 12,
+     "snippet": "private final T responseData;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/Response.java",
+     "line": 14,
+     "snippet": "@SerializedName(\"error_code\") int errorCode; String method; T result;"
+    },
+    {
+     "source": "jadx",
+     "file": "lv0/n.java",
+     "line": 61,
+     "snippet": "response.isSuccess() ? r.D0(response.getResult()) : r.c0(p(request, response))"
+    },
+    {
+     "source": "jadx",
+     "file": "xq/l.java",
+     "line": 57,
+     "snippet": "fromJson(errorBody, IoTCloudException.class); setHttpRespCode(...)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/exception/IoTCloudException.java",
+     "line": 9,
+     "snippet": "int code; g data; ... int httpRespCode; ... String message;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/IoTEdgeRegionTransfer.java",
+     "line": 164,
+     "snippet": "429 && code != 15429 | 408 && 12202 | 400 && 11000 | 400 && 12201"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.control.legacy_passthrough.request",
+   "kind": "endpoint",
+   "description": "Legacy cloud path (REMOTE transport, sv0.a/sv0.f). Used only when the camera has no IoT thing record. Signed TP-Link cloud v2 API call on the device's appServerUrl.",
+   "value": {
+    "method": "POST",
+    "url": "{TCDeviceBean.appServerUrlV2 || appServerUrl}/api/v2/common/passthrough?token=<account token>&appName=<appType>&termID=<uuid>&ospf=Android <rel>&appVer=<ver>&netType=<wifi|...>&locale=<locale>",
+    "signing": "header 'signature-required:true' => same HMAC signing as the account /api/v2 calls: Content-MD5 (of body) + X-Authorization: 'Timestamp=9999999999, Nonce=<uuid>, AccessKey=<ak>, Signature=<sig>' (see cloud_account_spec)",
+    "extra_headers": {
+     "Referer": "<appServerUrl>",
+     "Accept-Encoding": "gzip, deflate",
+     "User-Agent": "Tapo CameraClient Android",
+     "Connection": "Keep-Alive",
+     "requestByApp": "true",
+     "Accept": "application/json"
+    },
+    "tls": "OkHttp with CertificatePinner for *.tplinkcloud.com / *.i.tplinkcloud.com plus bundled TP-Link roots; 30 s connect/read/write",
+    "body": {
+     "requestData": {
+      "method": "multipleRequest",
+      "params": {
+       "requests": [
+        "<LAN request objects>"
+       ]
+      }
+     },
+     "deviceId": "<cloud deviceId>"
+    },
+    "note": "This is the TP-Link cloud passthrough method in REST form. The older RPC form {method:'passthrough',params:{deviceId,requestData}} also exists as Method.PASS_THROUGH ('passthrough'); the app builds that Request only for its own error mapping and logging, it is not what is sent."
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/remote/CloudAccessApi.java",
+     "line": 18,
+     "snippet": "@k({\"signature-required:true\"}) @o(\"/api/v2/common/passthrough\") passthrough(@t(\"token\") String, @a PassThroughRequestData)"
+    },
+    {
+     "source": "jadx",
+     "file": "sv0/f.java",
+     "line": 39,
+     "snippet": "new PassThroughRequestData(request, this.f212721b /*deviceId*/)"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6684,
+     "snippet": "new sv0.g(getAppServerUrlRenewal(), getDeviceId(), ..., tcAccountContext.f().getToken(), encryptTypes)"
+    },
+    {
+     "source": "jadx",
+     "file": "sv0/a.java",
+     "line": 100,
+     "snippet": "map.put(\"appName\"..); put(\"termID\"..); put(\"ospf\"..); put(\"appVer\"..); put(\"netType\"..); put(locale..)"
+    },
+    {
+     "source": "jadx",
+     "file": "ov0/b.java",
+     "line": 34,
+     "snippet": "Referer, Accept-Encoding gzip, deflate, User-Agent 'Tapo CameraClient Android', Keep-Alive, requestByApp true"
+    },
+    {
+     "source": "jadx",
+     "file": "m7/r.java",
+     "line": 114,
+     "snippet": "add(\"Content-MD5\", md5); add(X-Authorization, \"Timestamp=%1$s, Nonce=%2$s, AccessKey=%3$s, Signature=%4$s\")"
+    },
+    {
+     "source": "jadx",
+     "file": "mv0/yk.java",
+     "line": 49,
+     "snippet": "CertificatePinner *.tplinkcloud.com ... readTimeout(30L) writeTimeout(30L) connectTimeout(30L)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/model/Method.java",
+     "line": 18,
+     "snippet": "PASS_THROUGH(\"passthrough\"), MULTIPLE_REQUEST(\"multipleRequest\")"
+    },
+    {
+     "source": "rea",
+     "command": "rea inspect-android-class artifacts\\apk\\unpacked\\com.tplink.iot.apk com.tplink.libtapocameranetwork.transport.remote.CloudAccessApi --token-limit 600",
+     "summary": "capability_unavailable: REA_JADX_MCP_JAR (jadx-headless-mcp 0.7.1) not configured; JADX sources used instead"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.control.legacy_passthrough.response",
+   "kind": "response",
+   "description": "Legacy passthrough response: TP-Link cloud envelope around the camera reply.",
+   "value": {
+    "body": {
+     "error_code": 0,
+     "result": {
+      "responseData": {
+       "error_code": 0,
+       "result": {
+        "responses": [
+         {
+          "method": "getDeviceInfo",
+          "result": {
+           "device_info": {}
+          },
+          "error_code": 0
+         }
+        ]
+       }
+      }
+     }
+    },
+    "extraction": "outer error_code must be 0 -> result.responseData (camera Response) -> its error_code must be 0 -> result.responses[]",
+    "missing_responseData": "raw path throws IoTCloudException(outer error_code)",
+    "cloud_error_codes": {
+     "-20571": "APP_DEVICE_IS_OFFLINE",
+     "-20002": "APP_REQUEST_TIMEOUT (camera did not answer in time)",
+     "-20651": "APP_TOKEN_EXPIRED (refresh token / re-login)",
+     "-20652": "APP_TOKEN_CREDENTIAL_MISMATCH",
+     "-20675": "APP_ACCOUNT_LOGGED_IN_OTHER_PLACES",
+     "-20580": "APP_ACCOUNT_IS_NOT_BINDED_TO_DEVICE",
+     "-20501": "APP_DEVICE_NOT_FOUND",
+     "-20509": "APP_NOT_AUTHORIZED",
+     "-20104": "APP_PARAMETER_NOT_FOUND"
+    }
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "sv0/f.java",
+     "line": 40,
+     "snippet": ".p(n.k(new Request(PASS_THROUGH, data))).E0(new b()).p(n.k(request)).E0(getResponses)"
+    },
+    {
+     "source": "jadx",
+     "file": "sv0/f.java",
+     "line": 32,
+     "snippet": "if (result == null || result.getResponseData() == null) throw new IoTCloudException(errorCode, \"\")"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/remote/CloudAccessApi.java",
+     "line": 20,
+     "snippet": "Response<PassThroughResponseData<Response<MultipleResponse>>>"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplinkra/iot/ErrorConstants.java",
+     "line": 31,
+     "snippet": "APP_DEVICE_IS_OFFLINE = -20571"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplinkra/iot/ErrorConstants.java",
+     "line": 57,
+     "snippet": "APP_REQUEST_TIMEOUT = -20002"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplinkra/iot/ErrorConstants.java",
+     "line": 59,
+     "snippet": "APP_TOKEN_EXPIRED = -20651"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplinkra/iot/ErrorConstants.java",
+     "line": 23,
+     "snippet": "APP_ACCOUNT_IS_NOT_BINDED_TO_DEVICE = -20580"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.control.rate_limits",
+   "kind": "constant",
+   "description": "Client-side limits around cloud commands. The app has no explicit per-command rate limiter for passthrough; limits are server-side.",
+   "value": {
+    "per_call_timeout_s": 30,
+    "transport_acquire_timeout_s": 30,
+    "iot_http_429": "server rate limit signalled as HTTP 429 (code 15429 is treated specially by the edge logic)",
+    "app_behaviour": "each UI action issues one services-sync; PTZ (motorMove) is sent per step, not streamed",
+    "recommendation": "serialise commands per camera and debounce PTZ to <= ~2-3 req/s (inferred, not in APK)"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "xq/r.java",
+     "line": 78,
+     "snippet": "connectTimeout(30L).readTimeout(30L).writeTimeout(30L)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libiotcloud/repository/IoTEdgeRegionTransfer.java",
+     "line": 164,
+     "snippet": "if (httpRespCode == 429 && code != 15429) return true;"
+    }
+   ],
+   "confidence": "inferred"
+  },
+  {
+   "id": "remote.control.mqtt_summary",
+   "kind": "endpoint",
+   "description": "MQTT topics used by the app for things. None carries camera passthrough commands.",
+   "value": {
+    "topics": [
+     "$tpiot/things/<thingName>/relay/request/get (+ /reply)",
+     "$tpiot/things/<thingName>/sfu/request/get (+ /reply) (WebRTC/SFU)",
+     "$tpiot/things/<thingName>/shadow/update/accepted",
+     "$tpiot/things/<thingName>/events/accepted",
+     "$tpiot/app/<id>/refresh (+ /reply)"
+    ],
+    "conclusion": "camera commands off-LAN = HTTPS services-sync only"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "yq/o0.java",
+     "line": 908,
+     "snippet": "O0(String.format(\"$tpiot/things/%s/relay/request/get\", str2), mqttMessage).m1();"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.relay.playback_download.request_params",
+   "kind": "request",
+   "description": "/v2/relay/request body differences for SD playback, SD download, talk and image (CameraRelayHelper.buildHttpRequestParamV2). Same endpoint, headers and envelope as preview (remote_spec remote.relay.cipc.request_relay_url).",
+   "value": {
+    "internal_stream_types": {
+     "PREVIEW": 0,
+     "PLAYBACK": 1,
+     "AUDIO(talk)": 2,
+     "DOWNLOAD": 3,
+     "USR_DEF_AUDIO": 4,
+     "DOWNLOAD_VOD": 5,
+     "IMAGE": 6
+    },
+    "wire_streamType_mapping": {
+     "0": 0,
+     "1": 1,
+     "2": 2,
+     "3": 3,
+     "4 or 6": "4 if subType null or in {add_face_info, alarm, quick_resp, music, ringtone, add_mirror_picture} else 3",
+     "5": 3
+    },
+    "playback_body": {
+     "deviceId": "<id>",
+     "dataTimeoutCount": 0,
+     "cloudType": "2 (IoT) | 1",
+     "deviceType": "SMART.IPCAMERA",
+     "playerId": "<app uuid>",
+     "rootCaVer": "1",
+     "streamType": 1,
+     "channelId": "0 (omitted for hub/NVR child)",
+     "customParams": "<JSON string>",
+     "trackId": "<uuid>"
+    },
+    "download_body": {
+     "streamType": 3,
+     "channelId": "0",
+     "subType": "cover",
+     "customParams": "<JSON string>"
+    },
+    "download_vod_body": {
+     "streamType": 3,
+     "subType": "video"
+    },
+    "absent_for_non_preview": [
+     "resolution",
+     "preConnection (V2 builder sets it only for preview)"
+    ],
+    "customParams_playback": {
+     "event_type": "[int] optional event filter (same enum as LAN playback event_type)",
+     "hub_or_child_only": {
+      "camera_device_id": "child camera id",
+      "camera_mac": "child MAC",
+      "traj_start_time": "long",
+      "streams": "[int]",
+      "continuous_play_config": {
+       "face_id": "[long]",
+       "play_type": "string"
+      }
+     },
+     "audio_config": "{encode_type, sample_rate} optional",
+     "vod_time": "transient, never sent"
+    },
+    "customParams_download": "{} or {camera_device_id, camera_mac} for hub children",
+    "customParams_common": "ignore_limit:true may be added (preview)",
+    "start_end_time": "NOT in the relay request; the time range goes in the in-tunnel 'get playback'/'get download' JSON",
+    "relay_path_returned": "relayUrl from the response; server-built path types: type=sdvod&playerid=<uuid>[&channel], type=download&bidirectionid=<uuid>[&channel], type=dtspk&playerid=<uuid>&channel=<n>, type=image&playerid&subtype"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+     "line": 185,
+     "snippet": "else if (== STREAM_TYPE_PLAYBACK) { if (!z13) setChannel(\"0\"); }"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+     "line": 191,
+     "snippet": "STREAM_TYPE_DOWNLOAD: setChannel(\"0\"); strL = \"cover\"; ... DOWNLOAD_VOD: strL = \"video\""
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+     "line": 208,
+     "snippet": "setStreamType(z31.a.a(streamType, strL)); setSubType(strL); setCustomParams(...)"
+    },
+    {
+     "source": "jadx",
+     "file": "z31/a.java",
+     "line": 17,
+     "snippet": "case 4/6: (str == null || b(str)) ? 4 : 3; case 5: return 3"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/enumpkg/StreamType.java",
+     "line": 14,
+     "snippet": "PREVIEW(0) PLAYBACK(1) AUDIO(2) DOWNLOAD(3) USR_DEF_AUDIO(4) DOWNLOAD_VOD(5) IMAGE(6)"
+    },
+    {
+     "source": "jadx",
+     "file": "wa1/f0.java",
+     "line": 625,
+     "snippet": "PLAYBACK: setVodTime(..); setEventType(..); if (zA) { camera_device_id, camera_mac, traj_start_time, streams, continuous_play_config }"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2prelay/bean/CustomParams.java",
+     "line": 33,
+     "snippet": "@SerializedName(\"event_type\") int[] eventType; ... vod_time transient"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/util/a.java",
+     "line": 125,
+     "snippet": "type=sdvod&playerid= ... type=download&bidirectionid= ... type=dtspk&playerid="
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.relay.playback_download.tunnel",
+   "kind": "stream",
+   "description": "What runs inside the relay tunnel for playback/download. The stream-control layer (f51.k0) is transport-agnostic: once the relay tunnel is up it is used exactly like the LAN :8800 /stream session, without the inner POST /stream and without Digest/Key-Exchange (as for preview).",
+   "value": {
+    "first_part": "{\"type\":\"request\",\"seq\":1,\"params\":{\"method\":\"get\",\"playback\":{\"client_id\":<int>,\"scale\":\"1/1\",\"start_time\":\"<utc s>\",\"end_time\":\"<utc s>\",\"event_type\":[..],\"filter\":true}}}. The app sets only client_id, scale, start_time, end_time (optional), event_type+filter, face_id, det_origin, play_channel, audio_config, data_filter_tag; it does NOT set player_id or channels here.",
+    "download_part": "{type:'request',seq,params:{method:'get',download:{...}}} as vod.download.session",
+    "start_time_rule": "start_time must be > 0 or the app refuses; end_time only if > 0; filter=true only if event_type non-empty",
+    "player_id": "no separate player_id is required in the JSON: the relay slot is already bound to playerId/bidirectionid by the relay request",
+    "acks": "same flow-control acks as LAN: every 25th received part (X-Data-Sequence % 25 == 0) send a JSON part with X-Data-Received/X-Session-Id",
+    "heartbeat": "{\"type\":\"notification\",\"params\":{\"event_type\":\"heartbeat\"}} part, client boundary '----client-stream-boundary--'",
+    "end_of_clip": "device notification stream_status 'finished' (vod.stream.notifications); also socket close by the relay",
+    "data_timeout": "native connection timeout passed to the stream engine: 5000 ms for LAN (connection type 16), 18000 ms for relay/other types",
+    "encryption": "no Key-Exchange on relay; treat payload as plaintext TS (see remote_spec unresolved)"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "f51/k0.java",
+     "line": 796,
+     "snippet": "GetVodParams: setClientId; setScale; if (j12 <= 0) error 'playback start time must invalid'; setStartTime(String)"
+    },
+    {
+     "source": "jadx",
+     "file": "f51/k0.java",
+     "line": 840,
+     "snippet": "getPlaybackRequest.setPlayback(getVodParams); s0(new StreamControlRequest(..), GetPlaybackResponse.class, cVar)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/util/a.java",
+     "line": 64,
+     "snippet": "{\"type\": \"notification\", \"params\": {\"event_type\": \"heartbeat\"}}"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/util/a.java",
+     "line": 102,
+     "snippet": "f(): PREVIEW/PLAYBACK/DOWNLOAD/DOWNLOAD_VOD -> \"/stream\"; AUDIO/USR_DEF_AUDIO -> \"/stream/audio\""
+    },
+    {
+     "source": "jadx",
+     "file": "ub1/d.java",
+     "line": 153,
+     "snippet": "return i12 == 16 ? 5000 : 18000;"
+    },
+    {
+     "source": "jadx",
+     "file": "ob1/l0.java",
+     "line": 59,
+     "snippet": "setClientId; setScale; setStartTime; ... setDataFilterTag (no setPlayerId)"
+    },
+    {
+     "source": "rea",
+     "command": "rea inspect-artifact artifacts\\apk\\native_arm64\\libxnet-lib.so --token-limit 600",
+     "summary": "ok: ELF, sha256 46e4274b...; inventory only (native relay/P2P library used by ub1.d/va1.c path)"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.shared.device_flags",
+   "kind": "enum",
+   "description": "Fields in the IoT thing list (ThingInfo) that mark shared cameras. The app derives isOwner()/isUserRoleTypeDevice() from 'role' only.",
+   "value": {
+    "role": {
+     "0": "ROLE_OWNER",
+     "1": "ROLE_USER (shared to this account)"
+    },
+    "shareType": {
+     "deviceShare": "single device shared",
+     "familyShare": "shared via family/home"
+    },
+    "ownerAccountId": "string, nullable",
+    "ownerUsername": "string, nullable",
+    "ownerNickname": "string, nullable",
+    "familyId": "string",
+    "localAccessToken": "only issued to the owner (lat_spec); null for shared users",
+    "legacy_device_list": "TCDeviceBean.role (EnumUserRole) has the same meaning",
+    "no_fine_grained_permission": "no per-feature permission field (permission/authority/rights) exists in ThingInfo or the share beans; capability limits are enforced server/camera side"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/common/ThingInfo.java",
+     "line": 68,
+     "snippet": "private int role;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/common/ThingInfo.java",
+     "line": 72,
+     "snippet": "@Nullable private String shareType;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/common/ThingInfo.java",
+     "line": 56,
+     "snippet": "@Nullable private String ownerAccountId; (ownerNickname, ownerUsername follow)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/thing/common/ThingInfo.java",
+     "line": 34,
+     "snippet": "private String familyId;"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libcloud/enumerate/EnumUserRole.java",
+     "line": 6,
+     "snippet": "ROLE_OWNER(0), ROLE_USER(1)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/cloud/bean/share/EnumShareType.java",
+     "line": 11,
+     "snippet": "DEVICE(\"deviceShare\"), FAMILY(\"familyShare\")"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libbasenetwork/base/AbsTPBaseDeviceContext.java",
+     "line": 230,
+     "snippet": "isOwner(): cloudIoTDevice.getRole() == ROLE_OWNER, else thingInfo.getRole() == 0"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/bean/ALCameraDevice.java",
+     "line": 1572,
+     "snippet": "isUserRoleTypeDevice(): thingInfo.getRole() == ROLE_USER.getValue()"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.shared.behaviour",
+   "kind": "state_machine",
+   "description": "What changes for a shared camera (role 1) or a camera without localAccessToken.",
+   "value": {
+    "transport": "LOCAL is disabled (TDP owner = md5(owner's localUserName) never matches the shared account), so every command goes through IOT_REMOTE services-sync with the SHARED user's own ut|<token>. Request body is identical (no familyId, no role, no owner fields).",
+    "lat": "owner-only operations (changeAdminPassword LAT sync, needSyncDevicePasswordV3) are skipped when !isOwner()",
+    "relay_cipc": "/v2/relay/request body has no role/share field; Authorization is the shared user's own account token. relayToken from the reply goes into X-token as usual.",
+    "native_relay_token_suffix": "the native relay/P2P client path (ub1.d) builds its account-token credential with a suffix: owner camera -> '<token>', shared (role 1) -> '<token>; tokenType=appSlaveToken', owner sub-device -> '; tokenType=appSubDeviceToken', shared sub-device -> '; tokenType=appSlaveSubDeviceToken'. Used only when no relayToken is supplied.",
+    "ui_gating": "the app hides owner-only UI with isOwner()/isUserRoleTypeDevice(): device settings page (DeviceSettingViewModelV2 owner flag), smart actions/automation filters exclude shared cameras, contacts/one-touch-call/growth-record/splendid-moment owner checks, hub sensor binding. The cloud/camera enforces the actual permission; a rejected command comes back as a cloud or inner error_code.",
+    "allowed_for_shared_users_by_app": "live view, playback/download, PTZ, talk and basic toggles are reachable; settings/management and sharing are owner-only (inferred from UI gating)"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6668,
+     "snippet": "!strH.equalsIgnoreCase(tdpCameraDevice.getOwner()) -> v8(LOCAL)"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 4164,
+     "snippet": "if (!tPCameraDeviceContext.isOwner()) { ... return FALSE; } (LAT sync guard, from lat_spec)"
+    },
+    {
+     "source": "jadx",
+     "file": "ub1/d.java",
+     "line": 19,
+     "snippet": "isUserRoleTypeDevice() ? token + \"; tokenType=appSlaveToken\" : token (sub-device variants)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2prelay/client/AbstractRelayClient.java",
+     "line": 503,
+     "snippet": "linkedHashMap.put(\"X-token\", relayToken);"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/iot/view/ipcamera/settingv2/viewmodel/DeviceSettingViewModelV2.java",
+     "line": 885,
+     "snippet": "this.S6.set(tPCameraDeviceContext.isOwner());"
+    },
+    {
+     "source": "jadx",
+     "file": "z40/a.java",
+     "line": 20,
+     "snippet": "return !((ALCameraDevice) device).isUserRoleTypeDevice();"
+    }
+   ],
+   "confidence": "inferred"
+  },
+  {
+   "id": "remote.talkback.summary",
+   "kind": "stream",
+   "description": "Two-way audio over relay (summary).",
+   "value": {
+    "relay_request": {
+     "streamType": 2,
+     "channelId": "0",
+     "customParams": "{\"mode\":\"half_duplex\"} or {\"mode\":\"aec\"}"
+    },
+    "relay_path": "/relayservice?deviceid=<id>&type=dtspk&playerid=<uuid>&channel=<n>",
+    "inner_path": "/stream/audio (LAN equivalent)",
+    "busy_error": "-52411 TALK_IS_USED",
+    "user_defined_audio": "streamType 4 (USR_DEF_AUDIO) with customParams {name,audio_type,audio_file_id} for quick responses/music/ringtones on some models"
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "wa1/f0.java",
+     "line": 619,
+     "snippet": "AUDIO: customParams.setAudioMode(a()==0 ? HALP_DUPLEX : AEC)"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpstreampreconnect/bean/TalkMode.java",
+     "line": 10,
+     "snippet": "AEC = \"aec\"; HALP_DUPLEX = \"half_duplex\""
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/util/a.java",
+     "line": 140,
+     "snippet": "type=dtspk&playerid=..&channel="
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/util/a.java",
+     "line": 147,
+     "snippet": "h(): -1014,-52407,-52411,-20675,-1102,-1103,-52212,-5015,-100001,-1007 (fatal relay codes)"
+    }
+   ],
+   "confidence": "verified"
+  },
+  {
+   "id": "remote.client_recipe.control",
+   "kind": "state_machine",
+   "description": "Desktop-client recipe for sending camera JSON commands when the camera is not on the LAN (or the account is a shared user).",
+   "value": {
+    "steps": [
+     "1. Sign in (TP-Link ID, signed /api/v2) and keep the account token; refresh it on HTTP 401 / -20651.",
+     "2. Load the IoT thing list (/v2/things ... with Authorization: ut|<token>). For the camera keep thingName, appServerUrlV2 (fallback appServerUrl), role, shareType, localAccessToken.",
+     "3. Choose the path: if the camera is in the thing list with a thing URL -> IoT path (step 4). Only if it is missing there but present in the legacy device list with appServerUrl -> legacy path (step 7).",
+     "4. Build the inner request exactly as on LAN and wrap it: {\"method\":\"multipleRequest\",\"params\":{\"requests\":[{\"method\":\"motorMove\",\"params\":{\"motor\":{\"move\":{\"x_coord\":\"10\",\"y_coord\":\"0\"}}}}]}}. Several commands may go in one requests[] list.",
+     "5. POST {thingUrl}/v1/things/{thingName}/services-sync with the IoT headers (Authorization: ut|<token>, app-cid, x-app-name, x-app-version, x-term-id, x-ospf, x-net-type, x-strict: 0, x-locale, Content-Type: application/json;charset=UTF-8) and body {\"serviceId\":\"passthrough\",\"inputParams\":{\"requestData\":<object from step 4>}}. Use a 30 s timeout.",
+     "6. On HTTP 200 read outputParams; if it has 'responseData' use that, else outputParams itself. Check its error_code == 0, then match result.responses[i] to requests[i] (each has method, result, error_code). On non-2xx parse {code,message} and the HTTP status; on 429 back off.",
+     "7. Legacy path: POST {appServerUrl}/api/v2/common/passthrough?token=<token>&appName=..&termID=..&ospf=..&appVer=..&netType=..&locale=.. signed like other /api/v2 calls, body {\"requestData\":<object from step 4>,\"deviceId\":\"<deviceId>\"}. Read result.responseData (camera reply) after checking outer error_code (-20571 offline, -20002 camera timeout, -20651 token expired).",
+     "8. Serialise requests per camera; treat a missing/zero-length responses[] as failure; retry once after re-fetching the thing list if the thing URL changed."
+    ]
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtapocameranetwork/transport/iotremote/IoTRemoteSession.java",
+     "line": 97,
+     "snippet": "serviceId passthrough + PassThroughRequestData(request, null)"
+    },
+    {
+     "source": "jadx",
+     "file": "sv0/f.java",
+     "line": 39,
+     "snippet": "PassThroughRequestData(request, deviceId) -> /api/v2/common/passthrough"
+    },
+    {
+     "source": "jadx",
+     "file": "bv0/jm.java",
+     "line": 6679,
+     "snippet": "REMOTE disabled when getMThingDevice() != null"
+    }
+   ],
+   "confidence": "inferred"
+  },
+  {
+   "id": "remote.client_recipe.playback",
+   "kind": "state_machine",
+   "description": "Desktop-client recipe for remote SD playback and clip download through the CIPC relay.",
+   "value": {
+    "steps": [
+     "1. Find recordings with the control path above: searchDateWithVideo, then searchVideoWithUTC (multipleRequest through services-sync), same params as LAN (sd_vod_playback_spec).",
+     "2. Resolve the CIPC host (getAppServiceUrl serviceIds ['cipc.api.cloud']) as for live view.",
+     "3. POST https://<cipcHost>/v2/relay/request (Authorization: <raw account token>, X-Request-Signature: 10 random chars, User-Agent) with body {\"deviceId\":id,\"dataTimeoutCount\":0,\"cloudType\":2,\"deviceType\":\"SMART.IPCAMERA\",\"playerId\":uuid,\"rootCaVer\":\"1\",\"streamType\":1,\"channelId\":\"0\",\"customParams\":\"{}\",\"trackId\":uuid}. customParams may carry {\"event_type\":[..]} to filter. For download use streamType 3, subType \"cover\" (clip download) and channelId \"0\".",
+     "4. From result take relayUrl (path has type=sdvod&playerid=.. or type=download&bidirectionid=..), relayIp, relayToken; open TLS to relayIp:443 (SNI relay host) and send 'POST <relayPath>&retryTime=0 HTTP/1.1' with the relay headers (X-token: relayToken, Keep-Relay: 3600, Content-Type multipart/mixed;boundary=--client-stream-boundary--, X-Version: 2.0, X-Pull-Mode: 2, ...). Wait for HTTP 200.",
+     "5. Do NOT send an inner 'POST /stream' or Digest. Immediately write the JSON part: {\"type\":\"request\",\"seq\":1,\"params\":{\"method\":\"get\",\"playback\":{\"client_id\":<int>,\"scale\":\"1/1\",\"start_time\":\"<utc s>\",\"end_time\":\"<utc s>\"}}} (start_time > 0 required). For download: {\"method\":\"get\",\"download\":{...}} as on LAN.",
+     "6. Read device parts (boundary ----device-stream-boundary--): first the JSON response with error_code 0 and session_id; then video/mp2t parts with X-Data-Sequence/X-Data-PTS. Every 25th part send the ack part (X-Data-Received, X-Session-Id). Send the heartbeat notification every 15 s.",
+     "7. Seek/speed/pause with 'do' control parts carrying the session_id, exactly as on LAN.",
+     "8. The clip/range ends on a notification with event_type stream_status and status 'finished'; also stop on tunnel close or 18 s without data. Open a new relay slot (new trackId/playerId) for every new session; relay errors -52407 (too many clients), -52212 (flow limit), -100001 (relay request limit), -1007 (offline) are fatal for the attempt."
+    ]
+   },
+   "evidence": [
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2prelay/preconn/CameraRelayHelper.java",
+     "line": 160,
+     "snippet": "buildHttpRequestParamV2(...)"
+    },
+    {
+     "source": "jadx",
+     "file": "f51/k0.java",
+     "line": 796,
+     "snippet": "GetVodParams playback request built on the stream connection"
+    },
+    {
+     "source": "jadx",
+     "file": "com/tplink/libtpp2pcommon/util/a.java",
+     "line": 147,
+     "snippet": "fatal relay error codes list"
+    },
+    {
+     "source": "jadx",
+     "file": "ub1/d.java",
+     "line": 153,
+     "snippet": "16 ? 5000 : 18000"
+    }
+   ],
+   "confidence": "inferred"
+  }
+ ],
+ "unresolved": [
+  {
+   "topic": "IoT services-sync error codes",
+   "detail": "The APK never names the IoT-cloud code for 'camera offline' or 'camera did not answer' on services-sync; errors arrive as HTTP 4xx/5xx with {code,message}. Capture them live (expect something analogous to legacy -20571/-20002)."
+  },
+  {
+   "topic": "Shared-user command permissions",
+   "detail": "No permission matrix is in the APK. The app only hides owner-only UI by role; which inner methods the cloud/camera rejects for role 1 must be tested live."
+  },
+  {
+   "topic": "outputParams shape",
+   "detail": "Most paths expect outputParams.responseData; one path parses outputParams directly. Confirm on a live camera which shape the cloud returns (handle both)."
+  },
+  {
+   "topic": "Server-side rate limits",
+   "detail": "No client rate limiter for passthrough; HTTP 429 handling exists for edge hosts only. Real limits are unknown."
+  },
+  {
+   "topic": "REA tooling",
+   "detail": "REA android class/method inspection is unavailable (REA_JADX_MCP_JAR not configured); evidence is from JADX sources via ripgrep plus one REA inspect-artifact run."
+  }
+ ]
+}
