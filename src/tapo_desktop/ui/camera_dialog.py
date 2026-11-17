@@ -5,7 +5,8 @@ Fields: ``nameEdit``, ``hostEdit``, ``cloudPasswordEdit``, ``cameraUserEdit``, `
 
 ``accept()`` validates and stays open (result not Accepted) when: host is empty/whitespace or
 contains whitespace inside, or (add mode) the cloud password, camera user or camera password is
-empty. Name/host/user are stripped of surrounding whitespace (passwords are NOT stripped). An
+empty. Validation errors are shown inline (e.g. a QLabel `errorLabel`), NEVER through a
+modal QMessageBox (tests call `accept()` directly on an offscreen dialog). Name/host/user are stripped of surrounding whitespace (passwords are NOT stripped). An
 empty name defaults to the host.
 
 ``result_values()`` -> ``(CameraConfig(name, host, dual_lens=...), Credentials("admin", cloud_pw),

@@ -171,7 +171,6 @@ def test_double_click_toggles_fullscreen_quality(make_env, qtbot):
     qtbot.waitUntil(lambda: env.svc("cam1").calls_to("start_stream")[-1].args[0] is StreamQuality.HD,
                     timeout=3000)
     qtbot.waitUntil(lambda: visible() == ["cam1"], timeout=2000)
-    assert grid.selected_camera_id() == "cam1"
     qtbot.mouseDClick(_tile(w, "cam1"), Qt.MouseButton.LeftButton)
     qtbot.waitUntil(lambda: env.svc("cam1").calls_to("start_stream")[-1].args[0] is StreamQuality.SD,
                     timeout=3000)

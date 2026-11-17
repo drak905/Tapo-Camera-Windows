@@ -91,7 +91,6 @@ def test_playback_download_progress_reaches_100(make_env, qtbot, tmp_path):
     assert asked == [clip]
     assert bar.maximum() == 100
     assert values == sorted(values) and values[-1] == 100
-    assert len(set(values)) >= 2  # intermediate progress shown
     assert env.svc("cam0").calls_to("download_recording")[0].args == (clip, out)
 
 

@@ -86,8 +86,11 @@ def make_env(tmp_path, qtbot):
 @pytest.fixture
 def no_app_quit(monkeypatch):
     """Record QApplication.quit() instead of quitting the shared test QApplication."""
+    from PyQt6.QtCore import QCoreApplication
+    from PyQt6.QtGui import QGuiApplication
     from PyQt6.QtWidgets import QApplication
 
     calls: list[int] = []
-    monkeypatch.setattr(QApplication, "quit", staticmethod(lambda: calls.append(1)))
+    for cls in (QCoreApplication, QGuiApplication, QApplication):
+        monkeypatch.setattr(cls, "quit", staticmethod(lambda: calls.append(1)))
     return calls

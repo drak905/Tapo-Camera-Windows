@@ -1,0 +1,44 @@
+{
+  "agent_id": "Subagent-TDD-UI",
+  "status": "done",
+  "tests_total": 113,
+  "tests_red": 113,
+  "tests_passing_unexpectedly": 0,
+  "files": [
+    "src/tapo_desktop/services/camera_service.py",
+    "src/tapo_desktop/services/config_store.py",
+    "src/tapo_desktop/services/controller.py",
+    "src/tapo_desktop/ui/camera_dialog.py",
+    "src/tapo_desktop/ui/controls_panel.py",
+    "src/tapo_desktop/ui/grid.py",
+    "src/tapo_desktop/ui/main_window.py",
+    "src/tapo_desktop/ui/playback_panel.py",
+    "src/tapo_desktop/ui/ptz_pad.py",
+    "src/tapo_desktop/ui/tray.py",
+    "src/tapo_desktop/ui/video_tile.py",
+    "src/tapo_desktop/app.py",
+    "src/tapo_desktop/__main__.py",
+    "tests/e2e/fakes.py",
+    "tests/e2e/conftest.py",
+    "tests/e2e/test_controller.py",
+    "tests/e2e/test_main_window.py",
+    "tests/e2e/test_grid_tiles.py",
+    "tests/e2e/test_controls_panel.py",
+    "tests/e2e/test_playback_dialog_tray_app.py",
+    "tests/unit/test_services_config_store.py"
+  ],
+  "notes": [
+    "All 113 tests collect and fail with NotImplementedError (the python -m subprocess test fails on returncode 1 for the same reason). 101 in tests/e2e (marker ui), 12 in tests/unit/test_services_config_store.py (marker unit).",
+    "tests/e2e/conftest.py is lane-private (tests/e2e/** is owned by lane-tdd-ui); it does NOT touch tests/conftest.py. Fixtures: make_env (ConfigStore on tmp file + FakeVault + FakeServiceFactory + AppController, built inside the test body so stubs FAIL rather than ERROR), no_app_quit (records QApplication.quit).",
+    "FakeCameraService uses tapo_desktop.core.media_engine.supervisor.{StreamState,Frame} when importable, else structurally identical local stand-ins; the controller must only rely on state.name and frame.width/height/data.",
+    "Behaviour details binding for Wave 3 are spelled out in the stub module docstrings (controller.py, grid.py, main_window.py, controls_panel.py, playback_panel.py, camera_dialog.py, tray.py, video_tile.py, config_store.py, app.py).",
+    "Harness idioms were sanity-checked in a throwaway script (not committed): FakeCameraService streaming/fail/download, DirectConnection to Python callables, QComboBox Key_Down emits activated+currentIndexChanged offscreen, QPushButton press/release, QMainWindow.close() returns False when ignored, QTest key/dclick delivery. No full reference implementation was built, so a test that is unsatisfiable for a subtle reason is still possible."
+  ],
+  "contract_questions": [
+    "Lane additions (please ratify): AppController.config_store property, AppController.load_presets(camera_id) + presets_ready(str, list) signal; CameraGrid.camera_selected(str) signal, grid_size(), select_camera(id); VideoTile.current_image() and set_stream_state(name, reason); ControlsPanel/PlaybackPanel.camera_id()/set_camera(); PlaybackPanel.choose_save_path(clip) (tests replace it); TrayController(..., clock=time.monotonic) and TOAST_INTERVAL_S = 10.0; MainWindow.tray property; config_store.DEFAULT_SETTINGS = {grid_size: 2, minimize_to_tray: True, notifications: True}.",
+    "command_failed action names = controller method names, plus 'load_presets' / 'load_recordings' / 'refresh_status'. Downloads report errors through download_finished(id, '', msg) instead of command_failed.",
+    "Overlay headlines: CONNECTING 'Connecting...', RECONNECTING 'Reconnecting...', FAILED/STOPPED 'Offline', PLAYING/IDLE ''. The contract only named 'Offline'/'Reconnecting...'.",
+    "CameraDialog: cloud credentials username fixed to 'admin'; host with inner whitespace rejected; passwords not stripped; empty name defaults to host; edit mode returns None for unchanged (empty) passwords. Validation must be inline (no modal QMessageBox).",
+    "app.main: unknown argument returns 2 with usage on stderr; --selftest must not enter the event loop and must finish < 15 s."
+  ]
+}
