@@ -214,3 +214,34 @@ class CameraGrid(QWidget):
                     tile.set_stream_state("CONNECTING")
                 self._requested[cid] = want
                 self._ctrl.start_view(cid, *want)
+
+    # ------------------------------------------------------------------ Phase 5 stubs (red)
+    def slots(self):
+        raise NotImplementedError
+
+    def visible_slots(self):
+        raise NotImplementedError
+
+    def empty_tiles(self):
+        raise NotImplementedError
+
+    def slot_widget(self, index):
+        raise NotImplementedError
+
+    def slot_of(self, camera_id):
+        raise NotImplementedError
+
+    def place_camera(self, index, camera_id):
+        raise NotImplementedError
+
+    def remove_from_view(self, camera_id):
+        raise NotImplementedError
+
+    def add_to_view(self, camera_id):
+        raise NotImplementedError
+
+    def slot_menu(self, index):
+        raise NotImplementedError
+
+    def handle_drop(self, index, mime):
+        raise NotImplementedError

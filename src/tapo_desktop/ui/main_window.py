@@ -78,6 +78,7 @@ PTZ_KEYS: dict[Qt.Key, tuple[int, int]] = {
 _STATUS_MS = 6000
 #: ``cameraList`` item role holding the row status (``""``, ``"Offline"``, ``"Remote"`` or ``NOT_ON_NETWORK``).
 STATUS_ROLE = Qt.ItemDataRole.UserRole + 1
+IN_VIEW_ROLE = Qt.ItemDataRole.UserRole + 2
 
 
 def camera_row_status(cfg, remote: bool = False) -> str:

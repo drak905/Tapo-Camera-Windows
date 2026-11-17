@@ -186,3 +186,20 @@ class VideoTile(QWidget):
         painter.fillRect(box, _LABEL_BG)
         painter.setPen(_TEXT)
         painter.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+
+
+# ---------------------------------------------------------------------- Phase 5 stubs (red)
+CAMERA_MIME = "application/x-tapo-camera-id"
+
+
+def camera_mime_data(camera_id: str):
+    raise NotImplementedError
+
+
+def camera_id_from_mime(mime) -> str | None:
+    raise NotImplementedError
+
+
+class EmptySlotTile(QWidget):
+    def __init__(self, index: int, parent: QWidget | None = None):
+        raise NotImplementedError
