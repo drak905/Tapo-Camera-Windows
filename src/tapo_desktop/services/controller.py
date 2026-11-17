@@ -52,6 +52,13 @@ Phase 3 additions (remote live view through the TP-Link cloud relay): ``set_remo
 service factory hands ``remote_provider`` to every TapoCameraService), ``remote_available(id)`` (the
 UI shows "Remote") and ``view_remote_now(id)`` (a waiting remote tile was clicked).
 
+Phase 5 additions (SD-card playback streaming): ``start_playback(id, start, end, clips=, width=, height=)``,
+``pause_playback`` / ``resume_playback`` / ``seek_playback(id, utc)`` / ``set_playback_speed(id, scale)`` /
+``stop_playback`` on a third per-camera strand (``playback``; the service is created but not connected:
+playback authenticates its own media session), signals ``playback_frame(id, QImage)`` (coalesced like
+``frame_ready``), ``playback_state(id, state_name, reason)`` and ``playback_position(id, utc_seconds)``.
+``stop_all`` and removing a camera also stop its playback.
+
 Implementation notes (Wave 3):
 
 * Threading: a private :class:`~tapo_desktop.services._workers.WorkerPool` of daemon threads. Each
@@ -76,7 +83,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
-from datetime import date
+from datetime import date, datetime
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -111,6 +118,8 @@ STOP_ALL_TIMEOUT_S = 10.0
 LOCAL_TOKEN_USER = "admin"
 #: Minimum progress step forwarded to the GUI (the last value 1.0 is always forwarded).
 _PROGRESS_STEP = 0.01
+#: Default size of playback frames (16:9; the player window letterboxes them).
+PLAYBACK_WIDTH, PLAYBACK_HEIGHT = 1280, 720
 
 
 def _message(exc: BaseException) -> str:
@@ -161,6 +170,9 @@ class _Camera:
     latest_frame: Any = None
     frame_pending: bool = False
     last_image: QImage | None = None  # newest delivered frame (GUI thread; snapshots)
+    playback: Strand | None = None  # Phase 5: serial strand of the playback calls
+    playback_frame: Any = None  # newest playback frame (guarded by AppController._frame_lock)
+    playback_frame_pending: bool = False
 
     @property
     def id(self) -> str:
@@ -178,6 +190,9 @@ class AppController(QObject):
     download_progress = pyqtSignal(str, float)        # camera_id, 0..1
     download_finished = pyqtSignal(str, str, str)     # camera_id, path, error ("" = ok)
     presets_ready = pyqtSignal(str, list)             # camera_id, list[Preset]  (lane addition)
+    playback_frame = pyqtSignal(str, QImage)          # Phase 5: camera_id, playback frame
+    playback_state = pyqtSignal(str, str, str)        # Phase 5: camera_id, StreamState.name, reason ("" if none)
+    playback_position = pyqtSignal(str, float)        # Phase 5: camera_id, recording time (UTC epoch s)
 
     _invoke = pyqtSignal(object)                      # private: run a callable on the GUI thread
 
@@ -508,6 +523,61 @@ class AppController(QObject):
         cam.io.submit(self._guarded(cam, "download_recording",
                                     partial(self._download_job, cam, clip, pathlib.Path(out_path))))
 
+    # ================================================================== Phase 5: playback streaming
+    def start_playback(self, camera_id: str, start: datetime | float, end: datetime | float, *,
+                       clips: list[RecordingClip] | None = None, width: int = PLAYBACK_WIDTH,
+                       height: int = PLAYBACK_HEIGHT) -> None:
+        """Play the camera's recordings from ``start`` to ``end`` (aware datetimes or epoch seconds);
+        ``clips`` (the day's clip list) lets playback continue across recordings. Non-blocking; results
+        arrive as ``playback_frame`` / ``playback_state`` / ``playback_position``. Runs on the camera's
+        playback strand, next to (not instead of) its live view; a failure to start is reported as
+        ``playback_state(id, "FAILED", message)``."""
+        cam = self._cam(camera_id)
+        if cam is None:
+            return
+        start_utc, end_utc = _epoch(start), _epoch(end)
+        segments = [(c.start.timestamp(), c.end.timestamp()) for c in (clips or [])]
+
+        def call(svc: CameraService) -> None:
+            svc.start_playback(start_utc, end_utc, int(width), int(height), partial(self._on_playback_frame, cam),
+                               partial(self._on_playback_state, cam), partial(self._on_playback_position, cam),
+                               segments=segments)
+
+        self._submit_playback(cam, "start_playback", call,
+                              on_error=lambda msg: self.playback_state.emit(cam.id, "FAILED", msg))
+
+    def pause_playback(self, camera_id: str) -> None:
+        cam = self._cam(camera_id)
+        if cam is not None:
+            self._submit_playback(cam, "pause_playback", lambda svc: svc.pause_playback())
+
+    def resume_playback(self, camera_id: str) -> None:
+        cam = self._cam(camera_id)
+        if cam is not None:
+            self._submit_playback(cam, "resume_playback", lambda svc: svc.resume_playback())
+
+    def seek_playback(self, camera_id: str, utc: datetime | float) -> None:
+        """Continue the camera's playback at recording time ``utc``."""
+        cam = self._cam(camera_id)
+        if cam is not None:
+            value = _epoch(utc)
+            self._submit_playback(cam, "seek_playback", lambda svc: svc.seek_playback(value))
+
+    def set_playback_speed(self, camera_id: str, scale: str) -> None:
+        """``"1/1"``, ``"2/1"``, ``"4/1"`` or ``"8/1"``."""
+        cam = self._cam(camera_id)
+        if cam is not None:
+            self._submit_playback(cam, "set_playback_speed", lambda svc: svc.set_playback_speed(str(scale)))
+
+    def stop_playback(self, camera_id: str) -> None:
+        cam = self._cam(camera_id)
+        if cam is None:
+            return
+        with self._frame_lock:
+            cam.playback_frame = None
+        self._submit_playback(cam, "stop_playback", lambda svc: svc.stop_playback(), create=False,
+                              on_error=lambda _msg: None)
+
     def wait_idle(self, timeout_ms: int = 5000) -> bool:
         """Test helper: block until no background job is queued/running (signals already queued to
         the GUI thread may still need ``processEvents``). Returns False on timeout."""
@@ -516,7 +586,8 @@ class AppController(QObject):
     # ================================================================== internals: plumbing
     def _new_camera(self, config: CameraConfig) -> _Camera:
         return _Camera(config=config, control=Strand(self._pool, f"{config.id}/control"),
-                       io=Strand(self._pool, f"{config.id}/io"))
+                       io=Strand(self._pool, f"{config.id}/io"),
+                       playback=Strand(self._pool, f"{config.id}/playback"))
 
     def _cam(self, camera_id: str) -> _Camera | None:
         cam = self._cams.get(camera_id)
@@ -623,6 +694,9 @@ class AppController(QObject):
         if svc is None:
             return
         calls = [("stop_stream", svc.stop_stream)] + ([("stop_events", svc.stop_events)] if events else [])
+        stop_playback = getattr(svc, "stop_playback", None)
+        if callable(stop_playback):
+            calls.append(("stop_playback", stop_playback))
         for name, fn in calls:
             try:
                 fn()
@@ -731,3 +805,68 @@ class AppController(QObject):
         report(1.0)
         path = str(result if result is not None else out_path)
         self._post(lambda: self.download_finished.emit(cam.id, path, ""))
+
+    # ================================================================== internals: playback (Phase 5)
+    def _playback_service(self, cam: _Camera, *, create: bool = True) -> CameraService | None:
+        """The camera's service for playback, created on first use but NOT connected: playback needs no
+        control login (the :8800 / relay session authenticates itself)."""
+        with cam.lock:
+            if cam.service is None and create and not cam.removed:
+                cam.service = self._factory(cam.config)
+            return cam.service
+
+    def _submit_playback(self, cam: _Camera, action: str, call: Callable[[CameraService], Any], *,
+                         on_error: Callable[[str], None] | None = None, create: bool = True) -> Future:
+        """Run ``call(service)`` on the camera's playback strand; failures go to ``on_error(message)`` on
+        the GUI thread, else ``command_failed(id, action, message)``."""
+        strand = cam.playback or cam.control
+
+        def job() -> None:
+            try:
+                svc = self._playback_service(cam, create=create)
+                if svc is None:
+                    return
+                call(svc)
+            except Exception as exc:
+                msg = _message(exc)
+                log.warning("%s failed for camera %s: %s", action, cam.id, msg)
+                if on_error is not None:
+                    self._post(lambda: on_error(msg))
+                else:
+                    self._post(lambda: self.command_failed.emit(cam.id, action, msg))
+        return strand.submit(job)
+
+    def _on_playback_frame(self, cam: _Camera, frame: Any) -> None:
+        """Playback worker thread: newest frame wins; at most one delivery queued."""
+        with self._frame_lock:
+            cam.playback_frame = frame
+            if cam.playback_frame_pending:
+                return
+            cam.playback_frame_pending = True
+        self._post(partial(self._deliver_playback_frame, cam))
+
+    def _deliver_playback_frame(self, cam: _Camera) -> None:
+        with self._frame_lock:
+            frame, cam.playback_frame = cam.playback_frame, None
+            cam.playback_frame_pending = False
+        if frame is None or cam.removed:
+            return
+        image = frame_to_qimage(frame)
+        if image is not None:
+            self.playback_frame.emit(cam.id, image)
+
+    def _on_playback_state(self, cam: _Camera, state: Any, reason: str | None) -> None:
+        name = getattr(state, "name", str(state))
+        text = reason or ""
+        self._post(lambda: self.playback_state.emit(cam.id, name, text))
+
+    def _on_playback_position(self, cam: _Camera, utc: float) -> None:
+        value = float(utc)
+        self._post(lambda: None if cam.removed else self.playback_position.emit(cam.id, value))
+
+
+def _epoch(value: datetime | float | int) -> float:
+    """Epoch seconds of an aware datetime (naive = local time) or a number."""
+    if isinstance(value, datetime):
+        return value.timestamp()
+    return float(value)

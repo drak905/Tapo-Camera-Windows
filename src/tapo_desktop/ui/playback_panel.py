@@ -7,6 +7,10 @@ Children: ``recordingDate`` (QDateEdit; changing it, or ``set_camera``, calls
 ``downloadButton`` (downloads the selected row: path from ``self.choose_save_path(clip)``;
 ``None`` = cancelled) and ``downloadProgress`` (QProgressBar 0..100; reaches its maximum when
 ``download_finished`` reports success).
+
+Phase 5: ``playButton`` (or double-clicking a clip row) opens the camera's
+:class:`~tapo_desktop.ui.player_window.PlayerWindow` at that clip (one window per camera: an open one is
+raised and jumps to the clip); ``player_window(camera_id)`` returns the open window.
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.models import RecordingClip
+from tapo_desktop.ui.player_window import PlayerWindow
 
 #: PlayBackEventType codes [spec:vod.search.*] -> label shown in the row tooltip.
 EVENT_LABELS: dict[int, str] = {1: "Continuous", 2: "Motion", 6: "Person", 8: "Vehicle", 9: "Pet"}
@@ -45,6 +50,7 @@ class PlaybackPanel(QWidget):
         self._ctrl = controller
         self._camera_id: str | None = None
         self._download_camera: str | None = None
+        self._players: dict[str, PlayerWindow] = {}  # open playback windows, one per camera
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -68,13 +74,18 @@ class PlaybackPanel(QWidget):
         self._list = QListWidget(self)
         self._list.setObjectName("recordingsList")
         self._list.itemSelectionChanged.connect(self._update_buttons)
-        self._list.itemDoubleClicked.connect(lambda _item: self._download())
+        self._list.itemDoubleClicked.connect(lambda _item: self._play())
         root.addWidget(self._list, 1)
 
         self._status = QLabel("", self)
         self._status.setObjectName("downloadStatus")
         self._status.setWordWrap(True)
         root.addWidget(self._status)
+        self._play_button = QPushButton("Play", self)
+        self._play_button.setObjectName("playButton")
+        self._play_button.setToolTip("Watch the selected recording (double-click a clip does the same)")
+        self._play_button.clicked.connect(self._play)
+        root.addWidget(self._play_button)
         self._button = QPushButton("Download clip...", self)
         self._button.setObjectName("downloadButton")
         self._button.clicked.connect(self._download)
@@ -115,6 +126,32 @@ class PlaybackPanel(QWidget):
         return out if out.suffix.lower() == ".mp4" else out.with_suffix(".mp4")
 
     # ------------------------------------------------------------------ actions
+    def player_window(self, camera_id: str) -> PlayerWindow | None:
+        """The open playback window of ``camera_id``, or None."""
+        return self._players.get(camera_id)
+
+    def _play(self) -> None:
+        """Open (or raise) the camera's PlayerWindow at the selected clip."""
+        item = self._list.currentItem()
+        if self._camera_id is None or item is None:
+            return
+        clip = item.data(Qt.ItemDataRole.UserRole)
+        clips = [self._list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self._list.count())]
+        day = self._selected_day()
+        window = self._players.get(self._camera_id)
+        if window is None:
+            window = PlayerWindow(self._ctrl, self._camera_id, day=day, clips=clips, start=clip.start)
+            window.closed.connect(self._player_closed)
+            self._players[self._camera_id] = window
+        else:
+            window.play_clip(clip, clips, day)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def _player_closed(self, camera_id: str) -> None:
+        self._players.pop(camera_id, None)
+
     def _selected_day(self) -> date:
         return self._date.date().toPyDate()
 
@@ -185,5 +222,7 @@ class PlaybackPanel(QWidget):
 
     def _update_buttons(self) -> None:
         busy = self._download_camera is not None
-        self._button.setEnabled(not busy and self._camera_id is not None and self._list.currentItem() is not None)
+        selected = self._camera_id is not None and self._list.currentItem() is not None
+        self._button.setEnabled(not busy and selected)
+        self._play_button.setEnabled(selected)
         self._refresh.setEnabled(self._camera_id is not None)

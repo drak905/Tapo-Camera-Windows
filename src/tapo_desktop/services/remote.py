@@ -20,6 +20,10 @@ cameras use the cloud path: cloud cameras not on this LAN, and shared cameras (`
 because the app only goes local for the owner and a local login with the user's own password would
 only burn the camera's lockout attempts [spec:remote.control.transport_selection, remote.shared.behaviour].
 :data:`NETWORK_ONLY` remains for providers whose cloud client has no passthrough API.
+
+Phase 5: :meth:`RelayProvider.create_playback` builds a
+:class:`~tapo_desktop.core.media_engine.playback_stream.RelayPlaybackStreamSupervisor` (SD playback
+streaming through a relay playback slot; ``playback_factory`` replaces it in tests).
 """
 from __future__ import annotations
 
@@ -146,6 +150,12 @@ def _default_downloader_factory(*args: Any, **kwargs: Any) -> Any:
     return RemoteRecordingDownloader(*args, **kwargs)
 
 
+def _default_playback_factory(*args: Any, **kwargs: Any) -> Any:
+    from tapo_desktop.core.media_engine.playback_stream import RelayPlaybackStreamSupervisor
+
+    return RelayPlaybackStreamSupervisor(*args, **kwargs)
+
+
 class RelayProvider:
     """Remote live view for the cameras of one signed-in TP-Link ID (thread-safe).
 
@@ -156,13 +166,15 @@ class RelayProvider:
     def __init__(self, cloud_client: Any = None, *, terminal_uuid: str | None = None,
                  max_streams: int = DEFAULT_MAX_REMOTE_STREAMS, relay_factory: Callable[[Any], Any] | None = None,
                  supervisor_factory: Callable[..., Any] | None = None,
-                 downloader_factory: Callable[..., Any] | None = None):
+                 downloader_factory: Callable[..., Any] | None = None,
+                 playback_factory: Callable[..., Any] | None = None):
         self._lock = threading.Lock()
         self._cloud = cloud_client
         self._terminal_uuid = terminal_uuid
         self._relay_factory = relay_factory or _default_relay_factory
         self._supervisor_factory = supervisor_factory or _default_supervisor_factory
         self._downloader_factory = downloader_factory or _default_downloader_factory
+        self._playback_factory = playback_factory or _default_playback_factory
         self._relay: Any = None
         self._passthrough: Any = None
         self._controls: dict[str, Any] = {}  # deviceId -> RemoteControlClient (keeps the clip-search form)
@@ -301,3 +313,11 @@ class RelayProvider:
         (raises TapoConnectionError when signed out)."""
         relay = self.relay_client()
         return self._downloader_factory(relay, config.device_id or config.id, **self.stream_params(config))
+
+    def create_playback(self, config: CameraConfig, width: int, height: int, **kwargs: Any) -> Any:
+        """A (not started) :class:`~tapo_desktop.core.media_engine.playback_stream.RelayPlaybackStreamSupervisor`
+        for ``config`` (SD playback slot, Phase 5); ``kwargs`` are its keywords (``start_utc``, ``end_utc``,
+        ``segments``, callbacks, limiter ...). Raises TapoConnectionError when signed out."""
+        relay = self.relay_client()
+        return self._playback_factory(relay, config.device_id or config.id, width, height,
+                                      **self.stream_params(config), **kwargs)

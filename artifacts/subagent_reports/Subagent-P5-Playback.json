@@ -1,0 +1,58 @@
+{
+  "agent_id": "Subagent-P5-Playback",
+  "status": "done",
+  "branch": "phase5/playback",
+  "commits": ["playback: red tests ...", "playback: green ...", "playback: refactor + real-device diag + report"],
+  "tests_added": {
+    "tests/phase5/test_playback_stream.py": 15,
+    "tests/phase5/test_playback_service.py": 12,
+    "tests/phase5/test_playback_controller.py": 8,
+    "tests/phase5/test_playback_ui.py": 10
+  },
+  "tests_added_total": 45,
+  "phase5_result": "45 passed (~55 s; stream tests run twice in a row, no flakes)",
+  "full_regression": "1247 passed, 8 deselected (-m \"not soak and not hardware\", 7 min 46 s); no Phase 1-4 test modified, skipped or weakened",
+  "files": {
+    "new": [
+      "src/tapo_desktop/core/media_engine/playback_stream.py",
+      "src/tapo_desktop/ui/player_window.py",
+      "tests/fixtures/mock_tapo_server/playback_feed.py",
+      "tests/phase5/__init__.py", "tests/phase5/conftest.py", "tests/phase5/_fakes.py",
+      "tests/phase5/test_playback_stream.py", "tests/phase5/test_playback_service.py",
+      "tests/phase5/test_playback_controller.py", "tests/phase5/test_playback_ui.py",
+      "tools/diag_playback_real.py"
+    ],
+    "modified": [
+      "src/tapo_desktop/core/media_engine/local_stream.py (hooks only: _stream_request, _refused, _accepted, _new_pump, _stall_suspended; live-view behaviour and messages unchanged)",
+      "src/tapo_desktop/services/camera_service.py (CameraService playback defaults, TapoCameraService playback routing)",
+      "src/tapo_desktop/services/remote.py (RelayProvider.create_playback + playback_factory)",
+      "src/tapo_desktop/services/controller.py (playback API, signals, playback strand, stop_all/remove also stop playback)",
+      "src/tapo_desktop/ui/playback_panel.py (playButton, double-click opens the PlayerWindow; double-click no longer downloads)",
+      "tests/fixtures/mock_tapo_server/media_server.py, camera.py, tests/fixtures/mock_relay.py (additive opt-in knobs)"
+    ],
+    "not_touched": ["ui/grid.py", "ui/video_tile.py", "ui/main_window.py", "tests/e2e/fakes.py"]
+  },
+  "decisions": [
+    "One get playback per attempt from the current position to end_utc (end of the local day), scale 1/1, event_type [1,2], client_id 1, channels [0] (the verified request). If the camera ends early (stream_status finished, relay closes the tunnel) and the clip list has a later recording, a new request starts there; otherwise STOPPED with reason 'end of recordings' (constant END_OF_RECORDINGS; StreamState enum unchanged).",
+    "Pacing in Python: each TS part is split at video PES starts, their 90 kHz PTS (X-Data-PTS fallback for non-TS-aligned parts) schedule the writes into ffmpeg; the blocked pump stops reading/acking, so the camera's ack window bounds buffering. More than 1 s behind schedule restarts the clock instead of racing.",
+    "Position = PTS mapped to UTC: steps <= 3 s advance; bigger jumps (new file) or running past a clip's end snap to the next clip of the list. on_position about 5x per second.",
+    "pause(): pump holds the next frame, stall watchdog suspended, best-effort 'do pause'; resume(): 'do play \"null\"'. A connection the camera dropped while paused reconnects from the last position on resume.",
+    "seek(): fresh playback request at the time (verified path, no stale data mixing); the spec's in-session 'do play {start_time}' is implemented only in the mocks. Seek also resumes a paused playback and restarts after the end.",
+    "set_speed(): 1/1, 2/1, 4/1, 8/1 applied by the client pacing; the request always says scale 1/1 (only verified value). The effective speed is bounded by how fast the camera/relay delivers.",
+    "Limiter: playback uses the same limiter key as live view (host / deviceId), so live + playback = the camera's 2 media sessions. Relay playback takes no RemoteStreamGate slot. FAILED 'limit' reasons become PLAYBACK_LIMIT_MESSAGE (asks to close live view / other apps).",
+    "Controller: separate per-camera 'playback' strand; the service is created but not connected (no control login needed for playback). Default frame size 1280x720, letterboxed by the window.",
+    "PlayerWindow: top-level non-modal QWidget, one per camera (registry in PlaybackPanel.player_window()); seek on timeline click or drag release; date change stops, reloads clips and starts at the first clip."
+  ],
+  "real_device_check": {
+    "script": "tools/diag_playback_real.py (view-only, run once)",
+    "lan_192.168.1.10 '000. Home Camera A' (:8800 with local access token)": "first frame 2.7 s; 87 frames / 6 s at 640x360; position rate 1.00 s/s; pause 2 s: 0 frames, position moved 0.0 s; resume: 44 frames / 3 s; seek to next clip: landed +4.4 s after 5 s; stop 0.04 s",
+    "remote '004. Remote Camera 1' (relay streamType 1)": "first frame 5.0 s; 99 frames / 6 s; position rate 1.00 s/s; pause: 0 frames, 0.0 s; resume: 50 frames / 3 s; seek: landed +3.1 s after 5 s (new relay slot ~3 s); stop 0.04 s",
+    "conclusion": "TS PTS pacing gives exactly 1x on both real cameras; do pause / do play null accepted (no reconnect during the pause)."
+  },
+  "open_issues": [
+    "Not verified on real cameras: continuing across a clip boundary within one request, the end-of-day / end-of-recordings path, and speeds > 1x (all covered by mocks only).",
+    "Seek latency is a full reconnect: about 1-2 s on the LAN, about 3 s over the relay (new slot). The spec's in-session do play {start_time} could be faster but is unverified.",
+    "The timeline always shows the whole local day (no zoom); one-minute clips are a few pixels wide.",
+    "Live view and playback of one camera share its 2 media sessions; a third viewer (e.g. the phone app) makes playback fail with PLAYBACK_LIMIT_MESSAGE."
+  ]
+}

@@ -57,6 +57,12 @@ ALARM_POLL_INTERVAL_S = 5.0
 #: no client-side passthrough rate limit and the server's is unknown [spec:remote.control.rate_limits]).
 REMOTE_ALARM_POLL_INTERVAL_S = 30.0
 LAST_ALARM_INFO_REQUEST: dict = {"method": "getLastAlarmInfo", "params": {"system": {"name": ["last_alarm_info"]}}}
+#: Error of :meth:`CameraService.start_playback` for services without playback streaming.
+PLAYBACK_UNSUPPORTED = "Playback is not available for this camera"
+#: Playback FAILED reason when the camera refuses another media session (HTTP 503 / -52407 / limiter).
+PLAYBACK_LIMIT_MESSAGE = ("The camera refused another video session (it allows only two at a time). "
+                          "Close the live view of this camera or another app watching it, then try again.")
+_PLAYBACK_SPEEDS = ("1/1", "2/1", "4/1", "8/1")
 _HD_QUALITIES = (StreamQuality.HD, StreamQuality.TELE_HD)
 _TELE_QUALITIES = (StreamQuality.TELE_HD, StreamQuality.TELE_SD)
 
@@ -164,6 +170,32 @@ class CameraService(abc.ABC):
         """Stop stream + events and release every network resource. Idempotent."""
         raise NotImplementedError
 
+    # ------------------------------------------------------------------ Phase 5: SD-card playback
+    # Not abstract: services written before Phase 5 (and test doubles) get these safe defaults.
+    def start_playback(self, start_utc: float, end_utc: float, width: int, height: int,
+                       on_frame: Callable[[Frame], None], on_state: Callable[[StreamState, str | None], None],
+                       on_position: Callable[[float], None], *, segments: list | None = None) -> None:
+        """Play the SD-card recordings from ``start_utc`` to ``end_utc`` (epoch s) as ``width`` x ``height``
+        frames; ``on_position(utc)`` reports the recording time shown. ``segments`` = the day's clips as
+        ``(start, end)`` pairs (continuous playback across recordings). Replaces a running playback.
+        Non-blocking once started; callbacks fire on worker threads. Default: not supported."""
+        raise TapoError(PLAYBACK_UNSUPPORTED)
+
+    def pause_playback(self) -> None:
+        """Pause the running playback (no-op when none)."""
+
+    def resume_playback(self) -> None:
+        """Resume a paused playback (no-op when none)."""
+
+    def seek_playback(self, utc: float) -> None:
+        """Continue the running playback at recording time ``utc`` (no-op when none)."""
+
+    def set_playback_speed(self, scale: str) -> None:
+        """Playback speed ``"1/1"``, ``"2/1"``, ``"4/1"`` or ``"8/1"`` (no-op when nothing plays)."""
+
+    def stop_playback(self) -> None:
+        """Stop the playback (idempotent)."""
+
 
 
 #: Coordinate units per PTZ unit for diagonal relative moves (``motorMove``); the app's default
@@ -205,6 +237,12 @@ class TapoCameraService(CameraService):
     :data:`~tapo_desktop.services.remote.SHARED_CLOUD_ONLY`. The per-camera auth breaker applies to the
     LAN client only.
 
+    Playback streaming (Phase 5, :meth:`start_playback` & co.) follows the same routing: owned LAN cameras
+    over :8800 (``playback_factory``, default PlaybackStreamSupervisor, limiter key = host so live view +
+    playback stay within the camera's two media sessions), cloud-routed cameras through
+    ``provider.create_playback`` (relay playback slot, no live-view gate slot). A camera refusing another
+    media session reports FAILED :data:`PLAYBACK_LIMIT_MESSAGE`.
+
     The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
 
     Credentials are read from ``vault.get(config.id, CredentialKind.CLOUD | CAMERA_ACCOUNT)``; a
@@ -225,7 +263,8 @@ class TapoCameraService(CameraService):
                  stream_factory: Callable[..., Any] | None = None,
                  control_factory: Callable[..., Any] | None = None,
                  alarm_poll_interval: float = ALARM_POLL_INTERVAL_S,
-                 remote: Callable[[], Any] | None = None):
+                 remote: Callable[[], Any] | None = None,
+                 playback_factory: Callable[..., Any] | None = None):
         self.config = config
         self._vault = vault
         self._limiter = limiter
@@ -233,6 +272,10 @@ class TapoCameraService(CameraService):
         self._local_stream_factory = local_stream_factory
         self._stream_factory = stream_factory
         self._control_factory = control_factory
+        self._playback_factory = playback_factory
+        self._playback: Any = None  # running playback supervisor (Phase 5)
+        self._playback_gen = 0  # bumped whenever the playback is replaced/stopped: mutes stale callbacks
+        self._playback_callbacks: tuple[Callable, Callable, Callable] | None = None
         self._remote = remote
         self._relay_gate: Any = None  # RemoteStreamGate holding this camera's relay slot
         self._alarm_poll_interval = float(alarm_poll_interval)
@@ -700,6 +743,117 @@ class TapoCameraService(CameraService):
         if cb is not None:
             cb(state, reason)
 
+    # ------------------------------------------------------------------ SD-card playback (Phase 5)
+    def playback_transport(self) -> str:
+        """Transport the next ``start_playback`` uses: ``"relay"`` for cloud-routed cameras with a signed-in
+        provider, else ``"local"`` (:8800)."""
+        return "relay" if self._remote_provider() is not None else "local"
+
+    def _unreachable_reason(self, provider: Any) -> str:
+        from tapo_desktop.services.remote import CAMERA_OFFLINE, NETWORK_ONLY, SHARED_CLOUD_ONLY
+
+        if provider is not None:
+            return NETWORK_ONLY  # signed in, but the provider cannot play recordings
+        if self._cloud_offline():
+            return CAMERA_OFFLINE
+        if self.config.source == "cloud" and self.config.role != 0:
+            return SHARED_CLOUD_ONLY
+        return NOT_ON_NETWORK
+
+    def start_playback(self, start_utc: float, end_utc: float, width: int, height: int,
+                       on_frame: Callable[[Frame], None], on_state: Callable[[StreamState, str | None], None],
+                       on_position: Callable[[float], None], *, segments: list | None = None) -> None:
+        """Play recordings like the app: owned cameras on this LAN over :8800
+        (:class:`~tapo_desktop.core.media_engine.playback_stream.PlaybackStreamSupervisor`, cloud password or
+        local access token, same limiter key as the live view: live view + playback = the camera's two media
+        sessions); remote / shared cameras through the relay (``provider.create_playback``; no remote
+        live-view gate slot is taken). Unreachable cameras report FAILED with the reason at once."""
+        from tapo_desktop.core.media_engine.supervisor import StreamState
+
+        self._check_open()
+        self.stop_playback()
+        kwargs: dict[str, Any] = {"start_utc": float(start_utc), "end_utc": float(end_utc),
+                                  "segments": list(segments or [])}
+        make: Callable[..., Any] | None = None
+        if self._cloud_routed() or not self._on_network():
+            provider = self._remote_provider()
+            make = getattr(provider, "create_playback", None) if provider is not None else None
+            if not callable(make):
+                on_state(StreamState.FAILED, self._unreachable_reason(provider))
+                return
+        with self._lock:
+            self._check_open()
+            self._playback_gen += 1
+            gen = self._playback_gen
+            self._playback_callbacks = (on_frame, on_state, on_position)
+            callbacks = dict(on_frame=lambda f: self._playback_frame(gen, f),
+                             on_state=lambda s, r: self._playback_state(gen, s, r),
+                             on_position=lambda u: self._playback_position(gen, u), limiter=self._limiter)
+            if make is not None:
+                sup = make(self.config, int(width), int(height), limiter_key=self.config.device_id or self.config.id,
+                           **kwargs, **callbacks)
+            else:
+                factory = self._playback_factory
+                if factory is None:
+                    from tapo_desktop.core.media_engine.playback_stream import PlaybackStreamSupervisor as factory
+                cloud = self._creds(CredentialKind.CLOUD)
+                sup = factory(self.config.host, cloud.password, int(width), int(height), port=self.config.media_port,
+                              limiter_key=self.config.host, local_token=self._local_token(), **kwargs, **callbacks)
+            self._playback = sup
+        sup.start()
+
+    def _running_playback(self) -> Any:
+        with self._lock:
+            return self._playback
+
+    def pause_playback(self) -> None:
+        sup = self._running_playback()
+        if sup is not None:
+            sup.pause()
+
+    def resume_playback(self) -> None:
+        sup = self._running_playback()
+        if sup is not None:
+            sup.resume()
+
+    def seek_playback(self, utc: float) -> None:
+        sup = self._running_playback()
+        if sup is not None:
+            sup.seek(float(utc))
+
+    def set_playback_speed(self, scale: str) -> None:
+        if scale not in _PLAYBACK_SPEEDS:
+            raise ValueError(f"playback speed must be one of {list(_PLAYBACK_SPEEDS)}, not {scale!r}")
+        sup = self._running_playback()
+        if sup is not None:
+            sup.set_speed(scale)
+
+    def stop_playback(self) -> None:
+        with self._lock:
+            sup, self._playback = self._playback, None
+            self._playback_gen += 1  # the stopped session's callbacks are muted
+            self._playback_callbacks = None
+        if sup is not None:
+            sup.stop()
+
+    def _playback_frame(self, gen: int, frame: Frame) -> None:
+        cbs = self._playback_callbacks
+        if gen == self._playback_gen and cbs is not None:
+            cbs[0](frame)
+
+    def _playback_state(self, gen: int, state: StreamState, reason: str | None) -> None:
+        cbs = self._playback_callbacks
+        if gen != self._playback_gen or cbs is None:
+            return
+        if getattr(state, "name", "") == "FAILED" and reason and "limit" in reason.lower():
+            reason = PLAYBACK_LIMIT_MESSAGE
+        cbs[1](state, reason)
+
+    def _playback_position(self, gen: int, utc: float) -> None:
+        cbs = self._playback_callbacks
+        if gen == self._playback_gen and cbs is not None:
+            cbs[2](utc)
+
     # ------------------------------------------------------------------ motion events
     def start_events(self, on_event: Callable[[MotionEvent], None]) -> None:
         """ONVIF pull-point events when a camera account exists; otherwise poll
@@ -780,7 +934,8 @@ class TapoCameraService(CameraService):
             self._closed = True
             client, self._client = self._client, None
         self._cancel.set()
-        for name, fn in (("stop_events", self.stop_events), ("stop_stream", self.stop_stream)):
+        for name, fn in (("stop_events", self.stop_events), ("stop_stream", self.stop_stream),
+                         ("stop_playback", self.stop_playback)):
             try:
                 fn()
             except Exception as exc:  # close must release everything it can

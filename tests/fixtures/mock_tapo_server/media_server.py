@@ -8,7 +8,10 @@ multipart parts both ways. Media parts are AES-128-CBC/PKCS7 per part with key=M
 iv=MD5(admin:nonce) and ``X-If-Encrypt: 1`` (only when the client sent ``X-Key-Exchange: 1``).
 
 Supported control requests: ``get download`` and ``get playback`` (stream the cached MPEG-TS clip
-in ``media_chunk_size`` parts, then a ``stream_status``/``finished`` notification), ``get preview``
+in ``media_chunk_size`` parts, then a ``stream_status``/``finished`` notification; Phase 5, additive:
+with ``cam.media_playback_mode = "continuous"`` ``get playback`` streams the day's recordings from
+``start_time`` to ``end_time`` paced by ``media_playback_speed`` with real PTS and honours ``do pause``,
+``do play "null"`` (resume) and ``do play {start_time}`` (seek), see :mod:`.playback_feed`), ``get preview``
 (live view [spec:stream.control.preview]: ``resolutions`` ``["HD"]`` -> 1280x720 clip, ``["VGA"]`` ->
 640x360 clip, looped forever as one continuous live stream by :mod:`.ts_loop` and paced in real time
 (``media_preview_speed`` multiplier), one part per video frame with ``X-If-IFrame``/``X-Data-PTS``,
@@ -29,7 +32,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from . import crypto, media_assets, ts_loop
+from . import crypto, media_assets, playback_feed, ts_loop
 from ._net import TcpServer, rst_close
 from .rtsp_server import parse_auth_params
 
@@ -103,6 +106,7 @@ class _Session:
         self.stop_stream = threading.Event()
         self.ack_cond = threading.Condition()
         self.last_ack = 0
+        self.feed: playback_feed.PlaybackFeed | None = None  # continuous playback (Phase 5 knob)
 
     # -- output ---------------------------------------------------------------------------
     def send(self, data: bytes) -> None:
@@ -276,6 +280,9 @@ class _Session:
                 self.ack_cond.notify_all()
             self.send_json({"type": "response", "seq": seq, "result": {"error_code": 0}})
             return
+        if method == "do" and self.feed is not None and ("pause" in params or "play" in params):
+            self._feed_control(seq, params)
+            return
         if method == "get" and "preview" in params:
             self._preview(seq, params["preview"])
             return
@@ -285,6 +292,9 @@ class _Session:
             return
         if self.sender is not None and self.sender.is_alive():
             self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52417}})
+            return
+        if verb == "playback" and getattr(self.cam, "media_playback_mode", "clip") == "continuous":
+            self._start_continuous(seq, params[verb])
             return
         clip = self._find_clip(params[verb])
         if clip is None:
@@ -342,6 +352,64 @@ class _Session:
             if not self.stop_stream.is_set():
                 self.send_json({"type": "notification", "params": {"event_type": "stream_status", "status": "finished"}})
         except OSError:
+            pass
+
+    # -- continuous playback (Phase 5, ``media_playback_mode = "continuous"``) ---------------
+    def _start_continuous(self, seq, p) -> None:
+        """``get playback`` over the day's recordings from start_time to end_time, paced by
+        ``media_playback_speed`` (None = unpaced, ack window only), real PTS, in-session controls."""
+        try:
+            st = int(p["start_time"])
+            et = int(p.get("end_time", st + 86400))
+        except (KeyError, TypeError, ValueError):
+            st, et = 0, -1
+        with self.cam.state.lock:
+            recordings = playback_feed.recordings_of(self.cam.state.recordings)
+        if (not isinstance(p.get("start_time"), str) or st <= 0 or et < st
+                or not any(e > st and s < et for s, e in recordings)):
+            self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52402}})
+            return
+        self.stop_stream.clear()
+        self.feed = playback_feed.PlaybackFeed(
+            recordings, st, et, stop=self.stop_stream, speed=getattr(self.cam, "media_playback_speed", 1.0),
+            pts_mode=getattr(self.cam, "media_playback_pts", "reset"))
+        self.cam.playback_feeds.append(self.feed)
+        self.session_id = str(self.server.next_session_id())
+        self.send_json({"type": "response", "seq": seq,
+                        "result": {"error_code": 0, "session_id": self.session_id, "speed": p.get("scale", "1/1")}})
+        self.sender = threading.Thread(target=self._continuous_stream, args=(self.feed,),
+                                       name="mock-media-playback", daemon=True)
+        self.sender.start()
+
+    def _feed_control(self, seq, params) -> None:
+        feed = self.feed
+        assert feed is not None
+        if "pause" in params:
+            feed.pause()
+        elif params.get("play") == "null":
+            feed.resume()
+        elif isinstance(params.get("play"), dict) and str(params["play"].get("start_time", "")).isdigit():
+            feed.seek(int(params["play"]["start_time"]))
+        else:
+            self.send_json({"type": "response", "seq": seq, "result": {"error_code": -52402}})
+            return
+        self.send_json({"type": "response", "seq": seq, "result": {"error_code": 0}})
+
+    def _continuous_stream(self, feed: playback_feed.PlaybackFeed) -> None:
+        try:
+            for i, unit in enumerate(feed.units(), start=1):
+                if not self._wait_window(i):
+                    return
+                body, extra = self._encrypt_part(unit.data)
+                hdr = {"Content-Type": "video/mp2t", "X-If-Encrypt": "1" if self.encrypt else "0", **extra,
+                       "X-Session-Id": self.session_id or "", "X-Data-Sequence": str(i),
+                       "X-Data-PTS": str(unit.pts), "X-If-IFrame": "1" if unit.keyframe else "0",
+                       "X-Stream-Type": "0"}
+                self.send_part(hdr, body)
+                self.cam._count("media_parts_sent")
+            if feed.finished and not self.stop_stream.is_set():
+                self.send_json({"type": "notification", "params": {"event_type": "stream_status", "status": "finished"}})
+        except (OSError, FileNotFoundError, RuntimeError):
             pass
 
     # -- live preview [spec:stream.control.preview] ----------------------------------------
