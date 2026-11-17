@@ -1,0 +1,51 @@
+{
+  "agent_id": "Subagent-Fixture",
+  "status": "done",
+  "lane": "lane-fixture",
+  "tests_total": 45,
+  "tests_red": 0,
+  "tests_passing_unexpectedly": 0,
+  "tests_green": 39,
+  "tests_skipped": 6,
+  "runs": "final code run 3x (plus 3 earlier runs): 39 passed, 6 skipped every time (~41 s), no flakes",
+  "files": [
+    "tests/fixtures/mock_tapo_server/__init__.py",
+    "tests/fixtures/mock_tapo_server/camera.py",
+    "tests/fixtures/mock_tapo_server/shadow.py",
+    "tests/fixtures/mock_tapo_server/dispatcher.py",
+    "tests/fixtures/mock_tapo_server/crypto.py",
+    "tests/fixtures/mock_tapo_server/https_server.py",
+    "tests/fixtures/mock_tapo_server/rtsp_server.py",
+    "tests/fixtures/mock_tapo_server/onvif_server.py",
+    "tests/fixtures/mock_tapo_server/onvif_xml.py",
+    "tests/fixtures/mock_tapo_server/media_server.py",
+    "tests/fixtures/mock_tapo_server/media_assets.py",
+    "tests/fixtures/mock_tapo_server/chaos_proxy.py",
+    "tests/fixtures/mock_tapo_server/_net.py",
+    "tests/fixtures/raw_clients.py",
+    "tests/conftest.py",
+    "tests/integration/test_fixture_selfcheck.py",
+    "tests/integration/test_fixture_selfcheck_streams.py"
+  ],
+  "notes": [
+    "BLOCKER (orchestrator-owned file): pyproject.toml starts with a UTF-8 BOM, so pytest fails before collection ('Invalid statement (at line 1, column 1)'). Strip the BOM. Until then I ran pytest with an equivalent temp ini: -c %TEMP%/tapo_lane_fixture_pytest.ini --rootdir . plus PYTHONPATH=src;. (The tests/*/__init__.py files also have BOMs; those are harmless.)",
+    "ENVIRONMENT: AdGuard for Windows is running and proxies every loopback HTTP connection from python.exe. The :8800 media protocol keeps sending multipart bytes after the HTTP 200, and AdGuard answers them with its own '400 Bad request' page. Real-TCP :8800 tests therefore cannot pass on this machine. HTTPS, ONVIF, RTSP and ffmpeg are not affected. Added fixtures loopback_http_stream_ok (session bool) and require_loopback_http_stream (skips with a reason). The self-check runs every :8800 test over an in-memory socket pair (raw_clients.mem_socketpair, which drives the real server handler) and over TCP; the 6 TCP variants are the skips. Media-lane :8800 integration tests need require_loopback_http_stream, or python.exe excluded from AdGuard filtering.",
+    "Windows loopback: connecting to a closed port takes about 2 s before ConnectionRefusedError, so tests that probe refused ports need a connect timeout of at least 3 s.",
+    "request_log holds every flattened sub-request {method, params} of each multipleRequest, plus single inner requests. raw_request_log keeps the whole decrypted inner bodies. login_count counts successful logins; login_attempts counts every login POST.",
+    "Secure /ds errors: unknown or expired stok, missing or bad tapo_tag, missing seq, or seq below the next expected value (replay) -> HTTP 200 {error_code:-40401}. seq may skip ahead (lost requests) but must never go backwards. A bad securePassthrough payload or non-JSON body -> -40210. Step-2 wrong digest_passwd -> -40401. A reused or unknown step-2 cnonce gets a fresh -40413 challenge. A legacy camera answers secure step 1 with -40210 (no -40413). lock_login -> -40404 with result.data.sec_left.",
+    "Dispatcher error codes: unknown method -40106; missing module/section/field or a selector that does not name the section -40211; wrong type or value outside the documented enum -40210 (e.g. motorMove x_coord must be a string); PTZ boundary -64304; preset limit (8) -64306. rebootDevice and inject_token_expiry both invalidate the session, so the client must re-login.",
+    "Shadow units: ptz_x in [-180,180], ptz_y in [-90,90]; singalMove steps by 10; ONVIF ContinuousMove adds round(velocity*10). presets is {id: {name, x, y, read_only}}, seeded with '1' Door and '2' Gate. Recordings: 3 clips today UTC (01:00 60 s motion, 02:00 120 s timing, 03:00 30 s person) and 1 clip yesterday (12:00 60 s). Search clips are matched on their UTC start.",
+    "The :8800 server issues a Digest challenge with qop=auth and algorithm=cam.media_digest_algorithm ('MD5' default, 'SHA-256' optional), plus encrypt_type=3 iff secure (password' = SHA256U(cloud), else MD5U). Key-Exchange is sent only when the client sends X-Key-Exchange: 1. Download/playback stream the cached 6 s MPEG-TS (H.264 640x360 + AAC; ffmpeg cannot mux PCMA into TS) in 6016-byte AES parts, whatever the clip length, then stream_status finished. Flow control: at most media_ack_window=50 un-acked parts; with no ack for media_ack_timeout=5 s the server sends connection_closed and closes. A 3rd authenticated session -> HTTP 503 {error_code:-52407}. An unknown clip -> response error_code -52402.",
+    "RTSP: RTP/AVP/TCP interleaved, H.264 PT96 (single NAL + FU-A, MTU 1400) and PCMA PT8 in 20 ms packets, real-time pacing at 15 fps, continuous timestamps across loops, PLAY replied before the first RTP packet. No RTCP SR is sent. The max_rtsp_clients slot is held from the first SETUP until TEARDOWN or disconnect; DESCRIBE/SETUP return 453 beyond it. set_rtsp_corrupt_audio sends valid RTP headers with garbled payloads of random length (1-159 bytes) and drops every 7th packet. Truncated RTP headers were tried first, but they made ffmpeg stall for more than 10 s, so they were left out.",
+    "ONVIF: GetSystemDateAndTime is the only operation allowed without auth. Only PasswordDigest is accepted (PasswordText -> NotAuthorized). Subscription managers live at /onvif/subscription/<id>; requests posted to /onvif/service are routed by wsa:To, or to the only live subscription. Motion events emitted before any subscription exists go to the first subscription created. ws_discovery_responder(probe=None) returns ProbeMatches bytes, or b'' when probe is not a Probe.",
+    "Extra non-contract knobs on MockTapoCamera: fixed_nonce/fixed_start_seq (reproduce auth.golden_vector.v3 exactly; the self-check posts the golden outer body and tag and is accepted), media_digest_algorithm, media_ack_window/timeout, media_chunk_size, max_media_sessions, max_failed_logins/lockout_seconds (auto lockout, off by default), media_acks, media_request_log, media_active_sessions, onvif_op_log. The cert is self-signed EC P-256, regenerated per camera.",
+    "Media assets come from ffmpeg (libx264 baseline, keyframe every 15 frames, repeat-headers) and are cached in %TEMP%/tapo_mock_cache (override with env TAPO_MOCK_CACHE). The first generation takes about 1 s. Without ffmpeg the HTTPS/ONVIF surfaces still work; RTSP DESCRIBE returns 500.",
+    "conftest also skips tests marked hardware unless TAPO_HW_IP is set, and provides ffprobe_path."
+  ],
+  "contract_questions": [
+    "CONTRACT_FIXTURE says 'bad tag -> -40401 or HTTP 401 as spec says'; the spec does not specify which. Chose HTTP 200 + error_code -40401.",
+    "connection_count on ChaosProxy: chose cumulative accepted connections (added active_connections for the current count).",
+    "ws_discovery_responder() takes an optional probe argument (bytes) so RelatesTo can echo the Probe MessageID.",
+    "Should :8800 tests in other lanes depend on require_loopback_http_stream, or will the user exclude python.exe from AdGuard filtering?"
+  ]
+}
