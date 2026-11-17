@@ -1,0 +1,76 @@
+{
+ "agent_id": "Subagent-P4-RemoteCtl",
+ "status": "ok",
+ "commits": {
+  "red": "91f7036 remote_control: red tests ... mock services-sync + relay playback/download (additive), stubs",
+  "green": "066efe0 remote_control: green - CloudPassthrough + RemoteControlClient ...",
+  "spec_merge": "4b95b28 remote_control: spec lane merged (Gate 1 pass) + real-device diag tools"
+ },
+ "tests_added": {
+  "count": 64,
+  "files": [
+   "tests/phase4/conftest.py",
+   "tests/phase4/test_passthrough.py",
+   "tests/phase4/test_remote_control.py",
+   "tests/phase4/test_clip_search_lan.py",
+   "tests/phase4/test_remote_vod.py",
+   "tests/phase4/test_remote_service.py",
+   "tests/phase4/test_remote_ui.py"
+  ]
+ },
+ "results": {
+  "phase4": "64 passed (6 repeated runs of the VOD/UI/service files: all green)",
+  "full_regression": "-m 'not soak and not hardware': 1199 passed, 3 failed, 8 deselected (414 s). The 3 failures are tests/phase3/test_relay_stream.py timing tests (exact preview list / frame-size / stop timing); they also fail intermittently on the untouched baseline 0757b62 on this PC (baseline 4 runs: 1 failed, 2 failed, pass, pass), so pre-existing flakiness under CPU load, not caused by this lane. Phase 1 tests: all pass, none modified.",
+  "gate1": "PASS (254 items merged)"
+ },
+ "files": {
+  "new": [
+   "src/tapo_desktop/core/cloud/passthrough.py",
+   "src/tapo_desktop/core/cloud/relay_vod.py",
+   "tools/diag_remote_download.py"
+  ],
+  "changed": [
+   "src/tapo_desktop/models.py (ThingInfo; CameraConfig.role / share_type)",
+   "src/tapo_desktop/core/cloud/client.py (things property, iot_request, _http_request timeout)",
+   "src/tapo_desktop/core/cloud/relay.py (request_slot stream_type/sub_type/custom_params; RelayMediaSession stream_type)",
+   "src/tapo_desktop/core/control_client/client.py (ControlApi mixin extracted, -71103 fallback, player_id kwarg)",
+   "src/tapo_desktop/core/control_client/dtos.py (search_day_clips_req player_id=)",
+   "src/tapo_desktop/services/remote.py (cloud_routed, SHARED_CLOUD_ONLY, RelayProvider.thing_for/control_client/recording_downloader)",
+   "src/tapo_desktop/services/camera_service.py (routing, batched remote status, remote downloads, REMOTE_ALARM_POLL_INTERVAL_S, alarm_poll_interval())",
+   "src/tapo_desktop/services/controller.py (role in _CONNECTION_FIELDS, remote_available/set_remote_provider via cloud_routed)",
+   "src/tapo_desktop/services/account.py (role/share_type from thing list, fallback device list role)",
+   "tools/specs_tool.py (LANES remote_control)",
+   "specs/remote_control_spec.json (mqtt_summary evidence: real file yq/o0.java:908 instead of '(rg over sources)')",
+   "specs/tapo_protocol_spec.json (merged)"
+  ],
+  "fixtures_additive": [
+   "tests/fixtures/mock_tapo_server/camera.py: MockTapoCamera.execute() (the HTTPS /ds path now delegates to it, same behaviour) + clip_search_requires_player_id knob (-71103)",
+   "tests/fixtures/mock_tapo_server/https_server.py: _one -> cam.execute",
+   "tests/fixtures/mock_cloud.py: POST /eu/v1/things/{thing}/services-sync (IoT header/token check, dispatch to registered MockTapoCamera, both reply shapes, offline/timeout/injected errors), CIPC accepts streamType 1/3 bodies, relay_refuse_stream_types, thing shareType",
+   "tests/fixtures/mock_relay.py: streamType 1/3 slots (type=sdvod / type=download), in-tunnel get playback / get download, vod_refuse, playback_finishes, serialized TLS I/O for VOD tunnels"
+  ],
+  "phase3_test_updated": "tests/phase3/test_relay_ui.py::test_end_to_end_remote_stream_through_real_wiring: the asserted refusal 'Available on the camera's network only' is superseded by this lane (control now goes through the cloud); it now asserts the passthrough answer 'Camera did not respond' (no mock camera behind the mock cloud)."
+ },
+ "decisions": [
+  "ControlApi mixin holds every convenience method; TapoControlClient(ControlApi) keeps its public behaviour; RemoteControlClient(ControlApi) adds no-op login/close, logged_in True, protocol 'cloud'.",
+  "-71103: per client, try the form that worked last ('id' first); on -71103 retry that page once with the other form and remember it. LAN player_id = per-process uuid4 hex (DEFAULT_PLAYER_ID) unless given; remote player_id = terminal uuid lower-cased. RelayProvider caches one RemoteControlClient per camera per sign-in so the learned form survives service rebuilds.",
+  "Passthrough errors: 401/-20651/-20652/-20675 -> one silent refresh_session (deduplicated across threads) then 'session expired; sign in again'; -20571 -> TapoConnectionError 'Camera is offline'; -20002/408 -> 'Camera did not respond'; 429 -> 'busy'; other cloud codes -> TapoDeviceError; non-zero responseData.error_code -> TapoDeviceError(code,'multipleRequest'); missing outputParams/responses -> TapoProtocolError. The cloud lock is not held during the HTTP call (cameras in parallel); default timeout 30 s (app value).",
+  "Routing: cloud_routed(cfg) = source cloud and (role != 0 or not on the LAN). Shared cameras never get a LAN control client / :8800 / RTSP, even when found by TDP; without a signed-in provider they report SHARED_CLOUD_ONLY. Owned LAN cameras unchanged (auth breaker local only). Providers whose cloud client lacks iot_request/things keep the Phase 3 NETWORK_ONLY refusal.",
+  "Remote get_status = one batched services-sync call (4 getters).",
+  "Motion polling for cloud-routed cameras: getLastAlarmInfo through the cloud at most every 30 s (REMOTE_ALARM_POLL_INTERVAL_S), never ONVIF; LAN polling unchanged (5 s).",
+  "Remote download: streamType 3 + subType cover + LAN 'get download' first; if slot / tunnel / first answer fails (non-fatal), fall back to the verified streamType 1 playback ('get playback' client_id 1, channels [0], scale 1/1, event_type [1,2]) recorded until finished, PTS reaching the clip end (then 'do stop null') or tunnel close; fatal relay refusals (offline, not bound, stream limit) are raised without fallback; same remux/progress/cancel/cleanup as RecordingDownloader.",
+  "Missing thing record -> one thing-list refresh (local_access_tokens, at most every 60 s), else NETWORK_ONLY."
+ ],
+ "real_device_check": {
+  "tool": "tools/diag_remote_download.py (view-only; wrote only %TEMP%\\tapo_remote_0E2154_1794907922.mp4)",
+  "camera": "004. Remote Camera 1 (C510W, owned, remote)",
+  "result": "ok: download slot (streamType 3, subType cover) WORKED on the real relay; 3 s clip -> 577092-byte MP4, ffprobe h264 2304x1296, 3.95 s, 3.8 s wall time. Playback fallback not needed.",
+  "clip_search": "searchVideoWithUTC with 'id': 1 answered error_code 0 in this run (no -71103), so the fallback was not exercised live; it is covered by mock tests."
+ },
+ "open_issues": [
+  "The real IoT error shapes for an offline / non-answering camera on services-sync are unknown (spec unresolved); mapping assumes legacy codes -20571 / -20002 in 'code'/'errorCode'/'error_code' or HTTP 408/429.",
+  "Shared-user permissions are not known per command; a camera/cloud refusal surfaces as TapoDeviceError.",
+  "tests/phase3/test_relay_stream.py is timing-flaky under CPU load (pre-existing, baseline too).",
+  "-71103 was not reproduced in the live run (the id form worked); the earlier diag finding may depend on request details; both forms are handled."
+ ]
+}
