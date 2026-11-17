@@ -13,10 +13,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIST = Path(os.environ.get("TAPO_DIST", ROOT / "release"))
+DIST = Path(os.environ.get("TAPO_DIST", ROOT / "release" / time.strftime("%Y%m%d-%H%M%S")))
 BUILD = ROOT / "build"
 APP = "TapoDesktop"
 sys.path.insert(0, str(ROOT / "src"))
