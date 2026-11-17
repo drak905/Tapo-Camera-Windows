@@ -1,0 +1,46 @@
+﻿{
+    "agent_id":  "Subagent-P5-Grid",
+    "branch":  "phase5/grid",
+    "status":  "done",
+    "commits":  [
+                    "26eea69 grid: red tests",
+                    "e6e8a9f grid: green",
+                    "report"
+                ],
+    "tests_added":  {
+                        "tests/phase5/test_grid_view_layout.py":  25,
+                        "tests/phase5/test_grid_sizes.py":  8,
+                        "tests/phase5/test_grid_slots.py":  24,
+                        "tests/phase5/test_grid_dnd.py":  10
+                    },
+    "phase5_result":  "67 passed",
+    "regression":  "1269 passed, 8 deselected (-m \u0027not soak and not hardware\u0027), 457 s",
+    "files":  [
+                  "src/tapo_desktop/services/view_layout.py (new)",
+                  "src/tapo_desktop/ui/grid.py",
+                  "src/tapo_desktop/ui/video_tile.py",
+                  "src/tapo_desktop/ui/main_window.py",
+                  "src/tapo_desktop/services/config_store.py (docstring only)",
+                  "tests/phase5/__init__.py",
+                  "tests/phase5/conftest.py",
+                  "tests/phase5/_grid_helpers.py",
+                  "tests/phase5/test_grid_*.py"
+              ],
+    "untouched":  "core/media*, services/camera_service.py, services/controller.py, ui/playback_panel.py, ui/player_window.py, all Phase 1-4 tests",
+    "decisions":  [
+                      "Slot model is pure Python in services/view_layout.py (ViewLayout, 25 slots); CameraGrid owns it and persists \u0027grid_slots\u0027 via controller.config_store; no controller changes.",
+                      "One VideoTile per camera kept (tiles() contract unchanged); empty positions are EmptySlotTile (objectName \u0027emptySlot\u0027, \u0027Empty\u0027 + hint, never streams).",
+                      "Placing a camera that already has a slot always swaps (also with a hidden slot beyond n*n), so a camera is never in two slots and moves between visible slots do not restart streams.",
+                      "Known-vs-new cameras: cameras present at startup but absent from a saved list stay hidden; cameras appearing later via cameras_changed fill the first empty slot (of 25). A non-list setting falls back to list order; bad entries become empty slots.",
+                      "Add to view: first empty visible slot, else the slot of the last selected visible tile (kept even when a hidden row is selected, e.g. by the right-click), else the last visible slot.",
+                      "Hidden rows in cameraList: italic + dimmed + tooltip line; text and status suffixes unchanged; IN_VIEW_ROLE (UserRole+2) = bool.",
+                      "Drag payload MIME \u0027application/x-tapo-camera-id\u0027 (camera id, UTF-8, validated); cameraList is a QListWidget subclass (CameraListWidget) overriding mimeData.",
+                      "Tiles: min size 96x54 (5x5 fits next to both docks), font sizes scale with tile size (overlay_font_sizes), name elided (display_name). Decode sizes unchanged (SD 640x360 in grid).",
+                      "Menus are built by CameraGrid.slot_menu(index) / MainWindow.camera_list_menu(id) with objectNames (removeFromViewAction, showCameraMenu, showCamera_\u003cid\u003e, fullScreenAction, addToViewAction) so tests trigger QActions directly."
+                  ],
+    "open_issues":  [
+                        "docs/CONTRACT_UI.md does not yet describe grid_slots / menus / drag and drop (orchestrator-owned); behaviour is documented in the grid.py, main_window.py and view_layout.py docstrings.",
+                        "Real mouse drag (QDrag.exec) is not exercised in offscreen tests; the drop handlers and payloads are."
+                    ]
+}
+
