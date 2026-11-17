@@ -1,7 +1,7 @@
 # Tapo Desktop for Windows
 
-Unofficial native Windows client for TP-Link Tapo cameras on your local network. It talks
-directly to the camera; no cloud relay is used.
+Unofficial native Windows client for TP-Link Tapo cameras. Sign in with your TP-Link ID like in the
+phone app. Video and control go directly to the camera on your network.
 
 | Feature | Camera interface |
 |---|---|
@@ -16,20 +16,26 @@ directly to the camera; no cloud relay is used.
 Run `dist\TapoDesktop-0.1.0-setup.exe` (per-user install, no admin rights), or unzip
 `dist\TapoDesktop-0.1.0-win64.zip` and run `TapoDesktop\TapoDesktop.exe`. FFmpeg is bundled.
 
-## Camera setup
-1. In the Tapo phone app: camera > Settings > Advanced settings > **Camera account**: create a user
-   name and password. RTSP and ONVIF use this account.
-2. In Tapo Desktop: **Add**, then enter the camera IP, your **TP-Link cloud account password** (used by the
-   camera's local HTTPS control API with user `admin`), and the camera account from step 1.
-3. Give the camera a fixed IP (DHCP reservation in the router).
+## Getting started (same as the Tapo phone app)
+1. Start Tapo Desktop and **sign in with your TP-Link ID** (the email and password you use in the Tapo app).
+   If your account has 2-step verification, enter the code the dialog asks for.
+2. Your cameras appear with the names from the Tapo app. The app finds them on your home network
+   automatically and starts live video in the grid. You don't need a "Camera account" or RTSP setup.
+3. Click a camera to use pan/tilt, presets, privacy mode, night vision, LED, siren, motion detection
+   and snapshots, or open **Playback** for SD-card recordings. Double-click a tile for full screen.
+4. The account button (top bar) has **Refresh cameras** and **Sign out**. The next start signs you in
+   automatically.
 
-Passwords are stored with Windows DPAPI (`%APPDATA%\TapoDesktop\vault.json`; readable only by your
-Windows account). The camera's TLS certificate is pinned on first contact. If the certificate later changes,
-the app refuses to connect.
-
-Firmware limits to keep in mind: a camera serves at most 2 RTSP streams at once (the app enforces this per camera).
-Some features exclude each other on the camera (SD recording, Tapo Care and NVR/RTSP/ONVIF), so check that RTSP/ONVIF works if streams fail.
-
+Notes
+- Live view and control work on the same network as the cameras. Remote viewing through the TP-Link
+  cloud (when you are away from home) is not supported yet.
+- Cameras on newer firmware (encrypt_type 4, such as the C200 on 1.5.x) use TP-Link's newer login
+  (SPAKE2+/TPAP). The app supports it. A wrong password is not retried automatically, so the camera
+  won't lock you out.
+- Your password is stored with Windows DPAPI (%APPDATA%\TapoDesktop\vault.json), readable only by your
+  Windows account. **Add** (by IP) is still available for cameras that aren't in your account.
+- If live view or SD downloads fail, check that no local web filter (for example AdGuard) intercepts
+  traffic from TapoDesktop.exe / fmpeg.exe. The camera media port 8800 uses plain HTTP.
 ## Development
 ```powershell
 python -m venv .venv; .venv\Scripts\pip install -e .[dev]

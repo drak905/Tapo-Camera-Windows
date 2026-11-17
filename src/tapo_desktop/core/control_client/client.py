@@ -131,7 +131,8 @@ class TapoControlClient:
 
     def __init__(self, host: str, password: str, *, username: str = "admin", port: int = 443,
                  transport: HttpsTransport | None = None, pin_store: PinStore | None = None,
-                 timeout: float = 10.0, tpap: dict | None = None, encrypt_type: Any = None):
+                 timeout: float = 10.0, tpap: dict | None = None, encrypt_type: Any = None,
+                 auth_retry_after: float = 120.0):
         self._host = host
         self._port = int(port)
         self._username = username
@@ -147,6 +148,9 @@ class TapoControlClient:
         self._secure = False
         self._tpap_auth: tpap_mod.TpapAuthenticator | None = None
         self._tpap_confirmed = False     # the camera itself demanded TPAP (-40211)
+        self._auth_retry_after = float(auth_retry_after)
+        self._auth_error: TapoAuthError | None = None
+        self._auth_blocked_until: float | None = None
 
     def __repr__(self) -> str:
         return (f"TapoControlClient(host={self._host!r}, port={self._port}, username={self._username!r}, "
@@ -194,6 +198,34 @@ class TapoControlClient:
         return self._session is not None
 
     def _login_locked(self) -> None:
+        """Login guarded by an auth circuit breaker.
+
+        A wrong password must not be retried automatically: every failed login counts towards the
+        camera's lockout, and background callers (status refresh, event polling) would otherwise
+        hammer it. After a ``TapoAuthError`` (not a lockout) further logins on this client fail
+        fast with the same error for ``auth_retry_after`` seconds, or until ``reset_auth_backoff()``.
+        """
+        blocked = self._auth_blocked_until
+        if blocked is not None and time.monotonic() < blocked and self._auth_error is not None:
+            raise TapoAuthError(str(self._auth_error))
+        try:
+            self._login_impl()
+        except TapoLockedError:
+            raise
+        except TapoAuthError as exc:
+            self._auth_error = exc
+            self._auth_blocked_until = time.monotonic() + self._auth_retry_after
+            raise
+        self._auth_error = None
+        self._auth_blocked_until = None
+
+    def reset_auth_backoff(self) -> None:
+        """Allow the next login attempt immediately (e.g. after the user re-entered the password)."""
+        with self._lock:
+            self._auth_error = None
+            self._auth_blocked_until = None
+
+    def _login_impl(self) -> None:
         self._session = None
         if self._use_tpap:
             try:
