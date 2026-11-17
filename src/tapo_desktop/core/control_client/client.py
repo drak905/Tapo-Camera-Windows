@@ -8,6 +8,7 @@ import datetime
 import json
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -29,6 +30,8 @@ _PROTOCOL_FORMAT_ERROR = -40210  # on securePassthrough: invalid secure session 
 _INVALID_NONCE = -40413          # normal step-1 challenge of encrypt_type "3"
 _TPAP_REQUIRED = -40211          # step 1 on TPAP-only firmware (encrypt_type ["4"]) [spec:tpap.selection]
 _LOCK_CODES = frozenset({-40404, -40408})  # DEVICE_BLOCKED, SYSTEM_BLOCKED
+# plaintext /ds refusals that mean "log in again" [spec:tpap.ds.errors]
+_TPAP_SESSION_ERRORS = frozenset({-40401, -40418, -40420, -40421, -2402})
 _PAGE_SIZE = 100
 _MAX_PAGES = 100                 # safety cap: 10 000 clips per day
 
@@ -87,6 +90,26 @@ def _parse_json(text: str) -> dict:
     return obj
 
 
+def _tpap_refusal(data: bytes) -> int | None:
+    """error_code of a plaintext JSON refusal on TPAP ``/ds``, else ``None`` (binary reply).
+
+    Like the app, the whole body is first tried as JSON, because an encrypted reply whose seq starts
+    with 0x7B would also begin with ``{``.
+    """
+    if not data.startswith(b"{"):
+        return None
+    try:
+        obj = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(obj, dict) or "error_code" not in obj:
+        return None
+    try:
+        return _error_code(obj)
+    except TapoProtocolError:
+        return None
+
+
 def _normalize_item(item: Any) -> dict:
     if not isinstance(item, dict):
         raise TapoProtocolError("multipleRequest response item is not an object")
@@ -119,6 +142,8 @@ class TapoControlClient:
         self._lock = threading.RLock()
         self._session: _Session | None = None
         self._secure = False
+        self._tpap_auth: tpap_mod.TpapAuthenticator | None = None
+        self._tpap_confirmed = False     # the camera itself demanded TPAP (-40211)
 
     def __repr__(self) -> str:
         return (f"TapoControlClient(host={self._host!r}, port={self._port}, username={self._username!r}, "
@@ -149,7 +174,14 @@ class TapoControlClient:
         return "secure" if sess.secure else "legacy"
 
     def _tpap_login(self) -> _Session:
-        raise NotImplementedError
+        """SPAKE2+ login [spec:tpap.pake_register.request]; the authenticator remembers what worked."""
+        if self._tpap_auth is None:
+            self._tpap_auth = tpap_mod.TpapAuthenticator(self._post_login, self._password, tpap=self._tpap_info)
+        tsess = self._tpap_auth.login()
+        expires_at = (time.monotonic() + tsess.expires_in
+                      if isinstance(tsess.expires_in, int) and tsess.expires_in > 0 else None)
+        log.info("logged in to %s:%s (tpap)", self._host, self._port)
+        return _Session(stok=tsess.stok, secure=True, seq=tsess.start_seq, tpap=tsess, expires_at=expires_at)
 
     @property
     def logged_in(self) -> bool:
@@ -159,15 +191,22 @@ class TapoControlClient:
     def _login_locked(self) -> None:
         self._session = None
         if self._use_tpap:
-            self._session = self._tpap_login()
-            self._secure = True
-            return
+            try:
+                self._session = self._tpap_login()
+                self._secure = True
+                return
+            except tpap_mod.TpapNotSupported:
+                if self._tpap_confirmed:
+                    raise
+                log.info("%s declined TPAP and asked for the v3 login", self._host)
+                self._use_tpap = False
         cnonce = crypto.generate_cnonce()
         resp = self._post_login({"cnonce": cnonce, "encrypt_type": "3", "username": self._username})
         code = _error_code(resp)
         self._raise_if_locked(code, resp)
         if code == _TPAP_REQUIRED:
             self._use_tpap = True
+            self._tpap_confirmed = True
             self._session = self._tpap_login()
             self._secure = True
             return
@@ -247,6 +286,10 @@ class TapoControlClient:
         """Send a batch; return raw items ``[{"method", "result", "error_code"}]``."""
         with self._lock:
             for attempt in (1, 2):
+                sess = self._session
+                if sess is not None and sess.expires_at is not None and time.monotonic() >= sess.expires_at:
+                    log.debug("TPAP session on %s:%s reached its expiry; logging in again", self._host, self._port)
+                    self._session = None
                 if self._session is None:
                     self._login_locked()
                 try:
@@ -281,6 +324,8 @@ class TapoControlClient:
         assert sess is not None
         path = f"/stok={sess.stok}/ds"
         headers = dict(self._headers)
+        if sess.tpap is not None:
+            return self._post_tpap(sess, path, inner, headers)
         if not sess.secure:
             return self._post_checked(path, crypto.dumps_compact(inner), headers)
         assert sess.cipher is not None
@@ -304,6 +349,31 @@ class TapoControlClient:
             return _parse_json(sess.cipher.decrypt(encrypted))
         except TapoProtocolError as exc:
             raise _SessionInvalid(exc) from exc
+
+    def _post_tpap(self, sess: _Session, path: str, inner: dict, headers: dict[str, str]) -> dict:
+        """One AES-128-CCM ``/ds`` exchange [spec:tpap.ds.framing]; any refusal ends the session."""
+        assert sess.tpap is not None
+        seq = sess.seq
+        sess.seq += 1  # every attempt burns a seq [spec:tpap.ds.framing]
+        body = sess.tpap.cipher.seal(crypto.dumps_compact(inner).encode("utf-8"), seq)
+        headers["Content-Type"] = "application/octet-stream"
+        headers["Accept"] = "application/octet-stream"
+        status, _hdrs, data = self._transport.post_bytes(path, body, headers)
+        if status == 401:
+            raise _SessionInvalid(TapoSessionExpired(None))
+        if status != 200:
+            raise _SessionInvalid(TapoProtocolError(f"camera answered with HTTP {status}"))
+        refusal = _tpap_refusal(data)
+        if refusal is not None:  # plaintext JSON: the camera refused the request and dropped the session
+            if refusal in _TPAP_SESSION_ERRORS:
+                raise _SessionInvalid(TapoSessionExpired("multipleRequest"))
+            self._session = None
+            raise TapoDeviceError(refusal, "multipleRequest")
+        try:
+            _seq, plain = sess.tpap.cipher.open(data)
+            return _parse_json(plain.decode("utf-8"))
+        except (TapoProtocolError, UnicodeDecodeError) as exc:
+            raise _SessionInvalid(TapoProtocolError("TPAP reply could not be decrypted")) from exc
 
     def _post_checked(self, path: str, body: str, headers: dict[str, str]) -> dict:
         status, _hdrs, text = self._transport.post(path, body, headers)
