@@ -13,6 +13,10 @@ Error behaviour (camera side):
 * undecodable securePassthrough payload / non-JSON body -> ``{"error_code": -40210}``
 * step-2 wrong digest_passwd / legacy wrong password -> ``-40401``; locked -> ``-40404``
 * legacy (non secure) camera answering a secure step 1 -> ``-40210`` (no -40413 challenge)
+
+TPAP camera (``MockTapoCamera(protocol="tpap")``): login and ``/ds`` are handled by
+:class:`tpap_server.TpapEndpoint` (SPAKE2+ login, binary AES-128-CCM ``/ds``); the v3 step 1 is
+answered with ``-40211``. Default cameras are unaffected.
 """
 from __future__ import annotations
 
@@ -39,6 +43,7 @@ from cryptography.x509.oid import NameOID
 from . import crypto
 from ._net import TrackedHTTPServer
 from .dispatcher import dispatch
+from .tpap_server import TpapEndpoint
 
 if TYPE_CHECKING:
     from .camera import MockTapoCamera
@@ -102,6 +107,8 @@ class HttpsServer:
         self.sessions: dict[str, SecureSession] = {}
         self.legacy_stoks: set[str] = set()
         self.ds_request_count = 0
+        self.tpap: TpapEndpoint | None = (TpapEndpoint(cam, self)
+                                          if getattr(cam, "protocol", None) == "tpap" else None)
 
     # -- TLS -------------------------------------------------------------------------------
     def rotate_certificate(self) -> str:
@@ -126,9 +133,13 @@ class HttpsServer:
         with self.lock:
             self.sessions.clear()
             self.legacy_stoks.clear()
+        if self.tpap is not None:
+            self.tpap.expire()
 
     # -- login -----------------------------------------------------------------------------
     def handle_login(self, params: Any) -> dict:
+        if self.tpap is not None:
+            return self.tpap.handle_login(params)
         cam = self.cam
         cam._count("login_attempts")
         if not isinstance(params, dict):
@@ -294,10 +305,10 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):  # noqa: A002
         pass
 
-    def _send(self, status: int, payload: Any) -> None:
+    def _send(self, status: int, payload: Any, content_type: str = "application/json; charset=UTF-8") -> None:
         data = (payload if isinstance(payload, bytes) else crypto.compact_json(payload).encode("utf-8"))
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=UTF-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Connection", "keep-alive")
         self.end_headers()
@@ -319,6 +330,12 @@ class _Handler(BaseHTTPRequestHandler):
         if status is not None:
             self._send(status, {"error_code": -1})
             return
+        if api.tpap is not None:
+            m = _DS_RE.match(urlsplit(self.path).path)
+            if m:  # TPAP /ds bodies are binary (uint32 seq || CCM ciphertext || tag)
+                ctype, data = api.tpap.handle_ds(m.group(1), raw)
+                self._send(200, data, ctype)
+                return
         try:
             body = raw.decode("utf-8")
         except UnicodeDecodeError:

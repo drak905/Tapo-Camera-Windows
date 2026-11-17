@@ -156,18 +156,14 @@ class HttpsTransport:
                 conn.close()
 
     def _once(self, conn: _PinnedHTTPSConnection, path: str, body: bytes,
-              headers: dict[str, str]) -> tuple[int, dict[str, str], str]:
+              headers: dict[str, str]) -> tuple[int, dict[str, str], bytes, str]:
         conn.request("POST", path, body=body, headers=headers)
         resp = conn.getresponse()
         data = resp.read()
         if resp.will_close:
             self._drop()
         charset = resp.headers.get_content_charset() or "utf-8"
-        try:
-            text = data.decode(charset, errors="replace")
-        except LookupError:
-            text = data.decode("utf-8", errors="replace")
-        return resp.status, {k: v for k, v in resp.getheaders()}, text
+        return resp.status, {k: v for k, v in resp.getheaders()}, data, charset
 
     def post(self, path: str, body: str, headers: dict[str, str]) -> tuple[int, dict[str, str], str]:
         """POST ``body`` to ``path``; return ``(status, response_headers, response_text)``.
@@ -176,8 +172,27 @@ class HttpsTransport:
         TapoConnectionError on network/TLS failure or timeout, CertificateMismatchError when the
         certificate differs from the pinned one (first contact pins automatically).
         """
-        payload = body.encode("utf-8")
         hdrs = {"Content-Type": "application/json; charset=UTF-8", "Connection": "keep-alive", **(headers or {})}
+        status, resp_headers, data, charset = self._request(path, body.encode("utf-8"), hdrs)
+        try:
+            text = data.decode(charset, errors="replace")
+        except LookupError:
+            text = data.decode("utf-8", errors="replace")
+        return status, resp_headers, text
+
+    def post_bytes(self, path: str, body: bytes, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
+        """Binary POST (TPAP ``/ds``): ``application/octet-stream`` unless ``headers`` override it.
+
+        Same connection reuse, pinning, timeout and error behaviour as :meth:`post`; returns
+        ``(status, response_headers, response_bytes)``.
+        """
+        hdrs = {"Content-Type": "application/octet-stream", "Accept": "application/octet-stream",
+                "Connection": "keep-alive", **(headers or {})}
+        status, resp_headers, data, _charset = self._request(path, bytes(body), hdrs)
+        return status, resp_headers, data
+
+    def _request(self, path: str, payload: bytes,
+                 hdrs: dict[str, str]) -> tuple[int, dict[str, str], bytes, str]:
         with self._lock:
             for attempt in (1, 2):
                 conn, reused = self._connection()
@@ -197,6 +212,7 @@ class HttpsTransport:
                     self._drop()
                     raise TapoConnectionError(self._describe(exc)) from exc
         raise AssertionError("unreachable")  # pragma: no cover
+
 
     def _describe(self, exc: BaseException) -> str:
         kind = "timed out" if isinstance(exc, TimeoutError) else f"failed ({type(exc).__name__})"

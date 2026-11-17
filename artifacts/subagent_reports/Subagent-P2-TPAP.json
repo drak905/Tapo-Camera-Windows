@@ -1,0 +1,43 @@
+{
+  "agent_id": "Subagent-P2-TPAP",
+  "lane": "tpap",
+  "branch": "phase2/tpap",
+  "status": "done",
+  "commits": ["b010b44 red tests", "e858239 green", "c701d56 spec + Gate 1", "fe3b07f TDP hint plumbing", "d31727e refactor"],
+  "tests_added": {
+    "tests/phase2/test_tpap_crypto.py": "RFC 9383 vector, point validation, PBKDF2/context/HKDF, CCM golden vector + framing, md5/sha256/sha1/authkey/sha-with-salt passcode shaping",
+    "tests/phase2/test_tpap_login.py": "end-to-end over HTTPS against the TPAP mock: -40211 switch, hint skips the v3 probe, sha256+extra_crypt in 1 attempt, literal-admin fallback, max 2 password attempts, lockout stops, dev_confirm mismatch, seq = start_seq.., expiry relogin with the known-good variant, C200 refused-share retry, full control API, no secrets in logs/repr",
+    "tests/phase2/test_tpap_fixture.py": "self-check of the mock with raw HTTPS",
+    "tests/phase2/test_tpap_hints.py": "TDP encrypt_type/tpap -> CameraConfig.control_protocol -> TapoControlClient(encrypt_type=['4']); written after the code (optional item)"
+  },
+  "results": {"lane_tests": "60 passed", "full_regression": "1006 passed, 8 deselected (-m 'not soak and not hardware', 324 s)", "gate1": "PASS (206 items)"},
+  "files": [
+    "src/tapo_desktop/core/control_client/tpap.py",
+    "src/tapo_desktop/core/control_client/client.py",
+    "src/tapo_desktop/core/control_client/transport.py",
+    "src/tapo_desktop/models.py (additive CameraConfig.control_protocol)",
+    "src/tapo_desktop/services/account.py",
+    "src/tapo_desktop/services/camera_service.py",
+    "src/tapo_desktop/services/controller.py",
+    "tests/fixtures/mock_tapo_server/tpap_server.py (new), camera.py, https_server.py (additive)",
+    "specs/tpap_spec.json (14 items), specs/tapo_protocol_spec.json (merged), tools/specs_tool.py (LANES += tpap)"
+  ],
+  "decisions": [
+    "Password attempts are capped at 2 per login: md5_hex first, but sha256_hex_upper first when the register reply carries extra_crypt (C200 hw 5.0). After a success only the variant that worked is used. If that variant is refused it is repeated once after 2 s (the C200 refuses the first share after a session ends). Lockout codes -40404/-40408 stop at once.",
+    "A dev_confirm mismatch is a TapoAuthError and is not retried. The app would move on to its next passcode candidate here. We stop because the camera has already accepted our confirm, so trying another password variant would not help.",
+    "If the register reply returns -40209 for md5_hex('admin'), the client retries the register with the literal 'admin'. This uses no password attempt and is remembered for later logins.",
+    "On a hinted login, a register reply of -40413 makes the client fall back to the v3 login. This fallback is disabled once the camera itself has answered -40211.",
+    "On /ds the whole body is tried as JSON first, as the app does. -40401/-40418/-40420/-40421/-2402 lead to one re-login and one retry. Any other refusal (for example -40209) drops the session and raises TapoDeviceError.",
+    "The session is kept until 'expired' seconds have passed. There is no early re-login, because the C200 refuses a share while the old session is still alive.",
+    "Only aes_128_ccm is offered and accepted. NOC/DAC and setupcode/default_userpw passcodes are not implemented.",
+    "P-256 is plain-Python affine arithmetic (not constant time). It is used only for the ephemeral client scalar. The code is our own, written from the APK classes, freeKC/tapo-v4-protocol (MIT) and RFC 9383, which are credited in the module docstring.",
+    "No red test contradicted the APK or the reference, so no test was changed. The md5-crypt, sha256-crypt, authkey and sha-with-salt shaping was checked line by line against Spake2pExtraCryptBean.java."
+  ],
+  "steering": "'Work like the mobile version': the login follows the app's flow. It sends the same register and share fields and the md5('admin') user name, uses the app's passcode candidates and extra_crypt shaping, and the same /ds headers and seq rules. TDP hints are used the way the app's j2.java uses them.",
+  "open_issues": [
+    "Not tested on the real C200 cameras: no password was sent to them, as instructed. The first real login should be watched: the expected path is register -> extra_crypt id 5 -> sha256 passcode, with 1 password attempt.",
+    "The live view over :8800 (LocalStreamSupervisor / MediaSession) on TPAP firmware has not been checked. The media port may also need TPAP-era auth. This belongs to the P2-live lane.",
+    "TDP user_hash_type is not kept in CameraConfig. Only control_protocol='tpap' is stored, so a camera with user_hash_type 1 relies on the literal-admin fallback.",
+    "A wrong password still costs 2 attempts on every later request, because there is no cool-down between logins at the service layer."
+  ]
+}
