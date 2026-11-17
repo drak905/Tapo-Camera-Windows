@@ -1,11 +1,32 @@
 {
   "checkpoints": [
-    {"barrier": 1, "status": "passed", "detail": "4 Wave 1 specs merged into specs/tapo_protocol_spec.json (169 items: 146 verified, 12 inferred, 11 external); Gate 1 PASS (tools/specs_tool.py verify)."},
-    {"barrier": 2, "status": "passed", "commit": "15958a4", "detail": "Wave 2 merged. Fixture self-check 39 passed / 6 skipped (AdGuard intercepts loopback HTTP :8800 over TCP). Red suite: 695 failed + 21 setup errors (NotImplementedError), 0 unexpected passes. Soak test collected (deselected)."}
+    {
+      "barrier": 1,
+      "status": "passed",
+      "detail": "4 Wave 1 specs merged into specs/tapo_protocol_spec.json (169 items: 146 verified, 12 inferred, 11 external); Gate 1 PASS (tools/specs_tool.py verify)."
+    },
+    {
+      "barrier": 2,
+      "status": "passed",
+      "commit": "15958a4",
+      "detail": "Wave 2 merged. Fixture self-check 39 passed / 6 skipped (AdGuard intercepts loopback HTTP :8800 over TCP). Red suite: 695 failed + 21 setup errors (NotImplementedError), 0 unexpected passes. Soak test collected (deselected)."
+    },
+    {
+      "barrier": 3,
+      "status": "passed_with_env_exceptions",
+      "detail": "Wave 3 merged; no Wave 3 lane modified tests. Orchestrator repairs: e2e waitUntil bool() wrap (pytest-qt rejects list returns), soak PTZ direction alternation bug."
+    }
   ],
   "environment_notes": [
     "AdGuard (Adguard.exe, AdguardSvc) filters plain HTTP on loopback for python.exe; breaks :8800 media protocol over real TCP after the 200 response.",
     "REA 6.3.0: Ghidra backend healthy; Android class/method commands unavailable (REA_JADX_MCP_JAR unset); evidence relies on JADX 1.5.6 sources + rea inspect-artifact.",
     "Rust toolchain absent -> plan's sanctioned alternative stack Python 3.14 + PyQt6 chosen."
-  ]
+  ],
+  "gates": {
+    "gate1_specs": "PASS (169 items, all JADX citations re-validated)",
+    "gate2_tdd": "751 passed, 4 failed (env: AdGuard blocks :8800 loopback TCP; same 4 pass over in-memory socketpair), 13 skipped (6 AdGuard-detect, 7 hardware)",
+    "gate3_soak": "PASS 1800 s, 4x stream2 + 500 control cmds: python private 48.2 MB peak, growth -0.08%, 0 reconnects, 15 fps d3d11va, 0 ffmpeg left, handles stable",
+    "gate3_hardware": "NOT RUN - no camera IP/credentials provided",
+    "gate4_package": "PASS: dist/TapoDesktop (PyInstaller+ffmpeg), setup.exe (Inno Setup) + zip; audit PASS; packaged --selftest PASS; hard kill -> ffmpeg gone in 60 ms"
+  }
 }
