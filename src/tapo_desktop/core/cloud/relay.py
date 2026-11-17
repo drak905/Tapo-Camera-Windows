@@ -390,7 +390,7 @@ class RelayClient:
                 raise TapoConnectionError(f"Relay connection lost ({type(exc).__name__}: {exc})") from None
             if status == 200:
                 log.info("relay tunnel open for %s via %s", slot.device_id, current.relay_host)
-                return sock
+                return SerializedTLSSocket(sock)  # pump reads while the heartbeat thread writes
             sock.close()
             try:
                 reply = json.loads(body.decode("utf-8")) if body else {}
@@ -408,6 +408,52 @@ class RelayClient:
             log.info("relay tunnel for %s refused: HTTP %s, errorCode %s (%s)", slot.device_id, status, code, reason)
             raise _error(code if code is not None else status, reason, "relay")
         raise RelayError(f"The TP-Link relay redirected more than {MAX_REDIRECTS} times.", "too_many_redirects")
+
+
+class SerializedTLSSocket:
+    """Wraps the relay TLS socket so ``recv`` and ``sendall`` never run at the same time.
+
+    The stream pump reads the tunnel while the heartbeat thread writes to it. OpenSSL does not allow
+    one SSL object to be used from two threads at once, and CPython's ``ssl`` module adds no lock, so
+    every call takes one lock. ``recv`` waits in short slices (:attr:`SLICE_S`) and releases the lock
+    between them, so a writer gets in within one slice while the overall ``settimeout`` value is
+    still honoured. Other attributes pass through to the wrapped socket.
+    """
+
+    SLICE_S = 0.05
+
+    def __init__(self, sock: Any):
+        self._sock = sock
+        self._io = threading.Lock()
+        self._timeout: float | None = sock.gettimeout()
+
+    def settimeout(self, value: float | None) -> None:
+        self._timeout = value
+
+    def gettimeout(self) -> float | None:
+        return self._timeout
+
+    def recv(self, bufsize: int) -> bytes:
+        deadline = None if self._timeout is None else time.monotonic() + self._timeout
+        while True:
+            with self._io:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise socket.timeout("timed out")
+                self._sock.settimeout(self.SLICE_S if remaining is None else min(self.SLICE_S, remaining))
+                try:
+                    return self._sock.recv(bufsize)
+                except socket.timeout:
+                    pass
+            time.sleep(0)  # let a waiting writer take the lock
+
+    def sendall(self, data: bytes) -> None:
+        with self._io:
+            self._sock.settimeout(self._timeout)
+            self._sock.sendall(data)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sock, name)
 
 
 class RelayMediaSession(MediaSession):

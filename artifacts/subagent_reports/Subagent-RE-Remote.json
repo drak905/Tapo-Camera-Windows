@@ -1,0 +1,26 @@
+{
+  "agent_id": "Subagent-RE-Remote",
+  "status": "ok",
+  "spec_file": "specs/remote_spec.json",
+  "items_total": 18,
+  "items_verified": 14,
+  "rea_commands_run": [],
+  "rea_note": "REA android commands were reported broken for this task, so all evidence is JADX source read with ripgrep and line-checked by script.",
+  "key_findings": [
+    "Remote live view for Tapo cameras = cloud relay (connection type 0). The app sends nothing to the camera itself; the cloud signals the camera (inferred).",
+    "CIPC host: signed POST {appServerUrl}/api/v2/common/getAppServiceUrl body {serviceIds:['cipc.api.cloud']} -> result.serviceUrls['cipc.api.cloud']; fallback aps1-cipc-api.i.tplinkcloud.com.",
+    "Relay slot: POST https://<cipcHost>/v2/relay/request with 'Authorization: <raw account token>' (no ut|, no HMAC), X-Request-Signature = 10 random alnum chars (correlation id only), X-Client-Id/X-Source tapo-app/X-Brand TPLINK/X-Ca-Type cloud-self; body RequestUrlParam {deviceId, cloudType, deviceType, playerId, rootCaVer '1', preConnection 0, resolution HD|VGA, streamType 0, customParams, trackId}.",
+    "Response {errorCode,msg,result:{relayUrl(host+/relayservice?deviceid=..&type=video&resolution=..), relayIp, relayToken, elbCookie, cdnUrl, activeCert, quicEnable, concurrentType, preConnIdleTime}}; -1102 => re-login and retry.",
+    "Tunnel: TLS to relayIp:443 with SNI/hostname = relayHost; chain must verify against TP-Link private roots in e41/b.java lines 199-203; send 'POST <relayPath>&retryTime=0 HTTP/1.1' with X-token: relayToken, Keep-Relay: 3600, X-Pull-Mode: 2, X-Version: 2.0, Content-Type multipart boundary --client-stream-boundary--, Content-Length 9223372036854775807.",
+    "200 => raw tunnel; 304 => redirect (body RequestUrlResult). For type 0 the app skips the inner POST /stream and Digest, no Key-Exchange, so no AES key: it writes the LAN-style preview JSON part directly and parses the device multipart MPEG-TS parts.",
+    "Heartbeat part {\"type\": \"notification\", \"params\": {\"event_type\": \"heartbeat\"}} every 15 s.",
+    "MQTT alternative tried first for IoT-cloud cameras: publish $tpiot/things/<thingName>/relay/request/get with {userToken:'ut|token', requestRelayParams:{relayParamsJson:RequestUrlParam}, clientToken, caType cloud-self, protocolVersion 2}; reply on .../reply. Falls back to CIPC.",
+    "Correction: ports 17443/18443/19443 are the legacy Kasa-camera relay path only (ub1/d.java t()); Tapo relay uses 443."
+  ],
+  "unresolved": [
+    "Whether relay media parts are ever encrypted (X-If-Encrypt) needs a live capture; the code path derives no key for type 0.",
+    "relayToken lifetime and server-side quotas (TAPO_RELAY_LIMIT, -100001) are not visible in the APK.",
+    "MQTT broker login for the MQTT variant was not analysed (not needed for the CIPC path).",
+    "P2P (STUN/UDT) is recorded at summary depth only."
+  ]
+}
