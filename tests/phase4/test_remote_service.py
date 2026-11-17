@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import re
 import time
 
 import pytest
@@ -139,9 +140,9 @@ def test_shared_camera_without_cloud_does_nothing_locally(remote_camera):
     svc = _service(None, role=1, lan_found=True, host=remote_camera.host, https_port=remote_camera.https_port)
     states = []
     try:
-        with pytest.raises(TapoConnectionError, match=SHARED_CLOUD_ONLY):
+        with pytest.raises(TapoConnectionError, match=re.escape(SHARED_CLOUD_ONLY)):
             svc.get_status()
-        with pytest.raises(TapoConnectionError, match=SHARED_CLOUD_ONLY):
+        with pytest.raises(TapoConnectionError, match=re.escape(SHARED_CLOUD_ONLY)):
             svc.connect()
         svc.start_stream(__import__("tapo_desktop.models", fromlist=["StreamQuality"]).StreamQuality.SD, 640, 360,
                          lambda f: None, lambda s, r: states.append((s, r)))

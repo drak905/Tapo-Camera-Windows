@@ -324,10 +324,16 @@ def parse_days(result: dict) -> list[datetime.date]:
     return sorted(days)
 
 
-def search_day_clips_req(day_start_utc: int, day_end_utc: int, start_index: int = 0, end_index: int = 99) -> dict:
-    """searchVideoWithUTC (legacy-UTC shape with id 1, channel 0) [spec:vod.search.day_clips_utc]."""
+def search_day_clips_req(day_start_utc: int, day_end_utc: int, start_index: int = 0, end_index: int = 99, *,
+                         player_id: str | None = None) -> dict:
+    """searchVideoWithUTC, channel 0 [spec:vod.search.day_clips_utc].
+
+    Default: the legacy-UTC shape with ``"id": 1``. With ``player_id`` (32 hex chars) the ``id`` key is
+    replaced by ``"player_id": <player_id>``: some firmware (real C510W) answers the ``id`` form with
+    -71103 and accepts only this one."""
+    key: dict[str, Any] = {"player_id": str(player_id)} if player_id else {"id": 1}
     return _req("searchVideoWithUTC", {"playback": {"search_video_with_utc": {
-        "id": 1, "channel": 0, "start_time": int(day_start_utc), "end_time": int(day_end_utc),
+        **key, "channel": 0, "start_time": int(day_start_utc), "end_time": int(day_end_utc),
         "start_index": int(start_index), "end_index": int(end_index)}}})
 
 

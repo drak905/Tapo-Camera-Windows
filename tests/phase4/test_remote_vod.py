@@ -47,6 +47,20 @@ def _assert_h264_mp4(ffprobe_path, path):
     assert path.read_bytes()[4:8] == b"ftyp"
 
 
+def _spy_sessions(relay_client):
+    """(sent JSON messages, session_factory) recording what the downloader sends into the tunnel."""
+    from tapo_desktop.core.cloud.relay_vod import RelayPlaybackSession
+
+    sent: list[dict] = []
+
+    class Spy(RelayPlaybackSession):
+        def send_json(self, message, **kw):
+            sent.append(message)
+            return super().send_json(message, **kw)
+
+    return sent, (lambda download: Spy(relay_client, DEVICE_ID, download=download, model="C210", timeout=10))
+
+
 def _no_temp_files(folder):
     return [p.name for p in folder.iterdir() if p.name.startswith(".")] == []
 
@@ -106,10 +120,11 @@ def test_playback_without_finished_stops_at_clip_end(relay_client, relay_cloud, 
     relay_cloud.relay_refuse_stream_types = {3}
     mock_relay.playback_finishes = False
     clip = _clip(4)
-    out = _downloader(relay_client, ffmpeg_path).download(clip, tmp_path / "clip.mp4")
+    sent, factory = _spy_sessions(relay_client)
+    out = _downloader(relay_client, ffmpeg_path, session_factory=factory).download(clip, tmp_path / "clip.mp4")
     duration = float(_probe(ffprobe_path, out)["format"]["duration"])
     assert 3.0 <= duration <= 6.5
-    assert mock_relay.stops >= 1  # told the camera to stop
+    assert sent[-1] == {"type": "request", "params": {"method": "do", "stop": "null"}}  # told the camera to stop
 
 
 def test_both_paths_fail(relay_client, relay_cloud, ffmpeg_path, tmp_path):
@@ -147,11 +162,12 @@ def test_cancel_during_transfer(relay_client, relay_cloud, mock_relay, ffmpeg_pa
         if value > 0:
             cancel.set()
 
+    sent, factory = _spy_sessions(relay_client)
     with pytest.raises(DownloadCancelled):
-        _downloader(relay_client, ffmpeg_path).download(_clip(60), tmp_path / "clip.mp4", progress=progress,
-                                                        cancel=cancel)
+        _downloader(relay_client, ffmpeg_path, session_factory=factory).download(
+            _clip(60), tmp_path / "clip.mp4", progress=progress, cancel=cancel)
     assert list(tmp_path.iterdir()) == []
-    assert mock_relay.stops >= 1
+    assert sent[-1]["params"].get("stop") == "null"
 
 
 def test_playback_request_builder():

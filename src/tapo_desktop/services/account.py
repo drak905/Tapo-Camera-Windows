@@ -322,6 +322,7 @@ class AccountManager(QObject):
             devices = None
             tokens = None
             online_states: dict[str, bool] = {}
+            things: dict[str, Any] = {}
             try:
                 if client is not None:
                     if getattr(client, "token", None) is None:  # started offline: log in now
@@ -329,10 +330,11 @@ class AccountManager(QObject):
                     devices = list(client.list_cameras())
                     tokens = self._fetch_local_tokens(client)
                     online_states = self._online_states(client)
+                    things = self._thing_records(client)
             except Exception as exc:
                 log.warning("cloud camera list unavailable, keeping the cached list: %s", exc)
             lan = self._run_discover()
-            self._post(lambda: self._set_online(online_states) or
+            self._post(lambda: self._set_online(online_states, things) or
                        self._apply_cameras(gen, devices, lan, password, tokens=tokens))
 
         self._submit(job)
@@ -341,6 +343,7 @@ class AccountManager(QObject):
         """Forget the account secret and the cloud cameras (their streams stop); manual cameras stay."""
         self._gen += 1
         self._client = self._account = self._email = self._password = self._pending = None
+        self.__dict__.pop("_thing_info", None)  # roles / thing URLs belong to the signed-out account
         self._drop_cloud_cameras()
         self._detach_relay()
         self._vault.delete(ACCOUNT_VAULT_ID)
@@ -385,6 +388,7 @@ class AccountManager(QObject):
         devices = None
         tokens = None
         online_states: dict[str, bool] = {}
+        things: dict[str, Any] = {}
         try:
             devices = list(client.list_cameras())
         except Exception as exc:
@@ -392,8 +396,9 @@ class AccountManager(QObject):
         else:
             tokens = self._fetch_local_tokens(client)
             online_states = self._online_states(client)
+            things = self._thing_records(client)
         lan = self._run_discover()
-        self._post(lambda: self._set_online(online_states) or
+        self._post(lambda: self._set_online(online_states, things) or
                    self._apply_signed_in(gen, client, account, email, password, remember, devices, lan, tokens))
 
     @staticmethod
@@ -413,9 +418,17 @@ class AccountManager(QObject):
             return None
         return {str(k): v for k, v in tokens.items() if isinstance(v, str) and v}
 
-    def _set_online(self, states: dict[str, bool]) -> None:
+    def _set_online(self, states: dict[str, bool], things: dict[str, Any] | None = None) -> None:
         if states:
             self._thing_online = states
+        if things:
+            self._thing_info = things
+
+    @staticmethod
+    def _thing_records(client: Any) -> dict[str, Any]:
+        """deviceId -> ThingInfo (role, share type, thing URL) from the client's last IoT thing list."""
+        things = getattr(client, "things", None)
+        return dict(things) if isinstance(things, dict) else {}
 
     @staticmethod
     def _online_states(client: Any) -> dict[str, bool]:
@@ -503,17 +516,19 @@ class AccountManager(QObject):
             provider.update_devices(devices)  # device type / IoT-cloud flag for relay slots
         if devices is None:
             devices = [CloudDevice(device_id=c.device_id or c.id, mac=c.mac, model=c.model, alias=c.name,
-                                   online=c.online) for c in cached]
+                                   online=c.online, role=c.role) for c in cached]
         online = self._thing_online if isinstance(getattr(self, "_thing_online", None), dict) else {}
         if online:
             devices = [dataclasses.replace(d, online=online.get(d.device_id, d.online)) for d in devices]
+        things = self.__dict__.get("_thing_info")
+        things = things if isinstance(things, dict) else {}
         matches = _match(devices, lan)
         configs: list[CameraConfig] = []
         for dev in devices:
             old = self._ctrl.camera(dev.device_id)
             if old is not None and old.source != "cloud":
                 continue  # an unrelated manual camera owns this id
-            configs.append(self._cloud_config(old, dev, matches.get(dev.device_id)))
+            configs.append(self._cloud_config(old, dev, matches.get(dev.device_id), things.get(dev.device_id)))
         if prune:
             keep = {c.id for c in configs}
             self._ctrl.remove_cameras([c.id for c in cached if c.id not in keep])
@@ -527,16 +542,24 @@ class AccountManager(QObject):
             self._emit_counts()
 
     @staticmethod
-    def _cloud_config(old: CameraConfig | None, dev: CloudDevice, hit: LanDevice | None) -> CameraConfig:
+    def _cloud_config(old: CameraConfig | None, dev: CloudDevice, hit: LanDevice | None,
+                      thing: Any = None) -> CameraConfig:
+        """``thing`` (a :class:`~tapo_desktop.models.ThingInfo` or None) gives ``role`` / ``share_type``;
+        without one the device list's ``role`` is used."""
         base = old or CameraConfig(name=dev.alias or dev.model or dev.device_id, host="", id=dev.device_id,
                                    source="cloud")
+        role = getattr(thing, "role", None)
+        role = role if isinstance(role, int) and not isinstance(role, bool) else int(dev.role or 0)
+        share = getattr(thing, "share_type", None)
+        share = share if isinstance(share, str) else ("" if role == 0 else base.share_type)
         return dataclasses.replace(
             base, name=dev.alias or base.name, source="cloud", device_id=dev.device_id,
             mac=_normalise_mac(dev.mac) if dev.mac else base.mac, model=dev.model or base.model,
             online=bool(dev.online) or hit is not None,  # answering on the LAN means online
             host=hit.ip if hit is not None else "", lan_found=hit is not None,
             https_port=(hit.http_port or 443) if hit is not None else base.https_port,
-            control_protocol=_control_protocol(hit) if hit is not None else base.control_protocol)
+            control_protocol=_control_protocol(hit) if hit is not None else base.control_protocol,
+            role=role, share_type=share)
 
     def _emit_counts(self) -> None:
         cams = [c for c in self._ctrl.cameras() if c.source == "cloud"]

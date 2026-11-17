@@ -95,6 +95,7 @@ from tapo_desktop.models import (
 from tapo_desktop.services._workers import Strand, WorkerPool
 from tapo_desktop.services.camera_service import CameraService
 from tapo_desktop.services.config_store import ConfigStore
+from tapo_desktop.services.remote import cloud_routed
 
 if TYPE_CHECKING:  # pragma: no cover
     from tapo_desktop.core.auth.vault import CredentialVault
@@ -103,7 +104,7 @@ log = logging.getLogger(__name__)
 
 #: Fields whose change makes the existing service (sessions, sockets, URLs) obsolete.
 _CONNECTION_FIELDS = ("host", "https_port", "rtsp_port", "onvif_port", "media_port", "enable_onvif_events",
-                      "lan_found", "live_transport", "control_protocol")
+                      "lan_found", "live_transport", "control_protocol", "role")
 #: Upper bound for the synchronous :meth:`AppController.stop_all`.
 STOP_ALL_TIMEOUT_S = 10.0
 #: Username stored with a camera's local access token (vault ``CredentialKind.LOCAL_TOKEN``).
@@ -336,7 +337,7 @@ class AppController(QObject):
         if not changed or provider is None:
             return
         for cam in list(self._cams.values()):
-            if cam.view is not None and not (cam.config.lan_found and cam.config.host.strip()):
+            if cam.view is not None and cloud_routed(cam.config):
                 self._submit_start(cam, *cam.view)
 
     def remote_provider(self) -> Any:
@@ -344,14 +345,15 @@ class AppController(QObject):
         return self._remote
 
     def remote_available(self, camera_id: str) -> bool:
-        """True if ``camera_id`` is a cloud camera that is online but not on this LAN and the signed-in
-        account can view it through the cloud relay (the UI then says "Remote")."""
+        """True if ``camera_id`` is a cloud camera that is online and reached through the TP-Link cloud
+        (not on this LAN, or shared to the account) while the signed-in account can view it through the
+        cloud relay (the UI then says "Remote" for cameras not on this LAN)."""
         cam = self._cams.get(camera_id)
         provider = self._remote
         if cam is None or provider is None or not getattr(provider, "available", False):
             return False
         cfg = cam.config
-        return cfg.source == "cloud" and cfg.online and not (cfg.lan_found and cfg.host.strip())
+        return cfg.online and cloud_routed(cfg)
 
     def view_remote_now(self, camera_id: str) -> None:
         """The user clicked a remote tile waiting for a relay slot ("Remote - click to view"): start it

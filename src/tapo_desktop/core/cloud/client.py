@@ -14,7 +14,9 @@ Flow (same as the Tapo Android app 3.22.806, ``TCAccountRepository`` / ``TCDevic
 4. Local access tokens [spec:lat.*]: ``POST {regional}/api/v2/common/getAppServiceUrl`` (signed)
    resolves the IoT app server (``nbu.iot-app-server.app-v2``); ``GET {iot}/v2/things`` (NOT signed,
    ``Authorization: ut|<token>`` + app headers) pages the thing list, whose ``localAccessToken`` is the
-   per-camera secret of cameras in LAT mode (:meth:`TapoCloudClient.local_access_tokens`).
+   per-camera secret of cameras in LAT mode (:meth:`TapoCloudClient.local_access_tokens`). The parsed
+   thing records (thing URL, role, share type) are kept in :attr:`TapoCloudClient.things` for remote
+   control through ``services-sync`` (:meth:`TapoCloudClient.iot_request`, :mod:`.passthrough`).
 
 Every request is signed (:mod:`.signing`) and carries the app's common query parameters
 [spec:cloud.common_query_params]. TLS is verified against the system store plus TP-Link's private
@@ -45,7 +47,7 @@ from tapo_desktop.core.cloud._trust import TPLINK_CLOUD_CA_PEMS
 from tapo_desktop.core.cloud.signing import sign_headers
 from tapo_desktop.core.discovery.matcher import normalise_mac
 from tapo_desktop.core.errors import TapoConnectionError, TapoError
-from tapo_desktop.models import AccountInfo, CloudDevice
+from tapo_desktop.models import AccountInfo, CloudDevice, ThingInfo
 
 log = logging.getLogger(__name__)
 
@@ -200,6 +202,7 @@ class TapoCloudClient:
         self.__mfa: _PendingMfa | None = None
         self._iot_url: str | None = None
         self._thing_online: dict[str, bool] = {}
+        self._things: dict[str, ThingInfo] = {}
 
     def __repr__(self) -> str:
         return (f"TapoCloudClient(base_url={self.base_url!r}, signed_in={self.__token is not None}, "
@@ -385,8 +388,55 @@ class TapoCloudClient:
         ``status`` is not a reliable online flag (it reads 0 for cameras that are streaming)."""
         return dict(self._thing_online)
 
+    @property
+    def things(self) -> dict[str, ThingInfo]:
+        """thingName (= deviceId) -> :class:`ThingInfo` (thing URL, role, share type ...) from the last
+        IoT thing list fetch (:meth:`local_access_tokens`); empty before the first fetch."""
+        return dict(getattr(self, "_things", {}))
+
+    def iot_request(self, method: str, url: str, body: dict | None = None, *,
+                    timeout: float | None = None) -> tuple[int, bytes]:
+        """One IoT-cloud HTTP call with the IoT headers [spec:lat.cloud.headers] (``Authorization:
+        ut|<token>``, not HMAC-signed) and, with ``body``, ``Content-Type: application/json;charset=UTF-8``.
+
+        Returns ``(HTTP status, raw body)``; the caller interprets it (token errors -> :meth:`refresh_session`).
+        The cloud lock is NOT held during the request, so calls for several cameras run in parallel.
+        ``url`` must be http(s); an http URL is refused while the account API is https. Raises CloudError
+        (not signed in / bad URL) or TapoConnectionError (network)."""
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            raise CloudError("invalid TP-Link IoT cloud URL", "bad_url")
+        if urlsplit(self.base_url).scheme == "https" and parts.scheme != "https":
+            raise CloudError("The TP-Link cloud returned an insecure IoT server address.", "bad_url")
+        with self._lock:
+            self._require_signed_in()
+            headers = self._iot_headers()
+        data = None
+        if body is not None:
+            data = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json;charset=UTF-8"
+        target = parts.path or "/"
+        if parts.query:
+            target = f"{target}?{parts.query}"
+        label = parts.path.rsplit("/", 1)[-1] or "/"
+        return self._http_request(method, parts.scheme, parts.hostname, parts.port, target, data, headers,
+                                  f"/{label}", timeout=timeout)
+
+    @staticmethod
+    def _parse_thing(item: dict, name: str) -> ThingInfo:
+        url = item.get("appServerUrlV2") or item.get("appServerUrl") or ""
+        role = item.get("role")
+        status = item.get("status")
+        share = item.get("shareType")
+        return ThingInfo(thing_name=name, app_server_url=str(url).rstrip("/") if isinstance(url, str) else "",
+                         role=role if isinstance(role, int) and not isinstance(role, bool) else 0,
+                         share_type=share if isinstance(share, str) else "",
+                         device_type=str(item.get("deviceType") or ""), model=str(item.get("model") or ""),
+                         online=(status == 1) if isinstance(status, int) and not isinstance(status, bool) else None)
+
     def _fetch_local_tokens(self) -> dict[str, str]:
         self._thing_online = {}
+        things: dict[str, ThingInfo] = {}
         base = self._iot_server()
         parts = urlsplit(base)
         tokens: dict[str, str] = {}
@@ -409,6 +459,12 @@ class TapoCloudClient:
                 name0 = item.get("thingName") or item.get("deviceId")
                 if isinstance(name0, str) and name0 and isinstance(status, int) and not isinstance(status, bool):
                     self._thing_online[name0] = status == 1
+                if isinstance(name0, str) and name0:
+                    thing = self._parse_thing(item, name0)
+                    things[name0] = thing
+                    dev_id = item.get("deviceId")
+                    if isinstance(dev_id, str) and dev_id and dev_id != name0:
+                        things[dev_id] = thing
                 lat = item.get("localAccessToken")
                 if not isinstance(lat, str) or not lat:
                     continue
@@ -426,6 +482,7 @@ class TapoCloudClient:
             elif len(items) < THINGS_PAGE_SIZE:
                 break
         log.info("IoT thing list: local access tokens for %d device(s)", len(tokens))
+        self._things = things
         return tokens
 
     @staticmethod
@@ -554,14 +611,16 @@ class TapoCloudClient:
         return self._http_request("POST", scheme, host, port, target, data, headers, label)
 
     def _http_request(self, method: str, scheme: str, host: str, port: int | None, target: str,
-                      data: bytes | None, headers: dict[str, str], label: str) -> tuple[int, bytes]:
+                      data: bytes | None, headers: dict[str, str], label: str,
+                      timeout: float | None = None) -> tuple[int, bytes]:
         conn: http.client.HTTPConnection
+        limit = self.timeout if timeout is None else float(timeout)
         if scheme == "https":
             if self._ssl is None:
                 self._ssl = make_ssl_context(self.verify_tls)
-            conn = http.client.HTTPSConnection(host, port, timeout=self.timeout, context=self._ssl)
+            conn = http.client.HTTPSConnection(host, port, timeout=limit, context=self._ssl)
         else:
-            conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
+            conn = http.client.HTTPConnection(host, port, timeout=limit)
         try:
             conn.request(method, target, body=data, headers=headers)
             resp = conn.getresponse()

@@ -11,18 +11,26 @@
   :data:`REMOTE_CLICK_TO_VIEW`; clicking one takes the slot of the remote stream that has been running
   longest.
 
-Only live view goes through the relay; controls, playback and events stay LAN-only
-(:data:`NETWORK_ONLY`).
+Only live view goes through the relay in Phase 3. Phase 4 adds remote control, recordings and shared
+cameras: :meth:`RelayProvider.control_client` gives a
+:class:`~tapo_desktop.core.cloud.passthrough.RemoteControlClient` (IoT ``services-sync`` passthrough,
+thing URL from the account's IoT thing list) and :meth:`RelayProvider.recording_downloader` a
+:class:`~tapo_desktop.core.cloud.relay_vod.RemoteRecordingDownloader`. :func:`cloud_routed` says which
+cameras use the cloud path: cloud cameras not on this LAN, and shared cameras (``role != 0``) everywhere,
+because the app only goes local for the owner and a local login with the user's own password would
+only burn the camera's lockout attempts [spec:remote.control.transport_selection, remote.shared.behaviour].
+:data:`NETWORK_ONLY` remains for providers whose cloud client has no passthrough API.
 """
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from tapo_desktop.models import CameraConfig, CloudDevice
+from tapo_desktop.models import CameraConfig, CloudDevice, ThingInfo
 
 log = logging.getLogger(__name__)
 
@@ -34,9 +42,21 @@ REMOTE_CLICK_TO_VIEW = "Remote - click to view"
 NETWORK_ONLY = "Available on the camera's network only"
 #: Stream failure reason for cloud cameras the cloud reports offline.
 CAMERA_OFFLINE = "Camera is offline"
+#: Error / stream reason for a shared camera while no signed-in cloud path is available.
+SHARED_CLOUD_ONLY = "Shared camera: available through the TP-Link cloud only (sign in)"
 SETTING_MAX_REMOTE_STREAMS = "max_remote_streams"
 DEFAULT_MAX_REMOTE_STREAMS = 4
 MAX_REMOTE_STREAMS_LIMIT = 16
+#: Minimum seconds between two thing-list refreshes triggered by an unknown camera.
+_THING_REFRESH_S = 60.0
+
+
+def cloud_routed(config: CameraConfig) -> bool:
+    """True if ``config`` must be reached through the TP-Link cloud: a cloud camera that is not on this
+    LAN, or a camera shared to the account (``role != 0``) wherever it is."""
+    if config.source != "cloud":
+        return False
+    return config.role != 0 or not (config.lan_found and config.host.strip())
 
 
 def max_remote_streams(value: Any) -> int:
@@ -120,6 +140,12 @@ def _default_supervisor_factory(*args: Any, **kwargs: Any) -> Any:
     return RelayStreamSupervisor(*args, **kwargs)
 
 
+def _default_downloader_factory(*args: Any, **kwargs: Any) -> Any:
+    from tapo_desktop.core.cloud.relay_vod import RemoteRecordingDownloader
+
+    return RemoteRecordingDownloader(*args, **kwargs)
+
+
 class RelayProvider:
     """Remote live view for the cameras of one signed-in TP-Link ID (thread-safe).
 
@@ -129,13 +155,18 @@ class RelayProvider:
 
     def __init__(self, cloud_client: Any = None, *, terminal_uuid: str | None = None,
                  max_streams: int = DEFAULT_MAX_REMOTE_STREAMS, relay_factory: Callable[[Any], Any] | None = None,
-                 supervisor_factory: Callable[..., Any] | None = None):
+                 supervisor_factory: Callable[..., Any] | None = None,
+                 downloader_factory: Callable[..., Any] | None = None):
         self._lock = threading.Lock()
         self._cloud = cloud_client
         self._terminal_uuid = terminal_uuid
         self._relay_factory = relay_factory or _default_relay_factory
         self._supervisor_factory = supervisor_factory or _default_supervisor_factory
+        self._downloader_factory = downloader_factory or _default_downloader_factory
         self._relay: Any = None
+        self._passthrough: Any = None
+        self._controls: dict[str, Any] = {}  # deviceId -> RemoteControlClient (keeps the clip-search form)
+        self._things_refreshed = float("-inf")
         self._devices: dict[str, CloudDevice] = {}
         self.gate = RemoteStreamGate(max_streams)
 
@@ -147,16 +178,32 @@ class RelayProvider:
         """True while a cloud client is attached (signed in)."""
         return self._cloud is not None
 
+    @property
+    def supports_remote_control(self) -> bool:
+        """True if the attached cloud client offers the IoT passthrough API (``iot_request`` + ``things``)."""
+        cloud = self._cloud
+        return cloud is not None and callable(getattr(cloud, "iot_request", None)) and hasattr(cloud, "things")
+
+    @property
+    def player_id(self) -> str | None:
+        """This installation's player id for the clip search (terminal uuid, 32 lower-case hex), or None."""
+        value = self._terminal_uuid or str(getattr(self._cloud, "terminal_uuid", "") or "")
+        value = value.lower()
+        return value if len(value) == 32 and all(c in "0123456789abcdef" for c in value) else None
+
     def attach(self, cloud_client: Any) -> None:
         """Use ``cloud_client`` (a new sign-in); the relay client is rebuilt on next use."""
         with self._lock:
             if cloud_client is not self._cloud:
                 self._cloud, self._relay = cloud_client, None
+                self._passthrough, self._controls = None, {}
+                self._things_refreshed = float("-inf")
 
     def detach(self) -> None:
         """Signed out: no new remote streams (running ones are stopped by their services)."""
         with self._lock:
             self._cloud, self._relay = None, None
+            self._passthrough, self._controls = None, {}
 
     def update_devices(self, devices: Iterable[CloudDevice]) -> None:
         """Remember the cloud device list entries (device type, IoT-cloud flag) by deviceId."""
@@ -193,3 +240,64 @@ class RelayProvider:
         device_id = config.device_id or config.id
         return self._supervisor_factory(relay, device_id, width, height, resolution=resolution, channel=channel,
                                         **self.stream_params(config), **callbacks)
+
+    # ------------------------------------------------------------------ Phase 4: control + recordings
+    def thing_for(self, config: CameraConfig) -> ThingInfo | None:
+        """The IoT thing record of ``config`` (thing URL for services-sync), or None. An unknown camera
+        triggers one thing-list refresh (at most every 60 s; network I/O on the caller's thread)."""
+        with self._lock:
+            cloud = self._cloud
+        if cloud is None or not self.supports_remote_control:
+            return None
+        device_id = config.device_id or config.id
+        things = getattr(cloud, "things", None)
+        thing = things.get(device_id) if isinstance(things, dict) else None
+        if thing is None:
+            with self._lock:
+                due = time.monotonic() - self._things_refreshed >= _THING_REFRESH_S
+                if due:
+                    self._things_refreshed = time.monotonic()
+            refresh = getattr(cloud, "local_access_tokens", None)
+            if due and callable(refresh):
+                try:
+                    refresh()
+                except Exception as exc:  # the caller reports "not available" instead
+                    log.info("IoT thing list refresh failed: %s (%s)", type(exc).__name__, getattr(exc, "code", ""))
+                things = getattr(cloud, "things", None)
+                thing = things.get(device_id) if isinstance(things, dict) else None
+        if thing is None or not getattr(thing, "app_server_url", ""):
+            return None
+        return thing
+
+    def control_client(self, config: CameraConfig) -> Any:
+        """A :class:`~tapo_desktop.core.cloud.passthrough.RemoteControlClient` for ``config`` (one per camera
+        and sign-in, so the clip-search form it learned is kept), or None when the account has no
+        passthrough API or the camera has no thing record."""
+        device_id = config.device_id or config.id
+        with self._lock:
+            cached = self._controls.get(device_id)
+            cloud = self._cloud
+        if cached is not None:
+            return cached
+        thing = self.thing_for(config)
+        if thing is None:
+            return None
+        from tapo_desktop.core.cloud.passthrough import CloudPassthrough, RemoteControlClient
+
+        with self._lock:
+            if self._cloud is not cloud or cloud is None:
+                return None  # signed out / switched account meanwhile
+            if self._passthrough is None:
+                self._passthrough = CloudPassthrough(cloud)
+            client = self._controls.get(device_id)
+            if client is None:
+                client = RemoteControlClient(self._passthrough, thing.thing_name, thing.app_server_url,
+                                             player_id=self.player_id)
+                self._controls[device_id] = client
+            return client
+
+    def recording_downloader(self, config: CameraConfig) -> Any:
+        """A :class:`~tapo_desktop.core.cloud.relay_vod.RemoteRecordingDownloader` for ``config``
+        (raises TapoConnectionError when signed out)."""
+        relay = self.relay_client()
+        return self._downloader_factory(relay, config.device_id or config.id, **self.stream_params(config))

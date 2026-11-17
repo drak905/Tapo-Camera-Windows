@@ -52,6 +52,10 @@ STATUS_KEYS: tuple[str, ...] = ("privacy", "day_night", "led", "motion_detection
 NOT_ON_NETWORK = "Not on this network"
 #: Motion polling period when no camera account exists (ONVIF needs one) [spec:events.last_alarm_info].
 ALARM_POLL_INTERVAL_S = 5.0
+#: Minimum ``getLastAlarmInfo`` polling period for cameras reached through the cloud passthrough: every
+#: poll is one TP-Link cloud call, so remote/shared cameras are polled at most every 30 s (the app has
+#: no client-side passthrough rate limit and the server's is unknown [spec:remote.control.rate_limits]).
+REMOTE_ALARM_POLL_INTERVAL_S = 30.0
 LAST_ALARM_INFO_REQUEST: dict = {"method": "getLastAlarmInfo", "params": {"system": {"name": ["last_alarm_info"]}}}
 _HD_QUALITIES = (StreamQuality.HD, StreamQuality.TELE_HD)
 _TELE_QUALITIES = (StreamQuality.TELE_HD, StreamQuality.TELE_SD)
@@ -189,9 +193,17 @@ class TapoCameraService(CameraService):
     view goes through the TP-Link cloud relay (:class:`RelayStreamSupervisor`, VGA in the grid, HD
     fullscreen, at most ``provider.gate.capacity`` remote streams; extra ones report FAILED
     :data:`~tapo_desktop.services.remote.REMOTE_CLICK_TO_VIEW` until ``start_stream(..., preempt=True)``),
-    ``connect()`` succeeds without network I/O and every LAN-only feature (control, PTZ, status,
-    recordings, events) raises ``TapoConnectionError(NETWORK_ONLY)``. Offline cloud cameras report
-    "Camera is offline".
+    ``connect()`` succeeds without network I/O and control, PTZ, status, presets and recordings go through
+    the cloud passthrough (``provider.control_client``, a RemoteControlClient; status is one batched call),
+    downloads through the relay (``provider.recording_downloader``) and motion polling through the cloud at
+    most every :data:`REMOTE_ALARM_POLL_INTERVAL_S` s. Providers without the passthrough API keep raising
+    ``TapoConnectionError(NETWORK_ONLY)``. Offline cloud cameras report "Camera is offline".
+
+    Shared cameras (``config.role != 0``) are always cloud-routed, even when found on the LAN: no local
+    login is ever attempted with the user's own password (it would only spend the camera's lockout
+    attempts; the app goes local only for the owner). Without a signed-in provider they report
+    :data:`~tapo_desktop.services.remote.SHARED_CLOUD_ONLY`. The per-camera auth breaker applies to the
+    LAN client only.
 
     The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
 
@@ -256,11 +268,19 @@ class TapoCameraService(CameraService):
             raise TapoError("camera service is closed")
 
     def _control(self) -> Any:
-        """The (lazily created) TapoControlClient; it logs in on first use.
+        """The control client: for cloud-routed cameras (remote, or shared to the account) the provider's
+        :class:`~tapo_desktop.core.cloud.passthrough.RemoteControlClient`; otherwise the (lazily created)
+        LAN TapoControlClient, which logs in on first use.
 
-        The client is rebuilt (fresh session and auth breaker) when the camera's vault local access
+        The LAN client is rebuilt (fresh session and auth breaker) when the camera's vault local access
         token changed since it was created [spec:lat.client.recommended_flow].
         """
+        if self._cloud_routed():
+            self._check_open()
+            remote = self._remote_control()
+            if remote is not None:
+                return remote
+            self._check_on_network()  # always raises here: NETWORK_ONLY / offline / shared / not on network
         token = self._local_token()
         stale = None
         with self._lock:
@@ -301,7 +321,9 @@ class TapoCameraService(CameraService):
         ``"transport: local; control: tpap; using local access token: yes"``."""
         parts = [f"transport: {self.live_transport()}"]
         protocol = getattr(self._client, "protocol", None) if self._client is not None else None
-        if isinstance(protocol, str) and protocol:
+        if self._cloud_routed():
+            parts.append("control: cloud")
+        elif isinstance(protocol, str) and protocol:
             parts.append(f"control: {protocol}")
         elif self.config.control_protocol:
             parts.append(f"control: {self.config.control_protocol}")
@@ -312,30 +334,47 @@ class TapoCameraService(CameraService):
         """False when the camera was not found on the LAN (cloud camera without a usable host)."""
         return bool(self.config.lan_found and self.config.host.strip())
 
+    def _cloud_routed(self) -> bool:
+        """True for cloud cameras reached through the TP-Link cloud: not on this LAN, or shared to the
+        account (``role != 0``: never logged in locally, see :func:`tapo_desktop.services.remote.cloud_routed`)."""
+        return self.config.source == "cloud" and (self.config.role != 0 or not self._on_network())
+
     def _remote_provider(self) -> Any:
-        """The signed-in account's relay provider when this camera can be viewed remotely, else None:
-        a cloud camera that is online, not on this LAN, with a provider that is signed in."""
-        if self._remote is None or self._on_network():
+        """The signed-in account's relay provider when this camera is reached through the cloud, else
+        None: a cloud-routed camera that is online, with a provider that is signed in."""
+        if self._remote is None or not self._cloud_routed():
             return None
-        if self.config.source != "cloud" or not self.config.online:
+        if not self.config.online:
             return None
         provider = self._remote()
         return provider if provider is not None and getattr(provider, "available", False) else None
+
+    def _remote_control(self) -> Any:
+        """The provider's RemoteControlClient for this camera, or None (no provider / no passthrough API /
+        no thing record). May refresh the account's thing list (network I/O, no lock held)."""
+        provider = self._remote_provider()
+        getter = getattr(provider, "control_client", None) if provider is not None else None
+        return getter(self.config) if callable(getter) else None
 
     def _cloud_offline(self) -> bool:
         return self.config.source == "cloud" and not self.config.online
 
     def _check_on_network(self) -> None:
-        """Raise for LAN-only features of a camera that is not on the LAN: remote cameras get
-        :data:`~tapo_desktop.services.remote.NETWORK_ONLY`, offline cloud cameras "Camera is offline",
-        the rest :data:`NOT_ON_NETWORK`."""
-        if self._on_network():
+        """Raise for LAN-only features of a camera that is not usable on the LAN: remote cameras without
+        a cloud control path get :data:`~tapo_desktop.services.remote.NETWORK_ONLY`, offline cloud cameras
+        "Camera is offline", shared cameras without a signed-in cloud
+        :data:`~tapo_desktop.services.remote.SHARED_CLOUD_ONLY`, the rest :data:`NOT_ON_NETWORK`."""
+        if not self._cloud_routed() and self._on_network():
             return
-        from tapo_desktop.services.remote import CAMERA_OFFLINE, NETWORK_ONLY
+        from tapo_desktop.services.remote import CAMERA_OFFLINE, NETWORK_ONLY, SHARED_CLOUD_ONLY
 
         if self._remote_provider() is not None:
             raise TapoConnectionError(NETWORK_ONLY)
-        raise TapoConnectionError(CAMERA_OFFLINE if self._cloud_offline() else NOT_ON_NETWORK)
+        if self._cloud_offline():
+            raise TapoConnectionError(CAMERA_OFFLINE)
+        if self.config.source == "cloud" and self.config.role != 0:
+            raise TapoConnectionError(SHARED_CLOUD_ONLY)
+        raise TapoConnectionError(NOT_ON_NETWORK)
 
     def _has_camera_account(self) -> bool:
         return self._vault.get(self.config.id, CredentialKind.CAMERA_ACCOUNT) is not None
@@ -397,6 +436,8 @@ class TapoCameraService(CameraService):
 
     def get_status(self) -> dict:
         client = self._control()
+        if self._cloud_routed():
+            return self._remote_status(client)
 
         def read(name: str, fn: Callable[[], Any], default: Any) -> Any:
             # A model without e.g. a status LED answers with a device error for that one getter;
@@ -414,6 +455,30 @@ class TapoCameraService(CameraService):
             "motion_detection": bool(read("motion_detection", lambda: client.get_motion_detection()[0], False)),
             "alarm": self._alarm,
         }
+
+    def _remote_status(self, client: Any) -> dict:
+        """The status dict in ONE cloud passthrough call (four getters batched); a getter the model does
+        not support (non-zero item error_code) reports its default, like on the LAN."""
+        from tapo_desktop.core.control_client import dtos
+
+        getters: tuple[tuple[str, dict, Callable[[dict], Any], Any], ...] = (
+            ("privacy", dtos.get_privacy_req(), dtos.parse_privacy, False),
+            ("day_night", dtos.get_day_night_req(), dtos.parse_day_night, DayNightMode.AUTO),
+            ("led", dtos.get_led_req(), dtos.parse_led, False),
+            ("motion_detection", dtos.get_motion_detection_req(), lambda r: dtos.parse_motion_detection(r)[0], False),
+        )
+        items = client.multiple_request([req for _, req, _, _ in getters])
+        status: dict[str, Any] = {}
+        for i, (name, _req, parse, default) in enumerate(getters):
+            item = items[i] if i < len(items) else None
+            if item is None or item.get("error_code") != 0:
+                log.debug("status %s unavailable on camera %s: %s", name, self.config.id,
+                          None if item is None else item.get("error_code"))
+                status[name] = default
+            else:
+                status[name] = parse(item.get("result") or {})
+        return {"privacy": bool(status["privacy"]), "day_night": status["day_night"], "led": bool(status["led"]),
+                "motion_detection": bool(status["motion_detection"]), "alarm": self._alarm}
 
     def set_privacy(self, on: bool) -> None:
         self._control().set_privacy(bool(on))
@@ -444,6 +509,14 @@ class TapoCameraService(CameraService):
         from tapo_desktop.core.vod.downloader import RecordingDownloader
 
         self._check_open()
+        if self._cloud_routed():  # through the cloud relay (download slot, playback fallback)
+            provider = self._remote_provider()
+            make = getattr(provider, "recording_downloader", None) if provider is not None else None
+            if not callable(make):
+                self._check_on_network()  # raises the reason
+            assert make is not None
+            remote = make(self.config)
+            return remote.download(clip, pathlib.Path(out_path), progress=progress, cancel=self._cancel)
         self._check_on_network()
         cloud = self._creds(CredentialKind.CLOUD)
         token = self._local_token()
@@ -461,15 +534,21 @@ class TapoCameraService(CameraService):
         from tapo_desktop.core.media_engine.supervisor import StreamState
 
         quality, width, height = StreamQuality(quality), int(width), int(height)
-        if not self._on_network():
+        if self._cloud_routed() or not self._on_network():
             provider = self._remote_provider()
             if provider is not None:
                 self._start_relay(provider, quality, width, height, on_frame, on_state, preempt)
                 return
-            from tapo_desktop.services.remote import CAMERA_OFFLINE
+            from tapo_desktop.services.remote import CAMERA_OFFLINE, SHARED_CLOUD_ONLY
 
             self.stop_stream()
-            on_state(StreamState.FAILED, CAMERA_OFFLINE if self._cloud_offline() else NOT_ON_NETWORK)
+            if self._cloud_offline():
+                reason = CAMERA_OFFLINE
+            elif self.config.source == "cloud" and self.config.role != 0:
+                reason = SHARED_CLOUD_ONLY
+            else:
+                reason = NOT_ON_NETWORK
+            on_state(StreamState.FAILED, reason)
             return
         transport = self.live_transport()
         if transport == "rtsp":
@@ -625,19 +704,22 @@ class TapoCameraService(CameraService):
     def start_events(self, on_event: Callable[[MotionEvent], None]) -> None:
         """ONVIF pull-point events when a camera account exists; otherwise poll
         ``getLastAlarmInfo`` every ``alarm_poll_interval`` seconds [spec:events.last_alarm_info]
-        (the Tapo app's LAN behaviour: it needs only the TP-Link ID password)."""
+        (the Tapo app's LAN behaviour: it needs only the TP-Link ID password). Cloud-routed (remote /
+        shared) cameras always poll through the cloud passthrough, at most every
+        :data:`REMOTE_ALARM_POLL_INTERVAL_S` seconds (one cloud call per poll)."""
         with self._lock:
             self._check_open()
             self._on_event = on_event
             if self._subscriber is not None or self._poller is not None:
                 return
+        if self._cloud_routed():  # ONVIF needs the LAN; poll through the cloud, but slowly
+            if self._remote_control() is None:
+                self._check_on_network()  # raises the reason
+            self._start_poller(max(self._alarm_poll_interval, REMOTE_ALARM_POLL_INTERVAL_S))
+            return
         if not self._has_camera_account():
             self._check_on_network()
-            poller = _AlarmPoller(self, self._alarm_poll_interval)
-            with self._lock:
-                self._check_open()
-                self._poller = poller
-            poller.start()
+            self._start_poller(self._alarm_poll_interval)
             return
         from tapo_desktop.core.onvif_service.events import PullPointSubscriber
         from tapo_desktop.core.onvif_service.soap import OnvifClient
@@ -648,6 +730,25 @@ class TapoCameraService(CameraService):
         sub.start()
         with self._lock:
             self._subscriber = sub
+
+    def _start_poller(self, interval: float) -> None:
+        poller = _AlarmPoller(self, interval)
+        with self._lock:
+            self._check_open()
+            if self._poller is not None:
+                return
+            self._poller = poller
+        poller.start()
+
+    def alarm_poll_interval(self) -> float:
+        """Seconds between two ``getLastAlarmInfo`` polls: the running poller's, else the one the next
+        :meth:`start_events` would use (at least :data:`REMOTE_ALARM_POLL_INTERVAL_S` for cloud-routed cameras)."""
+        poller = self._poller
+        if poller is not None:
+            return poller.interval
+        if self._cloud_routed():
+            return max(self._alarm_poll_interval, REMOTE_ALARM_POLL_INTERVAL_S)
+        return self._alarm_poll_interval
 
     def stop_events(self) -> None:
         with self._lock:
@@ -704,6 +805,10 @@ class _AlarmPoller:
 
     def start(self) -> None:
         self._thread.start()
+
+    @property
+    def interval(self) -> float:
+        return self._interval
 
     def stop(self, timeout: float = 3.0) -> None:
         self._stop.set()

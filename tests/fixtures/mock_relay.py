@@ -101,6 +101,8 @@ class _Tunnel:
         self.sock = sock
         self.buf = bytearray()
         self.send_lock = threading.Lock()
+        self.io_lock = threading.Lock()
+        self.serialize_io = False  # set for VOD tunnels (unpaced sender + reader on one TLS socket)
         self.session_id: str | None = None
         self.stop_media = threading.Event()
         self.sender: threading.Thread | None = None
@@ -110,8 +112,14 @@ class _Tunnel:
     def _recv(self) -> bool:
         while not self.relay.stopping.is_set():
             try:
-                chunk = self.sock.recv(65536)
+                if self.serialize_io:  # VOD: never read while the sender thread writes (OpenSSL is not thread-safe)
+                    with self.io_lock:
+                        chunk = self.sock.recv(65536)
+                else:
+                    chunk = self.sock.recv(65536)
             except (socket.timeout, TimeoutError):
+                if self.serialize_io:
+                    time.sleep(0.002)  # let the sender take the lock
                 continue
             except (OSError, ssl.SSLError):
                 return False
@@ -123,7 +131,11 @@ class _Tunnel:
 
     def send(self, data: bytes) -> None:
         with self.send_lock:
-            self.sock.sendall(data)
+            if self.serialize_io:
+                with self.io_lock:
+                    self.sock.sendall(data)
+            else:
+                self.sock.sendall(data)
 
     def send_part(self, headers: dict[str, str], body: bytes) -> None:
         head = DEVICE_DELIMITER + b"\r\n"
@@ -365,6 +377,9 @@ class _Tunnel:
             result["speed"] = p.get("scale", "1/1")
         self.send_json({"type": "response", "seq": seq, "result": result})
         self.stop_media.clear()
+        with self.io_lock:
+            self.sock.settimeout(0.02)  # short reads: the sender gets the I/O lock between them
+            self.serialize_io = True
         target = self.download_loop if verb == "download" else self.playback_loop
         self.sender = threading.Thread(target=target, args=(max(1, end - start),), name=f"mock-relay-{verb}",
                                        daemon=True)

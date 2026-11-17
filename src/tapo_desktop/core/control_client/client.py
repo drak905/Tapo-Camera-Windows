@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -126,23 +127,178 @@ def _normalize_item(item: Any) -> dict:
             "error_code": _error_code(item)}
 
 
-class TapoControlClient:
+#: Error of ``searchVideoWithUTC`` on firmware that wants ``player_id`` instead of ``"id": 1`` (real C510W).
+ERR_CLIP_SEARCH_FORM = -71103
+#: Stable (per process) player id for the ``player_id`` clip-search form when none is configured.
+DEFAULT_PLAYER_ID = uuid.uuid4().hex
+_CLIP_SEARCH_FORMS = ("id", "player_id")
+
+
+class ControlApi:
+    """High-level camera API shared by the LAN :class:`TapoControlClient` and the cloud
+    :class:`~tapo_desktop.core.cloud.passthrough.RemoteControlClient`.
+
+    Subclasses provide ``request(req) -> result`` (raises TapoDeviceError for a non-zero item
+    error_code) and ``multiple_request(reqs) -> items``; every wrapper below is built on ``request``.
+
+    ``recordings_for_day`` sends ``searchVideoWithUTC`` in the form that worked last on this client
+    (``"id": 1`` first); on -71103 it retries that page once with ``player_id`` (``_player_id``) or
+    back with ``id`` and remembers the form that answered.
+    """
+
+    _player_id: str = DEFAULT_PLAYER_ID
+    _clip_search_form: str = "id"
+
+    def request(self, req: dict) -> dict:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def multiple_request(self, reqs: list[dict]) -> list[dict]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def get_device_info(self) -> DeviceInfo:
+        """Model, alias, firmware etc. (getDeviceInfo)."""
+        return dtos.parse_device_info(self.request(dtos.get_device_info_req()))
+
+    def get_components(self) -> dict[str, int]:
+        """Supported components and their versions (getAppComponentList)."""
+        return dtos.parse_component_list(self.request(dtos.get_component_list_req()))
+
+    def move(self, x: int, y: int) -> None:
+        """Relative pan/tilt move (motorMove)."""
+        self.request(dtos.motor_move_req(x, y))
+
+    def step(self, direction: int) -> None:
+        """One step in ``direction`` (0, 90, 180 or 270 degrees)."""
+        self.request(dtos.motor_step_req(direction))
+
+    def stop_move(self) -> None:
+        """Stop any PTZ motion."""
+        self.request(dtos.motor_stop_req())
+
+    def get_presets(self) -> list[Preset]:
+        """Saved PTZ presets."""
+        return dtos.parse_presets(self.request(dtos.get_presets_req()))
+
+    def goto_preset(self, preset_id: str) -> None:
+        """Move to a saved preset."""
+        self.request(dtos.goto_preset_req(preset_id))
+
+    def add_preset(self, name: str) -> None:
+        """Save the current position as a new preset."""
+        self.request(dtos.add_preset_req(name))
+
+    def delete_preset(self, preset_id: str) -> None:
+        """Delete a preset."""
+        self.request(dtos.delete_preset_req(preset_id))
+
+    def get_privacy(self) -> bool:
+        """True if privacy mode (lens mask) is on."""
+        return dtos.parse_privacy(self.request(dtos.get_privacy_req()))
+
+    def set_privacy(self, enabled: bool) -> None:
+        """Turn privacy mode (lens mask) on or off."""
+        self.request(dtos.set_privacy_req(enabled))
+
+    def get_day_night(self) -> DayNightMode:
+        """Current day/night (IR) mode."""
+        return dtos.parse_day_night(self.request(dtos.get_day_night_req()))
+
+    def set_day_night(self, mode: DayNightMode) -> None:
+        """Set the day/night (IR) mode."""
+        self.request(dtos.set_day_night_req(mode))
+
+    def get_led(self) -> bool:
+        """True if the status LED is enabled."""
+        return dtos.parse_led(self.request(dtos.get_led_req()))
+
+    def set_led(self, enabled: bool) -> None:
+        """Enable or disable the status LED."""
+        self.request(dtos.set_led_req(enabled))
+
+    def set_alarm(self, active: bool) -> None:
+        """Start or stop the manual siren/light alarm."""
+        self.request(dtos.manual_alarm_req(active))
+
+    def get_motion_detection(self) -> tuple[bool, int | None]:
+        """``(enabled, digital_sensitivity or None)``."""
+        return dtos.parse_motion_detection(self.request(dtos.get_motion_detection_req()))
+
+    def set_motion_detection(self, enabled: bool, sensitivity: int | None = None) -> None:
+        """Enable/disable motion detection; ``sensitivity`` in {20, 60, 80} if given."""
+        self.request(dtos.set_motion_detection_req(enabled, sensitivity))
+
+    def get_sd_status(self) -> list[dict]:
+        """One dict per storage device (empty list if no card)."""
+        return dtos.parse_sd_status(self.request(dtos.get_sd_status_req()))
+
+    def days_with_recordings(self, start: date, end: date) -> list[date]:
+        """Days in ``[start, end]`` that have recordings, sorted."""
+        return dtos.parse_days(self.request(dtos.search_days_req(start, end)))
+
+    def _clip_search_req(self, form: str, start: int, end: int, first: int, last: int) -> dict:
+        player_id = self._player_id if form == "player_id" else None
+        return dtos.search_day_clips_req(start, end, first, last, player_id=player_id)
+
+    def _search_clips(self, start: int, end: int, first: int, last: int) -> dict:
+        """One searchVideoWithUTC page; -71103 -> one retry in the other form, which is then kept."""
+        form = self._clip_search_form
+        try:
+            return self.request(self._clip_search_req(form, start, end, first, last))
+        except TapoDeviceError as exc:
+            if exc.code != ERR_CLIP_SEARCH_FORM:
+                raise
+        other = _CLIP_SEARCH_FORMS[1 - _CLIP_SEARCH_FORMS.index(form)]
+        log.info("clip search: the camera refused the %r form (-71103); retrying with %r", form, other)
+        result = self.request(self._clip_search_req(other, start, end, first, last))
+        self._clip_search_form = other
+        return result
+
+    def recordings_for_day(self, day: date, tz: datetime.tzinfo | None = None) -> list[RecordingClip]:
+        """Clips of local day ``[00:00, 24:00)`` in ``tz`` (None = local timezone); pages until
+        ``to_be_continued`` is 0."""
+        midnight = datetime.datetime.combine(day, datetime.time(0))
+        midnight = midnight.replace(tzinfo=tz) if tz is not None else midnight.astimezone()
+        start = int(midnight.timestamp())
+        end = start + 86399
+        clips: list[RecordingClip] = []
+        for page in range(_MAX_PAGES):
+            first = page * _PAGE_SIZE
+            result = self._search_clips(start, end, first, first + _PAGE_SIZE - 1)
+            page_clips = dtos.parse_day_clips(result)
+            clips.extend(page_clips)
+            if not page_clips or not dtos.has_more_clips(result):
+                break
+        else:
+            log.warning("recordings_for_day(%s) stopped after %d pages", day, _MAX_PAGES)
+        return sorted(clips, key=lambda c: c.start)
+
+    def reboot(self) -> None:
+        """Reboot the camera."""
+        self.request(dtos.reboot_req())
+
+
+class TapoControlClient(ControlApi):
     """Thread-safe client. Auto-logs-in on first use; on -40401 (top-level or per-item) or HTTP 401
     it re-logs-in once and retries once. ``seq`` increments per secure request.
 
     One re-entrant lock serialises login and the whole seq/tag/POST critical section, so concurrent
     callers can never desynchronise the secure session's ``seq``.
+
+    ``player_id`` (32 hex chars, default :data:`DEFAULT_PLAYER_ID`) is used by the ``player_id`` form
+    of the clip search (see :class:`ControlApi`).
     """
 
     def __init__(self, host: str, password: str, *, username: str = "admin", port: int = 443,
                  transport: HttpsTransport | None = None, pin_store: PinStore | None = None,
                  timeout: float = 10.0, tpap: dict | None = None, encrypt_type: Any = None,
-                 auth_retry_after: float = 120.0, local_token: str | None = None):
+                 auth_retry_after: float = 120.0, local_token: str | None = None, player_id: str | None = None):
         self._host = host
         self._port = int(port)
         self._username = username
         self._password = password
         self._local_token = local_token or None
+        if player_id:
+            self._player_id = str(player_id)
         self._tpap_info = dict(tpap) if isinstance(tpap, dict) else None
         self._use_tpap = tpap_mod.tpap_requested(self._tpap_info, encrypt_type)
         self._transport = transport if transport is not None else HttpsTransport(
@@ -450,106 +606,7 @@ class TapoControlClient:
             raise TapoProtocolError(f"camera answered with HTTP {status}")
         return _parse_json(text)
 
-    # ================================================================== convenience wrappers
-    def get_device_info(self) -> DeviceInfo:
-        """Model, alias, firmware etc. (getDeviceInfo)."""
-        return dtos.parse_device_info(self.request(dtos.get_device_info_req()))
-
-    def get_components(self) -> dict[str, int]:
-        """Supported components and their versions (getAppComponentList)."""
-        return dtos.parse_component_list(self.request(dtos.get_component_list_req()))
-
-    def move(self, x: int, y: int) -> None:
-        """Relative pan/tilt move (motorMove)."""
-        self.request(dtos.motor_move_req(x, y))
-
-    def step(self, direction: int) -> None:
-        """One step in ``direction`` (0, 90, 180 or 270 degrees)."""
-        self.request(dtos.motor_step_req(direction))
-
-    def stop_move(self) -> None:
-        """Stop any PTZ motion."""
-        self.request(dtos.motor_stop_req())
-
-    def get_presets(self) -> list[Preset]:
-        """Saved PTZ presets."""
-        return dtos.parse_presets(self.request(dtos.get_presets_req()))
-
-    def goto_preset(self, preset_id: str) -> None:
-        """Move to a saved preset."""
-        self.request(dtos.goto_preset_req(preset_id))
-
-    def add_preset(self, name: str) -> None:
-        """Save the current position as a new preset."""
-        self.request(dtos.add_preset_req(name))
-
-    def delete_preset(self, preset_id: str) -> None:
-        """Delete a preset."""
-        self.request(dtos.delete_preset_req(preset_id))
-
-    def get_privacy(self) -> bool:
-        """True if privacy mode (lens mask) is on."""
-        return dtos.parse_privacy(self.request(dtos.get_privacy_req()))
-
-    def set_privacy(self, enabled: bool) -> None:
-        """Turn privacy mode (lens mask) on or off."""
-        self.request(dtos.set_privacy_req(enabled))
-
-    def get_day_night(self) -> DayNightMode:
-        """Current day/night (IR) mode."""
-        return dtos.parse_day_night(self.request(dtos.get_day_night_req()))
-
-    def set_day_night(self, mode: DayNightMode) -> None:
-        """Set the day/night (IR) mode."""
-        self.request(dtos.set_day_night_req(mode))
-
-    def get_led(self) -> bool:
-        """True if the status LED is enabled."""
-        return dtos.parse_led(self.request(dtos.get_led_req()))
-
-    def set_led(self, enabled: bool) -> None:
-        """Enable or disable the status LED."""
-        self.request(dtos.set_led_req(enabled))
-
-    def set_alarm(self, active: bool) -> None:
-        """Start or stop the manual siren/light alarm."""
-        self.request(dtos.manual_alarm_req(active))
-
-    def get_motion_detection(self) -> tuple[bool, int | None]:
-        """``(enabled, digital_sensitivity or None)``."""
-        return dtos.parse_motion_detection(self.request(dtos.get_motion_detection_req()))
-
-    def set_motion_detection(self, enabled: bool, sensitivity: int | None = None) -> None:
-        """Enable/disable motion detection; ``sensitivity`` in {20, 60, 80} if given."""
-        self.request(dtos.set_motion_detection_req(enabled, sensitivity))
-
-    def get_sd_status(self) -> list[dict]:
-        """One dict per storage device (empty list if no card)."""
-        return dtos.parse_sd_status(self.request(dtos.get_sd_status_req()))
-
-    def days_with_recordings(self, start: date, end: date) -> list[date]:
-        """Days in ``[start, end]`` that have recordings, sorted."""
-        return dtos.parse_days(self.request(dtos.search_days_req(start, end)))
-
-    def recordings_for_day(self, day: date, tz: datetime.tzinfo | None = None) -> list[RecordingClip]:
-        """Clips of local day ``[00:00, 24:00)`` in ``tz`` (None = local timezone); pages until
-        ``to_be_continued`` is 0."""
-        midnight = datetime.datetime.combine(day, datetime.time(0))
-        midnight = midnight.replace(tzinfo=tz) if tz is not None else midnight.astimezone()
-        start = int(midnight.timestamp())
-        end = start + 86399
-        clips: list[RecordingClip] = []
-        for page in range(_MAX_PAGES):
-            first = page * _PAGE_SIZE
-            result = self.request(dtos.search_day_clips_req(start, end, first, first + _PAGE_SIZE - 1))
-            page_clips = dtos.parse_day_clips(result)
-            clips.extend(page_clips)
-            if not page_clips or not dtos.has_more_clips(result):
-                break
-        else:
-            log.warning("recordings_for_day(%s) stopped after %d pages", day, _MAX_PAGES)
-        return sorted(clips, key=lambda c: c.start)
-
+    # ================================================================== lifecycle
     def reboot(self) -> None:
         """Reboot the camera (the session ends; the next request logs in again)."""
         self.request(dtos.reboot_req())

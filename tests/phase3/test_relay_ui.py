@@ -219,12 +219,12 @@ def test_end_to_end_remote_stream_through_real_wiring(tmp_path, qtbot, relay_clo
         assert (front, 640, 360) in frames
         assert any(s == "PLAYING" for cid, s, _ in states if cid == front), states
         assert relay_cloud.calls("/v2/relay/request")[-1]["body"]["cloudType"] == 2
-        controller.refresh_status(front)  # control is LAN-only
+        controller.refresh_status(front)  # Phase 4: control goes through the cloud passthrough
         failures = []
         controller.command_failed.connect(lambda cid, action, msg: failures.append(msg))
         controller.refresh_status(front)
         qtbot.waitUntil(lambda: bool(failures), timeout=5000)
-        assert "Available on the camera's network only" in failures[-1]
+        assert "Camera did not respond" in failures[-1]  # no mock camera behind the mock cloud
     finally:
         controller.stop_all()
         accounts.wait_idle(3000)

@@ -44,7 +44,8 @@ from tapo_desktop.core.errors import TapoConnectionError, TapoError, TapoProtoco
 from tapo_desktop.core.vod.session import CLIENT_BOUNDARY, MediaPart, MediaSession, encode_client_part
 
 __all__ = ["CIPC_SERVICE_ID", "DEFAULT_CIPC_HOST", "HEARTBEAT_BODY", "HEARTBEAT_INTERVAL_S", "MAX_REDIRECTS",
-           "MSG_CAMERA_OFFLINE", "RelayClient", "RelayError", "RelayMediaSession", "RelaySlot", "cloud_type_for"]
+           "MSG_CAMERA_OFFLINE", "RelayClient", "RelayError", "RelayMediaSession", "RelaySlot", "STREAM_DOWNLOAD",
+           "STREAM_PLAYBACK", "STREAM_PREVIEW", "cloud_type_for"]
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,10 @@ HEARTBEAT_INTERVAL_S = 15.0
 #: Heartbeat JSON exactly as the app writes it (with spaces; Content-Length 63) [spec:remote.relay.heartbeat].
 HEARTBEAT_BODY = b'{"type": "notification", "params": {"event_type": "heartbeat"}}'
 MAX_REDIRECTS = 3
+#: CIPC ``streamType`` values [spec:remote.relay.playback_download.request_params internal_stream_types].
+STREAM_PREVIEW = 0
+STREAM_PLAYBACK = 1
+STREAM_DOWNLOAD = 3
 CONTENT_LENGTH_SENTINEL = "9223372036854775807"
 APP_TYPE = "TP-Link_Tapo_Android"
 ERR_DEVICE_OFFLINE = -1007
@@ -248,13 +253,20 @@ class RelayClient:
         refresh()
 
     def request_slot(self, device_id: str, device_type: str = "SMART.IPCAMERA", model: str = "",
-                     resolution: str = "VGA", *, cloud_type: int = 2) -> RelaySlot:
-        """``POST <cipc>/v2/relay/request`` for a live preview slot [spec:remote.relay.cipc.request_relay_url].
+                     resolution: str = "VGA", *, cloud_type: int = 2, stream_type: int = STREAM_PREVIEW,
+                     sub_type: str | None = None, custom_params: str = "{}") -> RelaySlot:
+        """``POST <cipc>/v2/relay/request`` for a relay slot [spec:remote.relay.cipc.request_relay_url].
 
-        -1102 / HTTP 401: one silent re-login, then one retry. errorCode != 0 -> RelayError (``fatal`` for
-        the no-retry codes; -1007 says "Camera is offline"). Network problems -> TapoConnectionError.
+        ``stream_type`` 0 = live preview (``resolution`` HD/VGA, ``preConnection`` 0); 1 = SD playback and
+        3 = SD download [spec:remote.relay.playback_download.request_params]: no ``resolution`` /
+        ``preConnection``, ``channelId`` "0", ``subType`` (download: "cover") and ``custom_params`` (a JSON
+        object string). -1102 / HTTP 401: one silent re-login, then one retry. errorCode != 0 -> RelayError
+        (``fatal`` for the no-retry codes; -1007 says "Camera is offline"). Network problems ->
+        TapoConnectionError.
         """
-        if resolution not in ("HD", "VGA"):
+        if stream_type not in (STREAM_PREVIEW, STREAM_PLAYBACK, STREAM_DOWNLOAD):
+            raise ValueError("stream_type must be 0 (preview), 1 (playback) or 3 (download)")
+        if stream_type == STREAM_PREVIEW and resolution not in ("HD", "VGA"):
             raise ValueError("resolution must be 'HD' or 'VGA'")
         if cloud_type not in (1, 2):
             raise ValueError("cloud_type must be 1 or 2")
@@ -263,10 +275,18 @@ class RelayClient:
         if not getattr(self._cloud, "token", None):
             raise RelayError("Not signed in to a TP-Link ID.", "not_signed_in")
         track_id = str(uuid.uuid4())
-        body = {"deviceId": device_id, "dataTimeoutCount": 0, "cloudType": cloud_type,
-                "deviceType": device_type or "SMART.IPCAMERA", "playerId": self.terminal_uuid, "rootCaVer": "1",
-                "preConnection": 0, "resolution": resolution, "streamType": 0, "customParams": "{}",
-                "trackId": track_id}
+        body: dict[str, Any] = {"deviceId": device_id, "dataTimeoutCount": 0, "cloudType": cloud_type,
+                                "deviceType": device_type or "SMART.IPCAMERA", "playerId": self.terminal_uuid,
+                                "rootCaVer": "1"}
+        if stream_type == STREAM_PREVIEW:
+            body.update({"preConnection": 0, "resolution": resolution, "streamType": 0, "customParams": "{}"})
+        else:
+            body.update({"streamType": stream_type, "channelId": "0"})
+            if sub_type:
+                body["subType"] = sub_type
+            body["customParams"] = custom_params or "{}"
+            resolution = ""
+        body["trackId"] = track_id
         base = self.cipc_base()
         for attempt in range(2):
             token = getattr(self._cloud, "token", None)
@@ -463,11 +483,16 @@ class RelayMediaSession(MediaSession):
     ``connect()`` requests a fresh slot and opens the tunnel (no inner ``POST /stream``, no digest) and
     starts the heartbeat thread (``heartbeat_interval`` s, default 15). Media parts are plaintext; a part
     flagged ``X-If-Encrypt: 1`` raises TapoProtocolError. One-shot: after ``close()`` it cannot connect.
+
+    ``stream_type`` / ``sub_type`` select the slot kind (0 preview, 1 SD playback, 3 SD download with
+    ``sub_type="cover"``); the first JSON part decides what the camera streams (preview / playback /
+    download request), exactly as on the LAN.
     """
 
     def __init__(self, relay: RelayClient, device_id: str, *, device_type: str = "SMART.IPCAMERA",
                  model: str = "", resolution: str = "VGA", cloud_type: int = 2, timeout: float = 10.0,
-                 heartbeat_interval: float = HEARTBEAT_INTERVAL_S):
+                 heartbeat_interval: float = HEARTBEAT_INTERVAL_S, stream_type: int = STREAM_PREVIEW,
+                 sub_type: str | None = None):
         if heartbeat_interval <= 0:
             raise ValueError("heartbeat_interval must be positive")
         super().__init__(device_id, "", port=RELAY_PORT, timeout=timeout)
@@ -477,6 +502,8 @@ class RelayMediaSession(MediaSession):
         self._model = model
         self._resolution = resolution
         self._cloud_type = cloud_type
+        self._stream_type = int(stream_type)
+        self._sub_type = sub_type
         self._hb_interval = float(heartbeat_interval)
         self._hb_stop = threading.Event()
         self._hb_thread: threading.Thread | None = None
@@ -495,8 +522,13 @@ class RelayMediaSession(MediaSession):
         self._session_id = None
         self._keys = None
         self._hkdf_keys = None
-        slot = self._relay.request_slot(self._device_id, self._device_type, self._model, self._resolution,
-                                        cloud_type=self._cloud_type)
+        if self._stream_type == STREAM_PREVIEW:
+            slot = self._relay.request_slot(self._device_id, self._device_type, self._model, self._resolution,
+                                            cloud_type=self._cloud_type)
+        else:
+            slot = self._relay.request_slot(self._device_id, self._device_type, self._model,
+                                            cloud_type=self._cloud_type, stream_type=self._stream_type,
+                                            sub_type=self._sub_type)
         self._check_open()
         sock = self._relay.open_tunnel(slot)
         with self._state_lock:
