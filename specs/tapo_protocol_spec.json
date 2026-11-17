@@ -26,6 +26,11 @@
       "source_file": "specs/sd_vod_playback_spec.json",
       "summary": "SD-card recording search (searchDateWithVideo / searchVideoOfDay / searchVideoWithUTC / searchDetectionList on the HTTPS JSON API, always wrapped in multipleRequest), playback and download over the local POST /stream multipart media session (JSON control {type:'request',params:{method:'get',playback|download:{...}}}, MPEG-TS parts with X-Data-PTS etc., optional AES payload encryption, 25-part acks), app-side TS demux and MP4 remux, event type enum, SD card status/format, camera account + RTSP/ONVIF security + third-party NVR compatibility commands. ONVIF/RTSP port and discovery facts are external.",
       "item_count": 39
+    },
+    "cloud": {
+      "source_file": "specs/cloud_account_spec.json",
+      "summary": "TP-Link ID sign-in (V2 REST API with HMAC-SHA1 X-Authorization signing, AccessKey/Secret are Java string constants), regional URL discovery, MFA, silent re-login, cloud device list (getDeviceListByPage), TDP v2 UDP LAN discovery of cameras (header + CRC32, RSA-OAEP/AES-CBC encrypt_info), cloud<->LAN matching by MD5(deviceId), and how the app connects locally (admin + TP-Link ID password, HD default on LAN).",
+      "item_count": 23
     }
   },
   "items": [
@@ -10680,6 +10685,1385 @@
       ],
       "confidence": "inferred",
       "lane": "vod"
+    },
+    {
+      "id": "cloud.base_urls",
+      "kind": "endpoint",
+      "description": "Cloud hosts used for TP-Link ID account and device-list calls. Production build: bs0.b.p0() is true (flavour 'playstore'/'dist').",
+      "value": {
+        "account_bootstrap_base": "https://n-wap.i.tplinkcloud.com",
+        "account_bootstrap_base_beta": "https://n-wap-beta.i.tplinkcloud.com",
+        "regional_base": "appServerUrlV2 from getAccountStatusAndUrl (or from a -20212 login error result); stored as TCAccountBean.appServerUrlV2. All '{url}/api/v2/...' calls use it; if unset the bootstrap base is used.",
+        "legacy_gateway_seen": "https://n-wap-gw.tplinkcloud.com (hard-coded fallback appServerUrl in media passthrough code)",
+        "country_codes_api": "https://account-api.i.tplinkcloud.com",
+        "http_client": "OkHttp, connect/read/write timeout 30 s, ConnectionSpec COMPATIBLE_TLS+CLEARTEXT",
+        "certificate_pins": {
+          "*.tplinkcloud.com": [
+            "sha256/hAHh3ODubSpeYae2zl9Pr1Q7dfzqgrk9H++q9r3Qg20=",
+            "sha256/FWN0bUK+G5UtW1TnZEs2o7RvMbuwcVO5Dv69SGU/xwQ=",
+            "sha256/esp3Rf3jZTN/NshwLAi/Yv76ZLtGJYHByPCPpCDc2Kg="
+          ],
+          "*.i.tplinkcloud.com": [
+            "sha256/sWOm6BARva1IdHBJi44hKEhzNuy0CHXHZMe/wdoj2UM=",
+            "sha256/Fu9isq+p0sM2EVoXFnUb+tJIKh9DE7LumIEH+g5I1QI="
+          ]
+        },
+        "trust_anchors_note": "App adds its own roots (CN=tp-link-CA RSA, 'TP-Link Cloud Root CA' EC P-256) besides the pins. A desktop client should validate with the same roots or pins."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "bs0/b.java",
+          "line": 242,
+          "snippet": "return p0() ? \"https://n-wap.i.tplinkcloud.com\" : \"https://n-wap-beta.i.tplinkcloud.com\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libbaseui/base/core/u.java",
+          "line": 97,
+          "snippet": "public static String g() { return bs0.b.i(); }"
+        },
+        {
+          "source": "jadx",
+          "file": "i7/b.java",
+          "line": 128,
+          "snippet": "getAppServerUrlV2() == null ? this.f197018c.l() : this.f197017b.getAppServerUrlV2()"
+        },
+        {
+          "source": "jadx",
+          "file": "ya1/i0.java",
+          "line": 910,
+          "snippet": "device.N(\"https://n-wap-gw.tplinkcloud.com\");"
+        },
+        {
+          "source": "jadx",
+          "file": "m7/u.java",
+          "line": 101,
+          "snippet": "builder2.add(\"*.tplinkcloud.com\", \"sha256/hAHh3ODubSpeYae2zl9Pr1Q7dfzqgrk9H++q9r3Qg20=\", ..."
+        },
+        {
+          "source": "jadx",
+          "file": "bs0/b.java",
+          "line": 311,
+          "snippet": "public static boolean p0() { return !n0() || o0(); }"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.signing",
+      "kind": "algorithm",
+      "description": "Signing done by OkHttp interceptor m7.r for every request carrying the marker header 'signature-required: true' (all AccountV2Api, DeviceV2Api, MultiFactorAuthApi calls). The marker header is removed before sending.",
+      "value": {
+        "content_md5": "Base64(MD5(raw body bytes)), standard Base64 without line breaks. If the body is null or empty the app sends '{}' as body and hashes '{}'.",
+        "timestamp": "constant 9999999999 (long), not the current time",
+        "nonce": "java UUID.randomUUID().toString() (lowercase 8-4-4-4-12)",
+        "string_to_sign": "content_md5 + \"\\n\" + \"9999999999\" + \"\\n\" + nonce + \"\\n\" + url.encodedPath()   (path only, no query string, no host)",
+        "signature": "lowercase hex( HMAC-SHA1( key = SecretKey UTF-8 bytes, msg = string_to_sign ) )",
+        "headers": {
+          "Content-MD5": "<content_md5>",
+          "X-Authorization": "Timestamp=9999999999, Nonce=<nonce>, AccessKey=<AccessKey>, Signature=<signature>"
+        },
+        "header_format_exact": "Timestamp=%1$s, Nonce=%2$s, AccessKey=%3$s, Signature=%4$s",
+        "key_source": "AccessKey = bs0.b.g(), SecretKey = bs0.b.h(); plain Java string literals (not native, not in libtpgenkey.so). Supplied to the HTTP layer through TapoAppContext getAccessKey()/getSecret().",
+        "golden_vector": {
+          "secret": "6ed7d97f3e73467f8a5bab90b577ba4c",
+          "access_key": "4d11b6b9d5ea4d19a829adbb9714b057",
+          "body": "{\"appType\":\"TP-Link_Tapo_Android\",\"cloudUserName\":\"user@example.com\"}",
+          "path": "/api/v2/account/getAccountStatusAndUrl",
+          "nonce": "2f1a6c3e-8b7d-4e21-9a55-0c4d3b2a1f00",
+          "content_md5": "Tm1i6bgNP+L0b9fkTC+BUA==",
+          "signature": "d3e911ddfed0a8f151fa2d9ceef11062fc3a1a6f",
+          "x_authorization": "Timestamp=9999999999, Nonce=2f1a6c3e-8b7d-4e21-9a55-0c4d3b2a1f00, AccessKey=4d11b6b9d5ea4d19a829adbb9714b057, Signature=d3e911ddfed0a8f151fa2d9ceef11062fc3a1a6f",
+          "content_md5_of_empty_body_braces": "mZFLkyvTelC5g8XnyQrpOw=="
+        },
+        "same_algorithm_elsewhere": "libtpp2pcommon.util.e (relay passthrough) uses the identical string_to_sign with path '/api/v2/common/passthrough'; tplinkra AppServerHttpClientHelper uses 'TimeStamp=' spelling for the legacy SDK."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "m7/r.java",
+          "line": 110,
+          "snippet": "String strB = b(str, 9999999999L, string, strEncodedPath);"
+        },
+        {
+          "source": "jadx",
+          "file": "m7/r.java",
+          "line": 116,
+          "snippet": "add(SSLClient.X_AUTHORIZATION, String.format(\"Timestamp=%1$s, Nonce=%2$s, AccessKey=%3$s, Signature=%4$s\", ..."
+        },
+        {
+          "source": "jadx",
+          "file": "m7/r.java",
+          "line": 63,
+          "snippet": "new SecretKeySpec(this.f211134b.getBytes(), \"HmacSHA1\");"
+        },
+        {
+          "source": "jadx",
+          "file": "m7/r.java",
+          "line": 114,
+          "snippet": "builderNewBuilder2.add(\"Content-MD5\", str);"
+        },
+        {
+          "source": "jadx",
+          "file": "wc1/a.java",
+          "line": 93,
+          "snippet": "g(): MessageDigest.getInstance(\"md5\"); d(): Base64.encodeToString(bArr, 2); l(): hex lowercase"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtpmediastatistics/SSLClient.java",
+          "line": 81,
+          "snippet": "X_AUTHORIZATION = \"X-Authorization\";"
+        },
+        {
+          "source": "jadx",
+          "file": "m7/u.java",
+          "line": 118,
+          "snippet": "if (getAccessKey() != null && getSecret() != null) addInterceptor(new r(getAccessKey(), getSecret()));"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.signing.keys",
+      "kind": "constant",
+      "description": "Cloud API AccessKey / SecretKey literal constants in the APK (Java, bs0/b.java).",
+      "value": {
+        "production": {
+          "access_key": "4d11b6b9d5ea4d19a829adbb9714b057",
+          "secret_key": "6ed7d97f3e73467f8a5bab90b577ba4c"
+        },
+        "beta": {
+          "access_key": "c5346f1ee6b54cd4b91908f430be0dd8",
+          "secret_key": "7d8b75223d674cdab23651d918434d81"
+        },
+        "native_check": "Neither production value occurs in artifacts/apk/native_arm64/*.so (rg -a found 0 hits); keys are Java-only."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "bs0/b.java",
+          "line": 226,
+          "snippet": "return p0() ? \"4d11b6b9d5ea4d19a829adbb9714b057\" : \"c5346f1ee6b54cd4b91908f430be0dd8\";"
+        },
+        {
+          "source": "jadx",
+          "file": "bs0/b.java",
+          "line": 234,
+          "snippet": "return p0() ? \"6ed7d97f3e73467f8a5bab90b577ba4c\" : \"7d8b75223d674cdab23651d918434d81\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/core/TapoAppContext.java",
+          "line": 309,
+          "snippet": "public String getAccessKey() { return bs0.b.g(); }"
+        },
+        {
+          "source": "rea",
+          "command": "rea inspect-artifact artifacts\\apk\\native_arm64\\libtpgenkey.so --token-limit 1200",
+          "summary": "ELF inventory of libtpgenkey.so (sha256 7d985cc6...); combined with rg -a no AccessKey/Secret literal inside native libs."
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.common_query_params",
+      "kind": "header",
+      "description": "Interceptor m7.q appends query parameters and default Content-Type to every cloud request unless the request has 'query-params-required:false'. token is omitted when 'token-required:false' (login, getAccountStatusAndUrl, captchaLogin...).",
+      "value": {
+        "query_params_in_order": [
+          "appName",
+          "appVer",
+          "netType",
+          "termID",
+          "ospf",
+          "brand",
+          "locale",
+          "model (if set)",
+          "termName (if set)",
+          "termMeta (if set)",
+          "token (if required and known)"
+        ],
+        "values": {
+          "appName": "TP-Link_Tapo_Android",
+          "appVer": "app versionName, e.g. 3.22.806",
+          "netType": "network type string (e.g. wifi)",
+          "termID": "terminalUUID (see cloud.terminal_uuid)",
+          "ospf": "\"Android \" + Build.VERSION.RELEASE (desktop: any OS string, e.g. 'Windows 11')",
+          "brand": "TPLINK (default when null)",
+          "locale": "Locale.getDefault().toString(), e.g. en_US",
+          "token": "TCAccountBean token from login"
+        },
+        "content_type": "application/json;charset=UTF-8",
+        "signing_scope_note": "Query params are NOT part of the signature (only encodedPath is signed)."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "m7/q.java",
+          "line": 31,
+          "snippet": "addQueryParameter(\"appName\", ...).addQueryParameter(\"appVer\", ...).addQueryParameter(\"netType\", ...).addQueryParameter(\"termID\", ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "m7/q.java",
+          "line": 58,
+          "snippet": "builderNewBuilder.addHeader(\"Content-Type\", \"application/json;charset=UTF-8\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libbaseui/base/core/u.java",
+          "line": 71,
+          "snippet": "return \"TP-Link_Tapo_Android\";"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.terminal_uuid",
+      "kind": "algorithm",
+      "description": "terminalUUID / termID generation (persisted once in SharedPreferences 'term_uuid_pref'/'term_uuid_new').",
+      "value": {
+        "android_algorithm": "UPPERCASE hex MD5( '35' + per-Build-field length%10 digits + ANDROID_ID ) -> 32 hex chars; fallback UUID.randomUUID().toString()",
+        "desktop_recommendation": "Generate once, persist, reuse: 32 uppercase hex chars (e.g. MD5 of a random seed). Any stable unique value is accepted as a terminal identifier; it is also what MFA 'trusted terminal' binds to."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapoiotnetwork/utils/m.java",
+          "line": 31,
+          "snippet": "getSharedPreferences(\"term_uuid_pref\", 0).getString(\"term_uuid_new\", \"\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapoiotnetwork/utils/m.java",
+          "line": 60,
+          "snippet": "return sb2.toString().toUpperCase(Locale.ENGLISH);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.account_status_and_url.request",
+      "kind": "request",
+      "description": "Step 1 of sign-in: discover account status and the regional server. Signed, no token.",
+      "value": {
+        "method": "POST",
+        "url": "https://n-wap.i.tplinkcloud.com/api/v2/account/getAccountStatusAndUrl?appName=TP-Link_Tapo_Android&appVer=...&netType=...&termID=...&ospf=...&brand=TPLINK&locale=en_US",
+        "body": {
+          "appType": "TP-Link_Tapo_Android",
+          "cloudUserName": "<email>",
+          "regionCode": "<optional>"
+        },
+        "headers": [
+          "Content-Type: application/json;charset=UTF-8",
+          "Content-MD5",
+          "X-Authorization"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/AccountV2Api.java",
+          "line": 70,
+          "snippet": "@o(\"/api/v2/account/getAccountStatusAndUrl\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/account/params/AccountStatusAndUrlParams.java",
+          "line": 6,
+          "snippet": "private String appType; private String cloudUserName; private String regionCode;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 1433,
+          "snippet": "this.f147070e.getAccountStatusAndUrl(accountStatusAndUrlParams)"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.account_status_and_url.response",
+      "kind": "response",
+      "description": "Response envelope CloudResult {errorCode:int, msg:string, result:{...}}.",
+      "value": {
+        "envelope": {
+          "errorCode": 0,
+          "msg": "",
+          "result": {}
+        },
+        "result_fields": {
+          "accountApiUrl": "string",
+          "appServerUrl": "string (V1 JSON-RPC host)",
+          "appServerUrlV2": "string (regional base for /api/v2/*)",
+          "status": "int account status",
+          "deletePending": "int",
+          "lockedMinutes": "string",
+          "serviceRegion": "string"
+        },
+        "client_action": "store appServerUrl + appServerUrlV2 for this user; use appServerUrlV2 as {url} for login and every later call"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/account/result/AccountStatusAndUrlResult.java",
+          "line": 6,
+          "snippet": "accountApiUrl, appServerUrl, appServerUrlV2, deletePending, lockedMinutes, serviceRegion, status"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/common/CloudResult.java",
+          "line": 10,
+          "snippet": "private int errorCode; private String msg; private T result;"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.login.request",
+      "kind": "request",
+      "description": "Step 2: TP-Link ID login (V2 REST, signed, no token). The old JSON-RPC form {method:'login',params:{...}} (AccountApi POST '/') still exists in code but the Tapo login path uses AccountV2Api.",
+      "value": {
+        "method": "POST",
+        "url": "{appServerUrlV2}/api/v2/account/login?<common query params, no token>",
+        "body": {
+          "appType": "TP-Link_Tapo_Android",
+          "appVersion": "3.22.806",
+          "cloudUserName": "<email or phone>",
+          "cloudPassword": "<plaintext password>",
+          "platform": "Android <release>  (u.f141906c = 'Android ' + Build.VERSION.RELEASE)",
+          "refreshTokenNeeded": false,
+          "terminalUUID": "<persistent 32 hex uppercase>",
+          "terminalName": "<Build.MANUFACTURER + ' ' + Build.MODEL>, desktop: e.g. 'Microsoft Windows PC'",
+          "terminalMeta": "1",
+          "supportBindAccount": "bool, optional (default false)",
+          "terminalBindCode": "string, optional"
+        },
+        "captcha_variant": "POST {url}/api/v2/account/captchaLogin with the same LoginV2Params body (used by silent re-login)",
+        "legacy_v1": {
+          "url": "{appServerUrl}/ (JSON-RPC)",
+          "body": {
+            "method": "login",
+            "params": {
+              "appType": "...",
+              "appVersion": "...",
+              "cloudUserName": "...",
+              "cloudPassword": "...",
+              "platform": "...",
+              "refreshTokenNeeded": true,
+              "terminalUUID": "..."
+            }
+          },
+          "note": "unsigned, method name from public pytapo/kasa knowledge; not used by Tapo V2 path"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/AccountV2Api.java",
+          "line": 102,
+          "snippet": "@o(\"{url}/api/v2/account/login\") loginByAccount(@s(\"url\") String, @a LoginV2Params)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/account/params/LoginV2Params.java",
+          "line": 6,
+          "snippet": "appType, appVersion, cloudPassword, cloudUserName, platform, refreshTokenNeeded, supportBindAccount, terminalBindCode, terminalMeta, terminalName, terminalUUID"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 1708,
+          "snippet": "G1(): setCloudUserName/setCloudPassword/setAppType/setTerminalUUID/setPlatform/setAppVersion/..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/iot/viewmodel/account/AccountChangePasswordViewModel.java",
+          "line": 83,
+          "snippet": "G1(user, pwd, u.f141904a, u.f141905b, u.f141911h, u.f141912i, u.f141906c, u.f141907d, false)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libbaseui/base/core/u.java",
+          "line": 46,
+          "snippet": "f141911h = Build.MANUFACTURER + \" \" + str; f141912i = \"1\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/AccountApi.java",
+          "line": 74,
+          "snippet": "@o(\"/\") loginByAccount(@a CloudParams<LoginParams>)  // legacy JSON-RPC"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.login.response",
+      "kind": "response",
+      "description": "Login response. Business errors arrive either as envelope errorCode != 0 or as result.errorCode (STRING) != '0' with errorMsg.",
+      "value": {
+        "envelope": {
+          "errorCode": 0,
+          "msg": "",
+          "result": {}
+        },
+        "result_fields": {
+          "token": "string, used as ?token= on later calls",
+          "refreshToken": "string (only if refreshTokenNeeded)",
+          "accountId": "string",
+          "nickname": "string",
+          "email": "string",
+          "username": "string",
+          "mobile": "string",
+          "regionCode": "string",
+          "registerType": "string (email|mobile)",
+          "regTime": "string",
+          "avatarUrl": "string",
+          "avatarHttpsUrl": "string",
+          "MFAProcessId": "string (when MFA required)",
+          "supportedMFATypes": "int[] (1 PUSH, 2 EMAIL, 3 TOTP, 4 PHONE/SMS)",
+          "mfaEmail": "string",
+          "failedAttempts": "int",
+          "remainAttempts": "int",
+          "lockedMinutes": "int",
+          "riskDetected": "int",
+          "errorCode": "string",
+          "errorMsg": "string",
+          "appServerUrl": "string",
+          "appServerUrlV2": "string",
+          "accountApiUrl": "string"
+        },
+        "success_rule": "envelope.errorCode == 0 AND int(result.errorCode or '0') == 0"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/account/result/LoginV2Result.java",
+          "line": 18,
+          "snippet": "@SerializedName(\"MFAProcessId\") private String mfaProcessId;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/common/CloudBusinessResult.java",
+          "line": 9,
+          "snippet": "accountApiUrl, appServerUrl, appServerUrlV2, errorCode (String), errorMsg"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 686,
+          "snippet": "if (com.tplink.libcloud.utils.b.d(loginV2Result.getErrorCode()) != 0) throw new CloudAccountV2Exception(loginV2Result);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/mfa/MfaType.java",
+          "line": 10,
+          "snippet": "EMAIL = 2; PHONE = 4; PUSH = 1; TOTP = 3;"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.login.error_codes",
+      "kind": "error_code",
+      "description": "Account/login error codes (ErrorConstants + login handling). Codes listed in utils.b.a() are shown to the user as login failures.",
+      "value": {
+        "-20004": "generic login failure (user-visible)",
+        "-20104": "APP_PARAMETER_NOT_FOUND",
+        "-20200": "APP_INVALID_EMAIL",
+        "-20202": "APP_INVAID_USERNAME",
+        "-20212": "wrong region / default appServerUrl: result carries appServerUrlV2 -> client must store it and repeat login against that URL",
+        "-20600": "APP_ACCOUNT_NOT_FOUND",
+        "-20601": "APP_CREDENTIAL_MISMATCH (wrong email/password)",
+        "-20602": "APP_ACCOUNT_INACTIVE (email not verified)",
+        "-20607": "login failure (user-visible)",
+        "-20615": "APP_INVALID_PASSWORD",
+        "-20651": "APP_TOKEN_EXPIRED / AUTH_UNAUTHORIZED -> app silently re-logs in with stored user+password (captchaLogin)",
+        "-20652": "APP_TOKEN_CREDENTIAL_MISMATCH -> full re-login",
+        "-20655": "APP_REFRESH_TOKEN_EXPIRED",
+        "-20656": "APP_REFRESH_TOKEN_NOT_FOUND",
+        "-20661": "APP_ACCOUNT_IS_LOCKED (see lockedMinutes / remainAttempts)",
+        "-20675": "APP_ACCOUNT_LOGGED_IN_OTHER_PLACES -> full re-login",
+        "-20676": "MFA-related login failure (user-visible)",
+        "-20677": "ACCOUNT_MFA_ENABLED: result has MFAProcessId + supportedMFATypes -> run cloud.mfa flow",
+        "-20681": "login failure (user-visible)",
+        "-20697": "login failure (user-visible)",
+        "-20708": "login failure (user-visible)",
+        "-23003": "APP_VERSION_TOO_OLD (appVersion too low; send a current app version string)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/utils/b.java",
+          "line": 23,
+          "snippet": "case ErrorConstants.ACCOUNT_MFA_ENABLED /* -20677 */:"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/utils/b.java",
+          "line": 46,
+          "snippet": "-20212 != d(cloudAccountV2Exception.getLoginV2Result().getErrorCode())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/iot/ErrorConstants.java",
+          "line": 17,
+          "snippet": "ACCOUNT_MFA_ENABLED = -20677;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/iot/ErrorConstants.java",
+          "line": 24,
+          "snippet": "APP_ACCOUNT_LOGGED_IN_OTHER_PLACES = -20675;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/iot/ErrorConstants.java",
+          "line": 59,
+          "snippet": "APP_TOKEN_EXPIRED = -20651;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 1398,
+          "snippet": "return J1(appServerUrlV2, str, str2, ...);  // retry login on -20212"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 1300,
+          "snippet": "if (errCode != -20675) { if (errCode == -20212) ... }"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.mfa",
+      "kind": "state_machine",
+      "description": "MFA / 2-step verification when login returns -20677.",
+      "value": {
+        "step1_trigger": "login result.errorCode == '-20677'; keep result.MFAProcessId and supportedMFATypes",
+        "step2_send_code": {
+          "email": "POST {url}/api/v2/account/getEmailVC4TerminalMFA",
+          "push": "POST {url}/api/v2/account/getPushVC4TerminalMFA",
+          "sms": "POST {url}/api/v2/account/getSmsVC4TerminalMFA",
+          "body": {
+            "appType": "TP-Link_Tapo_Android",
+            "cloudUserName": "<email>",
+            "cloudPassword": "<password>",
+            "terminalUUID": "<uuid>",
+            "locale": "<e.g. en_US, email/sms only>"
+          }
+        },
+        "step3_verify": {
+          "url": "POST {url}/api/v2/account/checkMFACodeAndLogin",
+          "body": {
+            "appType": "TP-Link_Tapo_Android",
+            "cloudUserName": "<email>",
+            "code": "<6-digit code>",
+            "MFAProcessId": "<from login>",
+            "MFAType": "1 push | 2 email | 3 totp | 4 sms",
+            "terminalBindEnabled": true
+          },
+          "response": "same LoginV2Result as cloud.login.response (token, accountId, ...)"
+        },
+        "note": "terminalBindEnabled:true makes this terminalUUID trusted so later logins skip MFA. All MFA calls are signed (cloud.signing)."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/MultiFactorAuthApi.java",
+          "line": 75,
+          "snippet": "@o(\"{url}/api/v2/account/getEmailVC4TerminalMFA\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/MultiFactorAuthApi.java",
+          "line": 91,
+          "snippet": "@o(\"{url}/api/v2/account/getPushVC4TerminalMFA\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/AccountV2Api.java",
+          "line": 50,
+          "snippet": "@o(\"{url}/api/v2/account/checkMFACodeAndLogin\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/account/params/CheckMFACodeParams.java",
+          "line": 12,
+          "snippet": "@SerializedName(\"MFAProcessId\") ... @SerializedName(\"MFAType\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 2151,
+          "snippet": "checkMFACodeParams.setTerminalBindEnabled(true);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/mfa/params/TerminalParams.java",
+          "line": 6,
+          "snippet": "appType, cloudPassword, cloudUserName, locale, terminalUUID"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.token_refresh",
+      "kind": "state_machine",
+      "description": "How the app keeps the session alive. No refreshToken call is used in the Tapo account path; on token expiry the app re-logs in with the stored plaintext password (which it also needs for local camera auth).",
+      "value": {
+        "on_start": "if stored token empty -> login; if appServerUrl is default/null -> getAccountStatusAndUrl then login; else POST {url}/api/v2/account/login with body CloudUserParams {cloudUserName} and ?token= (loginByToken validation)",
+        "on_error_-20651": "POST {url}/api/v2/account/captchaLogin with full LoginV2Params (stored user + password); replace token; retry original call",
+        "on_error_-20652_or_-20675": "full loginByAccount",
+        "legacy_refresh": "AccountApi.refreshToken (JSON-RPC method on '/', params {appType, refreshToken, terminalUUID}) exists but is not called by the V2 flow",
+        "logout": "POST {url}/api/v2/account/logout body {cloudUserName}"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n7/e.java",
+          "line": 100,
+          "snippet": "(th2 instanceof CloudException) && ((CloudException) th2).getErrCode() == -20651;"
+        },
+        {
+          "source": "jadx",
+          "file": "n7/e.java",
+          "line": 76,
+          "snippet": "((AccountV2Api) ...).captchaLogin(this.f213340b.i(), l())"
+        },
+        {
+          "source": "jadx",
+          "file": "n7/e.java",
+          "line": 60,
+          "snippet": "private LoginV2Params l() { ... setCloudPassword(f().getPassword()) ... }"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCAccountRepository.java",
+          "line": 202,
+          "snippet": "oc1.a.d(\"login\", \"isDefaultAppServerUrlOrNull\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/AccountV2Api.java",
+          "line": 106,
+          "snippet": "@o(\"{url}/api/v2/account/login\") loginByToken(..., @a CloudUserParams)"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.device_list",
+      "kind": "request",
+      "description": "Device list used by the app's TC cloud repository (signed, with ?token=). Camera list query uses deviceTypeList filter and pages of 20.",
+      "value": {
+        "method": "POST",
+        "url": "{appServerUrlV2}/api/v2/common/getDeviceListByPage?<common query params incl. token>",
+        "body": {
+          "deviceTypeList": [
+            "SMART.IPCAMERA",
+            "SMART.TAPODOORBELL",
+            "SMART.TAPOHUB"
+          ],
+          "index": 0,
+          "limit": 20
+        },
+        "optional_body_fields": {
+          "deviceType": "string",
+          "protocol": "string",
+          "deviceExtensionCodeList": "string[]"
+        },
+        "paging": "repeat with index += limit while collected < result.totalNum",
+        "gzip_variant": "same URL with header 'X-CloudDef-Accept-Encoding: gzip'",
+        "non_paged": "POST {url}/api/v2/common/getDeviceList body {deviceType?, protocol?}",
+        "device_type_values": {
+          "camera": "SMART.IPCAMERA",
+          "doorbell": "SMART.TAPODOORBELL",
+          "hub": "SMART.TAPOHUB",
+          "nvr": "SMART.TAPONVR",
+          "nvr_channel": "SMART.NVRCHANNEL"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/api/DeviceV2Api.java",
+          "line": 98,
+          "snippet": "@o(\"{url}/api/v2/common/getDeviceListByPage\")"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/device/params/DeviceListPageParams.java",
+          "line": 9,
+          "snippet": "deviceExtensionCodeList; deviceTypeList; index; limit;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCDeviceRepository.java",
+          "line": 631,
+          "snippet": "G(new DeviceListPageParams((String) null, 0, 20, strArr))"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCDeviceRepository.java",
+          "line": 762,
+          "snippet": "H(TAPO_CAMERA.getDeviceType(), TAPO_DOORBELL.getDeviceType(), TAPO_HUB.getDeviceType())"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/repository/TCDeviceRepository.java",
+          "line": 253,
+          "snippet": "setIndex(deviceListPageParams.getIndex() + this.f147232b.getLimit());"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libutility/enumerate/EnumDeviceType.java",
+          "line": 13,
+          "snippet": "TAPO_CAMERA(\"SMART.IPCAMERA\"),"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.device_list.response",
+      "kind": "response",
+      "description": "getDeviceListByPage result: {currentIndex, totalNum, deviceList:[DeviceInfoResult]}. The cloud returns no LAN IP; the IP comes only from TDP discovery.",
+      "value": {
+        "result": {
+          "currentIndex": "int",
+          "totalNum": "int",
+          "deviceList": "array"
+        },
+        "device_fields": {
+          "deviceId": "string (40 hex), primary key",
+          "deviceMac": "string 12 hex without separators; app formats as AA-BB-CC-DD-EE-FF uppercase",
+          "deviceModel": "string e.g. C200",
+          "deviceName": "string model name",
+          "alias": "string user name of the device (no Base64 adapter on this field in DeviceInfoResult; Base64 is used only on SSID fields)",
+          "deviceType": "SMART.IPCAMERA etc.",
+          "deviceHwVer": "string",
+          "fwVer": "string",
+          "fwId": "string",
+          "hwId": "string",
+          "oemId": "string",
+          "status": "int: 0 = offline, any other value = online",
+          "role": "int: 0 = owner, otherwise shared user",
+          "appServerUrl": "string",
+          "appServerUrlV2": "string",
+          "isSameRegion": "bool",
+          "extensionData": "map<string, DeviceInfoExtensionData{...}>"
+        },
+        "local_ip_from_cloud": "none found (no IP field in DeviceInfoResult); use TDP"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/device/result/DeviceInfoResult.java",
+          "line": 8,
+          "snippet": "alias, appServerUrl, appServerUrlV2, deviceHwVer, deviceId, deviceMac, deviceModel, deviceName, deviceType, ..."
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/bean/device/result/DeviceListPageResult.java",
+          "line": 6,
+          "snippet": "private int currentIndex; private int totalNum;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/bean/TCDeviceBean.java",
+          "line": 305,
+          "snippet": "getStatus() == 0 ? EnumDeviceStatus.STATUS_OFFLINE : EnumDeviceStatus.STATUS_ONLINE;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libcloud/bean/TCDeviceBean.java",
+          "line": 44,
+          "snippet": "String.format(\"%s-%s-%s-%s-%s-%s\", upperCase.subSequence(0, 2), ..."
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "tdp.transport",
+      "kind": "constant",
+      "description": "TDP (TP-Link Discovery Protocol) v2 UDP transport used by the app to find Tapo cameras on the LAN.",
+      "value": {
+        "protocol": "UDP, unbound ephemeral local port, SO_BROADCAST when broadcasting, SO_REUSEADDR",
+        "destination": "255.255.255.255",
+        "ports": {
+          "default": 20002,
+          "camera_scans_also_use": 20004
+        },
+        "cross_segment_set_ip": "multicast 239.255.255.250, opcode 16 (provisioning only)",
+        "schedule_default": {
+          "count": 8,
+          "interval_ms": 300,
+          "end_wait_ms": 900
+        },
+        "schedule_camera_scan": "interval 90 ms, count = (total_ms*?)/90 per caller; some scans use per-send intervals [300,300,300,600,600] and end wait 3000 ms",
+        "socket_timeout_ms": 8000,
+        "desktop_recommendation": "send the same request to 255.255.255.255:20002 and :20004 (and each interface's directed broadcast) about 8 times at 300 ms spacing, then listen ~1-3 s"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/tpcommon/discovery/tdp/TDPDefine.java",
+          "line": 25,
+          "snippet": "TDP_SERVER_PORT = 20002;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/tpcommon/discovery/tdp/TDPDefine.java",
+          "line": 6,
+          "snippet": "TDP_BROADCAST_DEFAULT_COUNT = 8; ... INTERVAL_MILLIS = 300; END_WAIT_TIMEOUT_MILLIS = 900"
+        },
+        {
+          "source": "jadx",
+          "file": "w21/j.java",
+          "line": 366,
+          "snippet": "dVar.t(20004);"
+        },
+        {
+          "source": "jadx",
+          "file": "dn1/d.java",
+          "line": 47,
+          "snippet": "this.f187124c = \"255.255.255.255\"; this.f187125d = TDPDefine.TDP_SERVER_PORT;"
+        },
+        {
+          "source": "jadx",
+          "file": "bn1/l.java",
+          "line": 445,
+          "snippet": "this.f5126a.socket().setSoTimeout(8000);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "tdp.request.packet",
+      "kind": "algorithm",
+      "description": "TDP packet = 16-byte header + UTF-8 JSON payload. All multi-byte fields big-endian (sc1.a writes MSB first on little-endian hosts).",
+      "value": {
+        "header_layout": [
+          {
+            "offset": 0,
+            "size": 1,
+            "name": "version",
+            "value": "0x02 (TDP_VERSION_V2)"
+          },
+          {
+            "offset": 1,
+            "size": 1,
+            "name": "reserved",
+            "value": "0x00"
+          },
+          {
+            "offset": 2,
+            "size": 2,
+            "name": "opcode",
+            "value": "0x0001 (TDP_V2_OP_DISCOVERY)"
+          },
+          {
+            "offset": 4,
+            "size": 2,
+            "name": "payload_length",
+            "value": "bytes of JSON payload"
+          },
+          {
+            "offset": 6,
+            "size": 1,
+            "name": "flags",
+            "value": "0x11 broadcast request (0x10|0x01); 0x21 unicast request (0x20|0x01). Bits: 0x01 REQUEST, 0x02 REPLY, 0x04 COMPRESS, 0x08 ENCRYPT, 0x10 BROADCAST, 0x20 UNICAST"
+          },
+          {
+            "offset": 7,
+            "size": 1,
+            "name": "ret/err",
+            "value": "0x00 in requests (TDP_RET_DEFAULT); replies 0 or 1 accepted"
+          },
+          {
+            "offset": 8,
+            "size": 4,
+            "name": "serial",
+            "value": "random int in [0, 2^28)"
+          },
+          {
+            "offset": 12,
+            "size": 4,
+            "name": "checksum",
+            "value": "CRC32"
+          }
+        ],
+        "checksum_algorithm": "write 0x5A6B7C8D (1516993677) at offset 12, compute standard CRC-32 (zlib/IEEE) over header+payload, write result big-endian at offset 12",
+        "payload": {
+          "params": {
+            "rsa_key": "<PEM SubjectPublicKeyInfo of a fresh RSA-2048 key, lines of 64 chars, '\\n' line ends, trailing '\\n'>"
+          }
+        },
+        "payload_variant": {
+          "params": {
+            "rsa_key": "<PEM>",
+            "new_feature": 1
+          }
+        },
+        "rsa_key_generation": "app-lifetime singleton KeyPairGenerator RSA 2048; PEM header '-----BEGIN PUBLIC KEY-----' / footer '-----END PUBLIC KEY-----'",
+        "golden_vector": {
+          "payload": "{\"params\":{\"rsa_key\":\"TEST\"}}",
+          "serial": "0x01234567",
+          "crc32": "0x1acf2577",
+          "packet_hex": "02000001001d1100012345671acf25777b22706172616d73223a7b227273615f6b6579223a2254455354227d7d"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "dn1/c.java",
+          "line": 42,
+          "snippet": "public c(byte b12, short s12, byte b13, String str, byte b14, b bVar)"
+        },
+        {
+          "source": "jadx",
+          "file": "dn1/c.java",
+          "line": 93,
+          "snippet": "System.arraycopy(sc1.a.d(this.f187114c), 0, bArr, 2, 2);"
+        },
+        {
+          "source": "jadx",
+          "file": "dn1/c.java",
+          "line": 72,
+          "snippet": "crc32.update(this.f187121j); ... arraycopy(sc1.a.c(value), 0, this.f187121j, 12, 4)"
+        },
+        {
+          "source": "jadx",
+          "file": "dn1/c.java",
+          "line": 105,
+          "snippet": "return new Random().nextInt(268435456);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplinkra/tpcommon/discovery/tdp/TDPDefine.java",
+          "line": 10,
+          "snippet": "TDP_CHECKSUM_DEFAULT = 1516993677;"
+        },
+        {
+          "source": "jadx",
+          "file": "bn1/l.java",
+          "line": 463,
+          "snippet": "new dn1.c(bL, dVar.f(), (byte) (i12 | 1), dVar.g(), dVar.i(), dVar.e());  // i12 = 16 bcast / 32 ucast"
+        },
+        {
+          "source": "jadx",
+          "file": "sc1/a.java",
+          "line": 40,
+          "snippet": "i(int): {(byte)(i12 >> 24), (byte)(i12 >> 16), (byte)(i12 >> 8), (byte) i12}"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/camera/TDPCameraDiscoverRequest.java",
+          "line": 22,
+          "snippet": "@SerializedName(\"rsa_key\") private String rsaKey;"
+        },
+        {
+          "source": "jadx",
+          "file": "w21/j.java",
+          "line": 367,
+          "snippet": "dVar.s(ke1.b.j(new TDPCameraDiscoverRequest(ke1.g.b().c())));"
+        },
+        {
+          "source": "jadx",
+          "file": "ke1/g.java",
+          "line": 37,
+          "snippet": "keyPairGenerator.initialize(2048);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "tdp.response.validation",
+      "kind": "algorithm",
+      "description": "How replies are accepted.",
+      "value": {
+        "steps": [
+          "read 16-byte header (same layout), payload_length must be > 0",
+          "copy header+payload, overwrite bytes 12..15 with 0x5A6B7C8D, CRC32 must equal received checksum",
+          "serial must equal the request serial, version must equal request version, byte 7 must be 0 or 1",
+          "payload is UTF-8 JSON {\"error_code\":0,\"result\":{...}}; ignore if error_code != 0",
+          "multiple packets may be concatenated in one datagram buffer; advance 16+payload_length"
+        ]
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "bn1/l.java",
+          "line": 314,
+          "snippet": "private boolean H(dn1.c cVar, byte[] bArr, int i12)  // CRC check"
+        },
+        {
+          "source": "jadx",
+          "file": "bn1/l.java",
+          "line": 232,
+          "snippet": "cVar.j() == this.f5129d.j() && cVar.k() == this.f5129d.k() && (bI == 0 || bI == 1)"
+        },
+        {
+          "source": "jadx",
+          "file": "en1/a.java",
+          "line": 27,
+          "snippet": "if (tDPResult.getErrorCode() == 0) return tDPResult.getResult();"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tdp/common/TDPResult.java",
+          "line": 9,
+          "snippet": "@SerializedName(\"error_code\") private int errorCode; private T result;"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "tdp.response.fields",
+      "kind": "response",
+      "description": "Camera reply result object (TDPCameraResult / CommonTDPResult extends BaseTDPJsonResult extends BaseTDPDevice).",
+      "value": {
+        "base": {
+          "ip": "string IPv4",
+          "mac": "string (any of AA:BB.., AA-BB.., AABB..; app normalises to 12 uppercase hex)",
+          "device_type": "e.g. SMART.IPCAMERA",
+          "device_model": "e.g. C200",
+          "factory_default": "bool"
+        },
+        "plain_fields": {
+          "device_id": "string; when encrypt_info is absent this is already MD5(deviceId) (app lowercases it)",
+          "device_name": "string",
+          "hardware_version": "string",
+          "hw_ver": "string",
+          "firmware_ver|firmware_version": "string",
+          "isResetWiFi": "bool",
+          "is_support_iot_cloud": "bool",
+          "obd_src": "string (tplink|apple|matter|amazon|google|homekit)",
+          "owner": "string (owner account hash; empty => unbound)",
+          "protocol_version": "int",
+          "sv": "int security version",
+          "account_status": "int",
+          "support_code": "int",
+          "mask": "string",
+          "gateway": "string",
+          "encrypt_type": "string[]",
+          "sleep": "bool",
+          "battery_percent": "int",
+          "battery_charging": "bool",
+          "low_battery": "bool",
+          "batt_chg_temp_st": "string",
+          "power": "string",
+          "power_save_status": "string",
+          "sd_status": "string",
+          "last_alarm_time": "int",
+          "lens_mask": "string",
+          "snooze_status": "string",
+          "snooze_endtime": "long",
+          "custom_mfr": "string",
+          "tpap": "object TDPTpapInfo (port etc.)",
+          "tpap_preferred": "bool"
+        },
+        "mgt_encrypt_schm": {
+          "camera_class": {
+            "is_support_https": "bool"
+          },
+          "common_class": {
+            "is_support_https": "bool",
+            "http_port": "int",
+            "lv": "int login version",
+            "encrypt_type": "string",
+            "new_klap": "int",
+            "ANS": "bool"
+          }
+        },
+        "encrypt_info": {
+          "key": "Base64 RSA-OAEP ciphertext",
+          "data": "Base64 AES ciphertext",
+          "sym_schm": "string"
+        },
+        "encrypt_info_plain_fields": {
+          "device_id": "full deviceId (40 hex)",
+          "http_port": "int local HTTPS API port",
+          "connect_ssid": "string",
+          "connect_type": "string",
+          "owner": "string",
+          "sd_status": "string",
+          "last_alarm_time": "string",
+          "last_alarm_type": "string"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/common/BaseTDPJsonResult.java",
+          "line": 11,
+          "snippet": "@SerializedName(\"device_model\") ... \"device_type\" ... \"factory_default\""
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/tdp/bean/BaseTDPDevice.java",
+          "line": 13,
+          "snippet": "@a(IPAdapter.class) @c(1) protected String ip; @c(2) protected String mac;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/camera/TDPCameraResult.java",
+          "line": 44,
+          "snippet": "@SerializedName(\"encrypt_info\") private EncryptedInfo encryptedInfo;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/common/EncryptScheme.java",
+          "line": 13,
+          "snippet": "@SerializedName(\"http_port\") private int httpPort;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/camera/TDPCameraEncryptResult.java",
+          "line": 19,
+          "snippet": "@SerializedName(\"http_port\") private int httpPort;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtdp/bean/common/EncryptedInfo.java",
+          "line": 10,
+          "snippet": "\"data\", \"key\", \"sym_schm\""
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "tdp.encrypt_info.decrypt",
+      "kind": "algorithm",
+      "description": "Decryption of the encrypt_info block in a camera TDP reply.",
+      "value": {
+        "step1": "k = RSA-OAEP decrypt (RSA/ECB/OAEPWithSHA-1AndMGF1Padding, i.e. OAEP SHA-1 + MGF1-SHA1) of Base64Decode(encrypt_info.key) with the private key matching rsa_key sent in the request",
+        "step2": "aes_key = k[0:16], aes_iv = k[16:32]",
+        "step3": "plain = AES-128-CBC/PKCS7 decrypt of Base64Decode(encrypt_info.data)",
+        "step4": "plain is UTF-8 JSON TDPCameraEncryptResult; deviceIdMd5 = lowercase hex MD5(device_id)",
+        "no_encrypt_info": "use top-level device_id (already MD5, lowercase it); http_port unknown"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ke1/g.java",
+          "line": 41,
+          "snippet": "Cipher.getInstance(\"RSA/ECB/OAEPWithSHA-1AndMGF1Padding\");"
+        },
+        {
+          "source": "jadx",
+          "file": "z21/b.java",
+          "line": 162,
+          "snippet": "byte[] bArrA = g.b().a(Base64.decode(str, 2));"
+        },
+        {
+          "source": "jadx",
+          "file": "z21/b.java",
+          "line": 164,
+          "snippet": "copyOfRange(bArrA, 0, 16); copyOfRange(bArrA, 16, 32);"
+        },
+        {
+          "source": "jadx",
+          "file": "ke1/a.java",
+          "line": 42,
+          "snippet": "Cipher.getInstance(\"AES/CBC/PKCS7Padding\");"
+        },
+        {
+          "source": "jadx",
+          "file": "z21/b.java",
+          "line": 173,
+          "snippet": "setDeviceIdMd5(wc1.a.h(tDPCameraEncryptResult.getDeviceId()));"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "lan.match_rule",
+      "kind": "algorithm",
+      "description": "How a cloud device is paired with a LAN-discovered camera.",
+      "value": {
+        "key": "lowercase hex MD5( cloud deviceId UTF-8 )",
+        "tdp_side": "deviceIdMd5 = MD5(decrypted encrypt_info.device_id) or lowercase(top-level device_id) when not encrypted",
+        "rule": "cloud device matches LAN device when MD5(cloud.deviceId) == tdp.deviceIdMd5. The app's device registry (TPIoTClientManager) and the TDP result map are both keyed by this MD5.",
+        "secondary_hint": "MAC (cloud deviceMac vs TDP mac, both normalised to 12 uppercase hex) can be used as a fallback check (inferred; the code paths seen key on MD5)",
+        "golden_vector": {
+          "deviceId": "802200000000000000000000000000000000ABCD",
+          "md5": "e4247a931858b38594790fc6606441aa"
+        }
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "w21/j.java",
+          "line": 84,
+          "snippet": "map.put(tDPCameraDeviceB.getDeviceIdMd5(), tDPCameraDeviceB);"
+        },
+        {
+          "source": "jadx",
+          "file": "aj0/b.java",
+          "line": 200,
+          "snippet": "TPIoTClientManager.y2(wc1.a.h(deviceBean.getDeviceId()));"
+        },
+        {
+          "source": "jadx",
+          "file": "wc1/a.java",
+          "line": 101,
+          "snippet": "h(String): return l(g(str.getBytes()));  // hex(md5)"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "lan.local_connection_params",
+      "kind": "constant",
+      "description": "Parameters the app passes to its local camera transport (d2) once a camera is found by TDP.",
+      "value": {
+        "host": "tdp.ip",
+        "https_api_port": "encrypt_info.http_port if > 0 (or tpap.port when TPAP is used), else default 443",
+        "username_for_camera_login": "admin (x0 builds Account(\"admin\", d2.f()))",
+        "password_for_camera_login": "the TP-Link ID password in plaintext (TCAccountBean.getPassword()), same one typed at sign-in; see auth.common.password_sources for LAT/FFS alternatives",
+        "local_user_name_param": "TCAccountBean.getLocalUserName(): email for email accounts; phone + '@tplink.id' for phone accounts (virtual email suffix)",
+        "device_id_param": "MD5(deviceId) (or TDP deviceIdMd5)",
+        "conclusion": "A signed-in desktop user needs no extra camera password: reuse the TP-Link ID password with username 'admin' on HTTPS :<http_port|443>, and the same password for the :8800 stream digest."
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "bv0/jm.java",
+          "line": 1257,
+          "snippet": "if (tdpCameraDevice.getHttpPort() <= 0) tdpCameraDevice.setHttpPort(BR.viewListener);"
+        },
+        {
+          "source": "jadx",
+          "file": "androidx/databinding/library/baseAdapters/BR.java",
+          "line": 451,
+          "snippet": "public static final int viewListener = 443;"
+        },
+        {
+          "source": "jadx",
+          "file": "bv0/jm.java",
+          "line": 1259,
+          "snippet": "new d2(tdp.getIp(), tdp.getHttpPort(), f().getLocalUserName(), f().getPassword(), ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libtapocameranetwork/transport/local/x0.java",
+          "line": 278,
+          "snippet": "this.f158063g = new Account(\"admin\", d2Var.f(), false);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/cloud/context/TCAccountBean.java",
+          "line": 16,
+          "snippet": "DEFAULT_VIRTUAL_EMAIL_SUFFIX = \"@tplink.id\";"
+        },
+        {
+          "source": "jadx",
+          "file": "qv0/i1.java",
+          "line": 60,
+          "snippet": "httpPort = (tpap == null || port == null) ? tDPCameraDevice.getHttpPort() : port.intValue();"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "lan.live_view_selection",
+      "kind": "state_machine",
+      "description": "Live view on LAN. When the media layer marks a device local (isDeviceLocal, i.e. reachable from TDP), the app streams over the local :8800 POST /stream channel (stream.control.preview in tapo_protocol_spec.json). No RTSP client code (no 'rtsp://' usage) exists in the app; RTSP :554 is only for third-party clients.",
+      "value": {
+        "local_default_resolution": "HD (EnumBitStreamType MAIN_HD 'HD' 1920*1080) unless the user previously chose another quality for this device",
+        "remote_default_resolution": "VGA (MINOR_VGA 'VGA' 640*360) for relay/P2P",
+        "forced_main": "devices with isForceMainStream && !isSupportMinorStream always use HD",
+        "preview_request": "see stream.control.preview: {type:'request', seq:1, params:{method:'get', preview:{channels:[0], resolutions:['HD'], audio:['default']}}}",
+        "fallback_order_note": "local -> P2P -> relay (cloud passthrough /api/v2/common/passthrough) when not local (inferred from MediaCallBack forbidP2P/forbidRelay and isDeviceLocal checks)"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "y31/a.java",
+          "line": 45,
+          "snippet": "\" ; local device, default resolution:\" + bitStreamTypeA2  // MAIN_HD"
+        },
+        {
+          "source": "jadx",
+          "file": "y31/a.java",
+          "line": 35,
+          "snippet": "\" ; remote device, default resolution:\"  // MINOR_VGA"
+        },
+        {
+          "source": "jadx",
+          "file": "x31/c.java",
+          "line": 46,
+          "snippet": "return j41.b.f200571b.isDeviceLocal(str);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tplink/libmediaapi/live/apienum/EnumBitStreamType.java",
+          "line": 11,
+          "snippet": "MINOR_VGA(\"VGA\", \"640*360\"), MAIN_HD(\"HD\", \"1920*1080\");"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
+    },
+    {
+      "id": "cloud.passthrough",
+      "kind": "endpoint",
+      "description": "Cloud passthrough used for remote (non-LAN) device control/relay setup; signed the same way, token in query.",
+      "value": {
+        "url": "POST https://{device appServerUrl host}:443/api/v2/common/passthrough?token=<token>",
+        "signed_path": "/api/v2/common/passthrough",
+        "headers": [
+          "Content-Type: application/json; charset=UTF-8",
+          "Content-MD5",
+          "X-Authorization",
+          "X-Client-Id: <uuid>",
+          "X-Source",
+          "X-Brand"
+        ],
+        "thing_cloud_variant": "POST /v1/things/{thingName}/services-sync with Authorization 'ut|<token>' and app-cid header, body {serviceId:'passthrough', inputParams:{...}}"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "za1/a.java",
+          "line": 138,
+          "snippet": "String.format(\"/api/v2/common/passthrough?token=%1$s\", ...)"
+        },
+        {
+          "source": "jadx",
+          "file": "za1/a.java",
+          "line": 176,
+          "snippet": "linkedHashMap.put(\"Content-MD5\", strA2);"
+        }
+      ],
+      "confidence": "verified",
+      "lane": "cloud"
     }
   ],
   "unresolved": [
@@ -10817,6 +12201,31 @@
       "topic": "ONVIF events/discovery",
       "detail": "No ONVIF client code in APK; PullPoint/WS-Discovery facts are external and must be validated on the device.",
       "lane": "vod"
+    },
+    {
+      "topic": "IoT Thing cloud device list",
+      "detail": "The app also merges devices from the newer IoT 'thing' cloud (ThingCloudRepository, JWT via {url}/v2/auth/app, ThingInfo.thingName/nickname/status). Cameras still appear in getDeviceListByPage; the thing-cloud list was not specified here.",
+      "lane": "cloud"
+    },
+    {
+      "topic": "alias encoding",
+      "detail": "DeviceInfoResult.alias has no Base64 adapter in this APK; some public clients report Base64 aliases from the legacy V1 getDeviceList. A client should try Base64-decode and keep the raw value if it does not decode to valid UTF-8.",
+      "lane": "cloud"
+    },
+    {
+      "topic": "exact camera-scan schedule",
+      "detail": "Callers of w21.j pass (i12,i13,i14) totals at runtime; only the 90 ms interval and the 8x300 ms / 900 ms defaults are literal constants.",
+      "lane": "cloud"
+    },
+    {
+      "topic": "terminalName on desktop",
+      "detail": "Server-side validation of platform/terminalName strings for non-Android clients is unknown; using Android-like values is the closest to app behaviour.",
+      "lane": "cloud"
+    },
+    {
+      "topic": "appVersion minimum",
+      "detail": "-23003 APP_VERSION_TOO_OLD threshold is server-side; send '3.22.806' or newer.",
+      "lane": "cloud"
     }
   ]
 }

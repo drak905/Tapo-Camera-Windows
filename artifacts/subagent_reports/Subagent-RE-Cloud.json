@@ -1,0 +1,27 @@
+{
+  "agent_id": "Subagent-RE-Cloud",
+  "status": "ok",
+  "spec_file": "specs/cloud_account_spec.json",
+  "items_total": 23,
+  "items_verified": 23,
+  "rea_commands_run": [
+    "rea inspect-artifact artifacts\\apk\\native_arm64\\libtpgenkey.so --token-limit 1200",
+    "rea inspect-artifact artifacts\\apk\\native_arm64\\libtpgenkey.so --format json --token-limit 1500 (rejected: UNSUPPORTED_OUTPUT_COMBINATION)"
+  ],
+  "key_findings": [
+    "Sign-in: POST https://n-wap.i.tplinkcloud.com/api/v2/account/getAccountStatusAndUrl {appType,cloudUserName} -> appServerUrlV2; then POST {appServerUrlV2}/api/v2/account/login with LoginV2Params (appType 'TP-Link_Tapo_Android', appVersion, cloudUserName, cloudPassword, platform, refreshTokenNeeded, terminalUUID, terminalName, terminalMeta '1').",
+    "Signing (m7.r): Content-MD5 = b64(md5(body or '{}')); X-Authorization = 'Timestamp=9999999999, Nonce=<uuid>, AccessKey=<ak>, Signature=hex(HMAC-SHA1(secret, md5b64\\n9999999999\\nnonce\\npath))'. Golden vector included.",
+    "Keys are Java literals in bs0/b.java:226/234: prod AccessKey 4d11b6b9d5ea4d19a829adbb9714b057, Secret 6ed7d97f3e73467f8a5bab90b577ba4c (beta pair also recorded). Not in native libs.",
+    "Errors: business errorCode is a STRING in result; -20212 -> retry at returned appServerUrlV2; -20677 MFA (MFAProcessId, getEmail/Push/SmsVC4TerminalMFA then checkMFACodeAndLogin with MFAType, terminalBindEnabled true); -20601/-20615 bad credentials; -20661 locked; -20651 token expired -> silent captchaLogin with stored password.",
+    "Device list: POST {url}/api/v2/common/getDeviceListByPage {deviceTypeList:[SMART.IPCAMERA,SMART.TAPODOORBELL,SMART.TAPOHUB], index, limit:20}; fields deviceId, deviceMac, deviceModel, alias, status (0 offline), role (0 owner), fwVer, deviceHwVer, appServerUrlV2. No LAN IP from cloud.",
+    "TDP v2: UDP 255.255.255.255:20002 (+20004), header ver 2, opcode 1, len, flags 0x11, ret 0, random 28-bit serial, CRC32 with seed field 0x5A6B7C8D, big-endian; payload {params:{rsa_key:PEM RSA-2048}}. Reply {error_code,result}; encrypt_info decrypted with RSA-OAEP-SHA1 -> AES-128-CBC key|iv. Golden packet included.",
+    "Match rule: MD5(cloud deviceId) == TDP deviceIdMd5. Local port = encrypt_info.http_port or 443. Camera login: 'admin' + TP-Link ID password. LAN live view defaults to HD via :8800 /stream, remote to VGA; app has no RTSP client."
+  ],
+  "unresolved": [
+    "IoT thing-cloud device list (JWT /v2/auth/app) not specified",
+    "alias Base64 encoding not confirmed in this APK (no adapter)",
+    "runtime camera-scan totals in w21.j callers",
+    "server acceptance of non-Android platform/terminalName strings",
+    "minimum appVersion for -23003"
+  ]
+}

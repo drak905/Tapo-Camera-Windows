@@ -53,6 +53,53 @@ class CameraConfig:
     grid_quality: StreamQuality = StreamQuality.SD
     fullscreen_quality: StreamQuality = StreamQuality.HD
     enable_onvif_events: bool = True
+    # Phase 2 (mobile parity): cameras imported from the TP-Link cloud account
+    source: str = "manual"  # "manual" (added by IP) | "cloud" (from the signed-in account)
+    device_id: str = ""  # cloud deviceId (stable identity; cloud cameras use it as `id`)
+    mac: str = ""  # "AA-BB-CC-DD-EE-FF" style as reported by cloud/TDP, normalised upper-case
+    model: str = ""  # e.g. "C210"
+    online: bool = True  # cloud status (status != 0); refreshed on sign-in / refresh
+    lan_found: bool = True  # host was located on the LAN (TDP or manual); False -> host is stale/empty
+    live_transport: str = "auto"  # "auto": RTSP if a camera account exists, else local :8800 | "local" | "rtsp"
+
+
+@dataclass(frozen=True)
+class AccountInfo:
+    """Signed-in TP-Link ID (secret password lives in the vault under camera_id ACCOUNT_VAULT_ID)."""
+
+    email: str
+    nickname: str = ""
+    account_id: str = ""
+    region_url: str = ""
+
+
+ACCOUNT_VAULT_ID = "__tplink_account__"
+
+
+@dataclass(frozen=True)
+class CloudDevice:
+    device_id: str
+    mac: str
+    model: str
+    alias: str
+    device_type: str = "SMART.IPCAMERA"
+    online: bool = True
+    fw_version: str = ""
+    hw_version: str = ""
+    role: int = 0  # 0 = owner, otherwise shared
+    raw: dict = field(default_factory=dict, compare=False, repr=False)
+
+
+@dataclass(frozen=True)
+class LanDevice:
+    ip: str
+    mac: str
+    model: str = ""
+    device_type: str = ""
+    device_id_md5: str = ""  # lowercase hex md5(cloud deviceId) as broadcast by TDP
+    http_port: int | None = None  # local HTTPS control port from encrypt_info (None -> 443)
+    source: str = "tdp"  # "tdp" | "onvif"
+    raw: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 @dataclass(frozen=True)

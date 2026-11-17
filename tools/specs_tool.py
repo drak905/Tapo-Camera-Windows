@@ -26,6 +26,7 @@ LANES = {
     "control": "camera_control_dtos.json",
     "media": "stream_profiles.json",
     "vod": "sd_vod_playback_spec.json",
+    "cloud": "cloud_account_spec.json",
 }
 MERGED = SPECS / "tapo_protocol_spec.json"
 CONFIDENCE = {"verified", "inferred", "external"}
