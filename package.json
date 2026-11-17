@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "tapo-desktop-tasks",
   "private": true,
   "description": "Task aliases for the verification gates (the app itself is Python/PyQt6).",

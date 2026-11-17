@@ -1,4 +1,4 @@
-﻿# Large / proprietary / dev-time-only artifacts (never committed, never shipped)
+# Large / proprietary / dev-time-only artifacts (never committed, never shipped)
 artifacts/apk/
 artifacts/tools/
 artifacts/jadx_*/
