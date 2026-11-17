@@ -28,6 +28,13 @@ cached clip in 6 KiB parts, playback = the PTS-continuous clip loop for ``end - 
 both ended by ``stream_status``/``finished`` (``playback_finishes=False``: playback keeps going past the
 clip end). ``vod_refuse`` = verbs answered with error -52402; ``vod_requests`` records the requests.
 
+Phase 5 (additive): ``playback_continuous = True`` makes a playback tunnel stream like a real camera
+(:class:`~tests.fixtures.mock_tapo_server.playback_feed.PlaybackFeed`): the recordings in
+``playback_recordings`` (``[(start, end)]`` epoch s; None = one recording spanning the request) from
+``start_time`` to ``end_time``, paced at ``playback_speed`` (None = unpaced), at most
+``playback_ack_window`` un-acked parts in flight, real PTS (``playback_pts``), ``do pause`` /
+``do play "null"`` / ``do play {start_time}`` / ``do stop`` honoured, ``finished`` at the end.
+
 The implementation is independent of ``tapo_desktop`` on purpose (own multipart parser).
 """
 from __future__ import annotations
@@ -44,7 +51,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .mock_tapo_server import media_assets, ts_loop
+from .mock_tapo_server import media_assets, playback_feed, ts_loop
 from .mock_tapo_server._net import quiet_close
 
 RELAY_HOST = "localhost"
@@ -107,6 +114,9 @@ class _Tunnel:
         self.stop_media = threading.Event()
         self.sender: threading.Thread | None = None
         self.slot: dict | None = None
+        self.feed: playback_feed.PlaybackFeed | None = None  # Phase 5 continuous playback
+        self.ack_cond = threading.Condition()
+        self.last_ack = 0
 
     # ---------------------------------------------------------------- I/O helpers
     def _recv(self) -> bool:
@@ -283,10 +293,25 @@ class _Tunnel:
                         self.relay.heartbeats.append((time.monotonic(), body))
                     elif event == "stream_sequence":
                         self.relay.acks.append(headers.get("X-Data-Received"))
+                if event == "stream_sequence" and str(headers.get("X-Data-Received", "")).isdigit():
+                    with self.ack_cond:
+                        self.last_ack = max(self.last_ack, int(headers["X-Data-Received"]))
+                        self.ack_cond.notify_all()
                 continue
             if msg.get("type") != "request":
                 continue
             stream_type = (self.slot or {}).get("streamType", 0)
+            feed = self.feed
+            if feed is not None and params.get("method") == "do" and ("pause" in params or "play" in params):
+                play = params.get("play")
+                if "pause" in params:
+                    feed.pause()
+                elif play == "null":
+                    feed.resume()
+                elif isinstance(play, dict) and str(play.get("start_time", "")).isdigit():
+                    feed.seek(int(play["start_time"]))
+                self.send_json({"type": "response", "seq": msg.get("seq"), "result": {"error_code": 0}})
+                continue
             if first:
                 first = False
                 verb = {0: "preview", 1: "playback", 3: "download"}.get(stream_type)
@@ -303,6 +328,10 @@ class _Tunnel:
                 with self.relay.lock:
                     self.relay.stops += 1
                 self.stop_media.set()
+                if feed is not None:
+                    feed.wake()
+                with self.ack_cond:
+                    self.ack_cond.notify_all()
 
     def next_part(self) -> tuple[dict[str, str], bytes] | None:
         while True:
@@ -381,6 +410,13 @@ class _Tunnel:
             self.sock.settimeout(0.02)  # short reads: the sender gets the I/O lock between them
             self.serialize_io = True
         target = self.download_loop if verb == "download" else self.playback_loop
+        if verb == "playback" and relay.playback_continuous:
+            recordings = relay.playback_recordings if relay.playback_recordings is not None else [(start, end)]
+            self.feed = playback_feed.PlaybackFeed(recordings, start, end, stop=self.stop_media,
+                                                   speed=relay.playback_speed, pts_mode=relay.playback_pts)
+            with relay.lock:
+                relay.playback_feeds.append(self.feed)
+            target = self.continuous_loop
         self.sender = threading.Thread(target=target, args=(max(1, end - start),), name=f"mock-relay-{verb}",
                                        daemon=True)
         self.sender.start()
@@ -428,6 +464,45 @@ class _Tunnel:
                 self._finished()
         except (OSError, ssl.SSLError):
             pass
+
+    def continuous_loop(self, _duration: int) -> None:
+        """Phase 5: the feed's units with an ack window (no blocking TLS writes), then ``finished``."""
+        feed = self.feed
+        assert feed is not None
+        window = self.relay.playback_ack_window
+        try:
+            for i, unit in enumerate(feed.units(), start=1):
+                with self.ack_cond:
+                    while window and i - self.last_ack > window:
+                        if self.stop_media.is_set() or self.relay.stopping.is_set():
+                            return
+                        self.ack_cond.wait(0.05)
+                if self.stop_media.is_set() or self.relay.stopping.is_set():
+                    return
+                self._send_media_blocking(i, unit)
+            if feed.finished and not self.stop_media.is_set():
+                self._finished()
+        except (OSError, ssl.SSLError, FileNotFoundError, RuntimeError):
+            pass
+
+    def _send_media_blocking(self, i: int, unit) -> None:
+        """One media part with a generous write timeout: a paced client may leave data unread for a while
+        and a timed-out partial TLS write would corrupt the stream (the reader waits on the I/O lock)."""
+        headers = {"Content-Type": "video/mp2t", "X-If-Encrypt": "0", "X-Session-Id": self.session_id or "",
+                   "X-Data-Sequence": str(i), "X-Data-PTS": str(unit.pts),
+                   "X-If-IFrame": "1" if unit.keyframe else "0"}
+        head = DEVICE_DELIMITER + b"\r\n"
+        for k, v in headers.items():
+            head += f"{k}: {v}\r\n".encode("latin-1")
+        head += f"Content-Length: {len(unit.data)}\r\n\r\n".encode("latin-1")
+        with self.send_lock, self.io_lock:
+            self.sock.settimeout(10.0)
+            try:
+                self.sock.sendall(head + unit.data + b"\r\n")
+            finally:
+                self.sock.settimeout(0.02)
+        with self.relay.lock:
+            self.relay.media_parts_sent += 1
 
     def media_loop(self, resolution: str) -> None:
         template = ts_loop.template_for(media_assets.load_ts(*PREVIEW_SIZES[resolution]))
@@ -478,6 +553,13 @@ class MockRelay:
         self.vod_requests: list[dict] = []  # Phase 4: in-tunnel "get playback" / "get download" params
         self.vod_refuse: set[str] = set()  # verbs ("playback" / "download") answered with error -52402
         self.playback_finishes = True  # False: playback streams past the clip end (client must stop)
+        # Phase 5 (additive): continuous, paced playback with in-session controls (see the module docstring)
+        self.playback_continuous = False
+        self.playback_recordings: list[tuple[float, float]] | None = None
+        self.playback_speed: float | None = 1.0
+        self.playback_pts = "reset"
+        self.playback_ack_window = 50
+        self.playback_feeds: list = []
         self.stopping = threading.Event()
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None

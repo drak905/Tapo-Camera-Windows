@@ -26,6 +26,9 @@ class MockTapoCamera:
       ``media_digest_algorithm``             "MD5" (default) or "SHA-256" for the :8800 challenge
       ``media_ack_window`` / ``media_ack_timeout`` / ``media_chunk_size`` / ``max_media_sessions``
       ``media_preview_speed``                pacing multiplier of the :8800 live preview (1.0 = real time)
+      ``media_playback_mode``                "clip" (default) | "continuous" (Phase 5: paced day playback with
+                                             real PTS + do pause/play/stop, see playback_feed.py);
+                                             ``media_playback_speed`` / ``media_playback_pts`` / ``playback_feeds``
       ``max_failed_logins`` / ``lockout_seconds`` automatic lockout after N bad logins (0 = off)
       ``raw_request_log`` (whole decrypted inner bodies), ``media_request_log``, ``media_acks``,
       ``login_attempts``, ``media_auth_failures``, ``media_parts_sent``, ``media_preview_requests``,
@@ -86,6 +89,13 @@ class MockTapoCamera:
         self.media_chunk_size = 188 * 32
         self.max_media_sessions = 2
         self.media_preview_speed = 1.0  # live preview pacing multiplier (1.0 = real time)
+        # Phase 5 (additive): "continuous" = ``get playback`` streams the day's recordings from start_time
+        # to end_time (playback_feed.py) paced at media_playback_speed (None = unpaced, ack window only),
+        # honouring do pause / play / stop; "clip" = the original 6 s clip (unchanged default)
+        self.media_playback_mode = "clip"
+        self.media_playback_speed: float | None = 1.0
+        self.media_playback_pts = "reset"  # "reset" (new PTS per recording) | "continuous"
+        self.playback_feeds: list = []  # PlaybackFeed of every continuous playback session (inspection)
         self.max_failed_logins = 0
         self.lockout_seconds = 1800.0
         self.clip_search_requires_player_id = False  # True -> searchVideoWithUTC with "id" only -> -71103

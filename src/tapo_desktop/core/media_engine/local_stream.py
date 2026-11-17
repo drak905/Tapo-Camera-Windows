@@ -253,6 +253,27 @@ class LocalStreamSupervisor(StreamSupervisor):
             self._wake.set()
 
     # ================================================================== hooks
+    _REQUEST_LABEL = "preview"  # what the stream request is called in reasons
+
+    def _stream_request(self, target: _LocalTarget) -> dict:
+        """The JSON request that opens the stream of one attempt (live preview here)."""
+        return build_preview_request(target.resolution, self._channel)
+
+    def _refused(self, code: object) -> _Outcome:
+        """Outcome when the camera answered the stream request with a non-limit error code."""
+        return _Outcome(reason=f"camera refused the {self._REQUEST_LABEL} (error_code {code})")
+
+    def _accepted(self, result: dict) -> None:
+        """The camera accepted the stream request (``result`` of its response)."""
+
+    def _new_pump(self, session: MediaSession, parts: Iterator[MediaPart], decoder: FfmpegDecoder) -> _Pump:
+        """The pump thread of one attempt."""
+        return _Pump(session, parts, decoder, self._wake, name=f"pump-{self._host}")
+
+    def _stall_suspended(self) -> bool:
+        """True while the stall watchdog must not fire (e.g. a paused playback)."""
+        return False
+
     def _host_label(self) -> str:
         return self._host
 
@@ -328,7 +349,7 @@ class LocalStreamSupervisor(StreamSupervisor):
             session.connect()
             if self._stopping.is_set():
                 return _Outcome(reason="stopped")
-            seq = session.send_json(build_preview_request(target.resolution, self._channel))
+            seq = session.send_json(self._stream_request(target))
             parts = session.parts()
             early: list[MediaPart] = []
             for part in parts:
@@ -341,10 +362,11 @@ class LocalStreamSupervisor(StreamSupervisor):
                     result = msg.get("result") if isinstance(msg.get("result"), dict) else {}
                     code = result.get("error_code", 0)
                     if code in _LIMIT_CODES:
-                        return _Outcome(reason=f"stream limit reached: camera refused the preview ({code})",
-                                        fatal=True)
+                        return _Outcome(reason=f"stream limit reached: camera refused the {self._REQUEST_LABEL} "
+                                               f"({code})", fatal=True)
                     if code:
-                        return _Outcome(reason=f"camera refused the preview (error_code {code})")
+                        return self._refused(code)
+                    self._accepted(result)
                     return parts, early
                 if msg.get("type") == "error":
                     return _Outcome(reason=f"camera error {msg.get('error_code')}")
@@ -367,7 +389,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         decoder = self._spawn_decoder(exe, target)
         if decoder is None:
             return _Outcome(reason="cannot start ffmpeg")
-        pump = _Pump(session, self._chain(early, parts), decoder, self._wake, name=f"pump-{self._host}")
+        pump = self._new_pump(session, self._chain(early, parts), decoder)
         with self._lock:
             self._pump = pump
         try:
@@ -412,6 +434,8 @@ class LocalStreamSupervisor(StreamSupervisor):
                 return _Outcome(played=decoder.played, reason=pump.reason, fatal=pump.fatal)
             if decoder.exited:
                 return _Outcome(played=decoder.played, reason=f"ffmpeg exited (code {decoder.returncode})")
+            if self._stall_suspended():
+                continue
             idle = time.monotonic() - decoder.last_activity
             if idle > self._stall_timeout:
                 what = "no frame" if decoder.played else "no first frame"
