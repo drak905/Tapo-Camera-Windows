@@ -53,6 +53,7 @@ def build_ffmpeg_args(
     transport: str = "tcp",
     fps: int | None = None,
     audio_url: str | None = None,
+    input_format: str | None = None,
 ) -> list[str]:
     """Return the ffmpeg argument list (WITHOUT the executable itself).
 
@@ -62,6 +63,8 @@ def build_ffmpeg_args(
     -pix_fmt rgb24 -f rawvideo pipe:1`` (``fps`` limits the output rate via ``-r`` or an fps filter).
     Audio output only when ``audio_url`` is given, after ``pipe:1``:
     ``-map 0:a:0? -ac 1 -ar 8000 -f s16le <audio_url>``.
+    ``input_format`` (e.g. ``"mpegts"`` with ``url="pipe:0"``) forces the demuxer with ``-f`` and
+    replaces the RTSP-only ``-rtsp_transport`` option.
     Never logs the password (use ``redact_url``).
 
     Implementation note (measured against the mock camera, FFmpeg 8.1): default stream probing
@@ -71,7 +74,11 @@ def build_ffmpeg_args(
     if width <= 0 or height <= 0:
         raise ValueError("width and height must be positive")
     args = ["-hide_banner", "-nostdin", "-loglevel", "error"]
-    args += ["-rtsp_transport", transport, "-fflags", "nobuffer", "-flags", "low_delay"]
+    if input_format:
+        args += ["-f", input_format]
+    else:
+        args += ["-rtsp_transport", transport]
+    args += ["-fflags", "nobuffer", "-flags", "low_delay"]
     args += ["-probesize", "32768", "-analyzeduration", "0"]
     if url.lower().startswith(("rtsp://", "rtsps://")):
         args += ["-timeout", str(_RTSP_SOCKET_TIMEOUT_US)]

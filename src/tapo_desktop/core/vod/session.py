@@ -534,6 +534,18 @@ class MediaSession:
             raise TapoConnectionError(f"media connection lost: {exc.strerror or type(exc).__name__}") from None
         return msg["seq"]
 
+    def send_ack(self, received_seq: int) -> None:
+        """Send the flow-control ack exactly as the app does [spec:vod.stream.flow_control_ack]
+        (:func:`build_ack_part`, no ``seq`` in the body). Needs a known ``session_id``."""
+        if not self._session_id:
+            raise TapoProtocolError("cannot ack before the camera announced a session id")
+        try:
+            self._sendall(build_ack_part(received_seq, self._session_id))
+        except socket.timeout:
+            raise TapoConnectionError("timed out sending to the media port") from None
+        except OSError as exc:
+            raise TapoConnectionError(f"media connection lost: {exc.strerror or type(exc).__name__}") from None
+
     def _sendall(self, data: bytes) -> None:
         sock = self._sock
         if sock is None:

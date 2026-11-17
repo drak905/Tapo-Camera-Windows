@@ -74,6 +74,7 @@ class _Outcome:
     switched: bool = False
     hw_unusable: bool = False
     no_audio_stream: bool = False
+    fatal: bool = False  # retrying cannot help (e.g. wrong password): go to FAILED at once
 
 
 class _Scrubber:
@@ -209,6 +210,7 @@ class StreamSupervisor:
         self._wake.set()
         if decoder is not None:
             decoder.kill()
+        self._interrupt()
         if thread is not None and thread is not threading.current_thread() and not (
             decoder is not None and decoder.owns_current_thread()
         ):
@@ -300,6 +302,17 @@ class StreamSupervisor:
             except Exception:
                 logger.exception("on_state callback failed")
 
+    # ================================================================== hooks for subclasses
+    _FEEDS_STDIN = False  # True: the subclass writes the input stream to ffmpeg's stdin
+
+    def _decoder_command(self, exe: str, target: _Target, hwaccel: str | None, audio_url: str | None) -> list[str]:
+        """Full ffmpeg command line for one attempt (RTSP URL input here)."""
+        return [exe, *build_ffmpeg_args(target.url, target.width, target.height, hwaccel=hwaccel,
+                                        audio_url=audio_url)]
+
+    def _interrupt(self) -> None:
+        """Called by stop() after killing ffmpeg: unblock any other blocking I/O of the worker."""
+
     # ================================================================== worker
     def _run(self) -> None:
         try:
@@ -324,6 +337,9 @@ class StreamSupervisor:
                 backoff, failures = self._backoff_initial, 0
                 self._set_state(StreamState.CONNECTING, "switching stream")
                 continue
+            if outcome.fatal:
+                self._fail(outcome.reason)
+                return
             if self._adapt(outcome):
                 continue
             if outcome.played:
@@ -416,10 +432,9 @@ class StreamSupervisor:
                 audio = AudioListener()
             except OSError as exc:
                 logger.warning("audio disabled for this attempt: cannot open loopback listener (%s)", exc)
-        args = build_ffmpeg_args(target.url, target.width, target.height, hwaccel=hwaccel,
-                                 audio_url=audio.url if audio else None)
+        command = self._decoder_command(exe, target, hwaccel, audio.url if audio else None)
         decoder = FfmpegDecoder(
-            [exe, *args], target.width, target.height,
+            command, target.width, target.height, stdin_pipe=self._FEEDS_STDIN,
             on_frame=self._frame_sink(target, hwaccel), on_audio=self._deliver_audio, audio=audio,
             job=self._job_or_default(), wake=self._wake, name=f"ffmpeg-{self._host_label()}",
         )
