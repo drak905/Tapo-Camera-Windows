@@ -193,7 +193,7 @@ def test_endurance_grid(ffmpeg_path, record_property):
                             elif op == 1:
                                 cl.get_led()
                             elif op == 2:
-                                cl.move(5 if i % 2 else -5, 0)
+                                cl.move(5 if (i // 4) % 2 else -5, 0)  # alternate direction on each PTZ op
                             else:
                                 cl.get_motion_detection()
                         else:
