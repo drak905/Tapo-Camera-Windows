@@ -1,0 +1,64 @@
+{
+  "agent_id": "Subagent-P2-Cloud",
+  "lane": "P2-cloud",
+  "branch": "phase2/cloud",
+  "status": "done",
+  "commits": {
+    "red": "63bf433 cloud: red tests (75 failed / 3 passed, all failures NotImplementedError from stubs)",
+    "green": "a8ef0dd cloud: green (78 passed)",
+    "refactor_regression": "e9bb6cd cloud: refactor + regression"
+  },
+  "tests_added": 80,
+  "tests_phase2_result": "80 passed (~11 s), stable over 4 consecutive runs",
+  "full_suite_result": "pytest -m \"not soak and not hardware\": 841 passed, 8 deselected in 194 s; no Phase 1 test or fixture changed",
+  "files": [
+    "src/tapo_desktop/core/cloud/__init__.py",
+    "src/tapo_desktop/core/cloud/signing.py",
+    "src/tapo_desktop/core/cloud/client.py",
+    "src/tapo_desktop/core/cloud/_trust.py",
+    "src/tapo_desktop/core/discovery/__init__.py",
+    "src/tapo_desktop/core/discovery/tdp.py",
+    "src/tapo_desktop/core/discovery/matcher.py",
+    "tests/fixtures/mock_cloud.py",
+    "tests/fixtures/mock_tdp.py",
+    "tests/fixtures/phase2_fixtures.py",
+    "tests/phase2/__init__.py",
+    "tests/phase2/conftest.py",
+    "tests/phase2/test_cloud_signing.py",
+    "tests/phase2/test_cloud_client.py",
+    "tests/phase2/test_tdp_packet.py",
+    "tests/phase2/test_tdp_discover.py",
+    "tests/phase2/test_matcher.py"
+  ],
+  "real_lan_discovery": {
+    "command": "tdp.discover(timeout=3) on this PC (targets 255.255.255.255 + 192.168.1.255 + 10.0.255.255, ports 20002/20004)",
+    "count": 2,
+    "elapsed_s": 3.09,
+    "devices": [
+      {"ip": "192.168.1.10", "model": "C200", "type": "SMART.IPCAMERA", "fw": "1.5.7 Build 260918 Rel.63858n", "http_port": 443, "encrypt_info_decrypted": true},
+      {"ip": "192.168.1.11", "model": "C200", "type": "SMART.IPCAMERA", "fw": "1.5.7 Build 260918 Rel.63858n", "http_port": 443, "encrypt_info_decrypted": true}
+    ],
+    "observations": "Replies come from port 20002. They carry BOTH encrypt_info (decrypted OK: full device_id, http_port 443, connect_ssid, ...) and a top-level device_id = UPPERCASE md5(deviceId); md5(decrypted id) equals the lowercased top-level value. Also present: sv 1, protocol_version 1, tpap {pake:[2], tls:1, noc:1, port:443}, mgt_encrypt_schm {is_support_https:true}."
+  },
+  "decisions": [
+    "TLS: the real cloud (n-wap.i.tplinkcloud.com, n-wap-gw.tplinkcloud.com) uses TP-Link private CAs ('TP-Link Cloud Server CA' -> 'TP-Link Cloud Root CA'); system-store validation FAILS. The two root PEMs from the APK (jadx m7/u.java) are embedded in core/cloud/_trust.py and added on top of the default store (make_ssl_context). A handshake-only check (no API call, no credentials) succeeded with them for both hosts.",
+    "Region: getAccountStatusAndUrl -> appServerUrlV2; login there; -20212 (result.appServerUrlV2) -> one retry at that URL. AccountInfo.region_url = regional URL.",
+    "Errors: envelope errorCode (int) and result.errorCode (string) are both checked. CloudAuthError for -20004/-20200/-20202/-20600/-20601/-20602/-20607/-20615/-20661/-20676/-20681/-20697/-20708 with user-facing messages (locked minutes / remaining attempts); -20677 -> CloudMfaRequired(process_id, mfa_types); others CloudError(code). Network/TLS/timeouts -> TapoConnectionError. Non-JSON -> CloudError('malformed' or HTTP status).",
+    "MFA: request_mfa_code 1 -> getPushVC4TerminalMFA (the app sends a push; the contract note said push needs no send, sending it is what the phone app does), 2 email, 4 SMS, 3 TOTP no-op; complete_mfa uses checkMFACodeAndLogin with terminalBindEnabled true. MFA methods without a pending login raise CloudError.",
+    "Token expiry: -20651 -> captchaLogin with stored email+password once, then the page is retried; -20652/-20675 -> one full login. A failing re-login raises (no loop).",
+    "Device list: body deviceTypeList [SMART.IPCAMERA, SMART.TAPODOORBELL, SMART.TAPOHUB] like the app, limit 20, index += 20 until totalNum; client keeps only SMART.IPCAMERA and SMART.TAPODOORBELL; dedupe by deviceId; mac normalised AA-BB-..; online = status != 0.",
+    "Alias: decode_alias() decodes only canonical padded Base64 that yields printable UTF-8 (e.g. 'Cam1', 'Home' stay raw); empty alias falls back to deviceName then model.",
+    "Login strings: platform 'Android 14' (mimics the app; server validation for desktop strings unknown), terminalName 'Tapo Desktop (Windows PC)' (shown in the account's trusted devices), ospf '<OS> <release>', netType 'wifi', locale from the OS (fallback en_US).",
+    "Secrets: password/token live in name-mangled private attributes; repr/str show only base_url, signed_in, mfa_pending; logs contain path, error code and region host only; the query string (with token) is never logged.",
+    "TDP: discover() sends attempts x probes (default 3, 0.3 s apart) to every target, listens until timeout, dedupes by normalised MAC, sorts by IP, never raises for network errors (WSAECONNRESET ignored). Default targets add port 20004 (spec: camera scans also use it) and each up interface's directed broadcast via iphlpapi GetIpAddrTable (fallback /24). One RSA-2048 key pair per process, like the app. parse_response gained an optional keyword serial=None (additive) to enforce the request serial; it tolerates concatenated packets and returns the first. Undecryptable encrypt_info falls back to the top-level md5 device_id.",
+    "Matcher: md5(deviceId) first, then MAC among LAN devices not yet assigned; each LAN device is used once; normalise_mac returns '' for invalid input so junk never matches.",
+    "Fixtures: mock_cloud / mock_tdp are started default instances (mutable attributes); mock_cloud_factory / mock_tdp_factory build custom ones. phase2_fixtures exports DEFAULT_EMAIL, DEFAULT_PASSWORD, DEFAULT_CLOUD_DEVICES (2 cameras + 1 plug), DEFAULT_TDP_DEVICES (the 2 cameras at 127.0.0.1) and tdp_device_for() so other lanes can test sign-in -> list -> discover -> match end to end. MockTapoCloud verifies Content-MD5 + X-Authorization independently (HTTP 401 errorCode -1 otherwise) and emulates region redirect, MFA with terminal binding, locked accounts, token expiry and paging."
+  ],
+  "open_issues": [
+    "tests/phase2/conftest.py imports the fixtures instead of using pytest_plugins: pytest 9 errors with \"Defining 'pytest_plugins' in a non-top-level conftest is no longer supported\" when the full suite is collected. Fixture names are unchanged. Other lanes adding tests/phase2 tests get them automatically; if another lane also writes tests/phase2/conftest.py, merge to this import form.",
+    "Not verified against the real cloud (by design): exact wrong-MFA-code error code (mock uses -20676), whether the server accepts platform 'Android 14' from a desktop client, and whether getDeviceListByPage aliases are ever Base64 in practice.",
+    "No logout() call (the spec lists POST /api/v2/account/logout); not in the contract. AccountManager.sign_out currently only needs to delete local secrets.",
+    "Certificate pinning (SPKI pins in the spec) is not enforced; trust is the system store + the two TP-Link roots.",
+    "The cloud deviceIds of the two real C200 cameras are unknown here (no sign-in performed), so real md5 matching was not exercised end to end."
+  ]
+}
