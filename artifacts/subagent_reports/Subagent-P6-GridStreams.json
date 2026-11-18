@@ -1,0 +1,40 @@
+{
+    "agent_id": "Subagent-P6-GridStreams",
+    "branch": "main",
+    "status": "done",
+    "commits": [
+        "fec4d86 grid-streams: red tests",
+        "bed3997 grid-streams: green - view-driven streaming",
+        "report"
+    ],
+    "tests_added": {
+        "tests/phase6/test_stream_policy.py": 23,
+        "tests/phase6/test_gate_reservations.py": 9,
+        "tests/phase6/test_decoder_policy.py": 9,
+        "tests/phase6/test_view_driven_streams.py": 16
+    },
+    "phase6_result": "57 passed",
+    "regression": "1373 passed, 8 deselected (-m 'not soak and not hardware'), 453 s; no existing test modified",
+    "files": [
+        "src/tapo_desktop/services/stream_policy.py (new, pure)",
+        "src/tapo_desktop/services/remote.py (RemoteStreamGate.reserve/reserved, preempt skips reserved holders, docstrings)",
+        "src/tapo_desktop/services/controller.py (_sync_relay_reservations on start_view/stop_view/stop_all/remove/set_remote_provider)",
+        "src/tapo_desktop/services/camera_service.py (hwaccel=decoder_for(quality) for local :8800, RTSP and relay supervisors)",
+        "src/tapo_desktop/ui/grid.py (_apply/_sync_streams use plan_streams; view_size re-exported from stream_policy)",
+        "tools/diag_all_streams.py (decoder arg: policy|none|hw)",
+        "tests/phase6/*"
+    ],
+    "decisions": [
+        "plan_streams(visible_slots, configs, fullscreen): every camera in a visible slot streams (grid_quality, SD 640x360) for grid sizes 1..5; fullscreen = only that camera in fullscreen_quality (HD 1280x720). Empty / unknown / repeated slots never stream. Quality per grid size unchanged (1x1 still uses grid_quality).",
+        "Fixed remote cap replaced by reservations: the controller reserves a relay slot in the provider's RemoteStreamGate for every viewed camera (cam.view set) BEFORE submitting the start job, so a reserved camera always gets a slot even while an old stream is still releasing (no race when swapping a camera into a full grid). Reserved holders are never evicted by preempt.",
+        "max_remote_streams (default 4) kept for compatibility: it now limits only relay streams outside the view (none in the app today). AccountManager still applies it to gate.capacity; Phase 3 gate/service tests unchanged and passing.",
+        "Decoder policy: SD/TELE_SD -> hwaccel 'none' (software, ~38 MB/ffmpeg measured), HD/TELE_HD -> 'auto' (d3d11va + software fallback). Chosen at supervisor creation; a grid->fullscreen switch keeps the running supervisor/decoder (no restart).",
+        "No hard ceiling on relay streams beyond the 25 grid slots (user asked for every visible camera); measured 11 relay + 2 LAN in a 4x4 worked."
+    ],
+    "open_issues": [
+        "The task text was cut off after 'Replace the fixed remote cap with:'; the remaining requirements were inferred (reservations for viewed cameras, software decoding for SD tiles). Re-check against the full request.",
+        "Relay first frame with 11 slots opened at once was ~8.5-10.5 s; no staggering / priority ordering of relay slot requests was added.",
+        "Real-device re-measurement with the new defaults not run (needs the user's PC): python tools/diag_all_streams.py policy.",
+        "docs/CONTRACT_UI.md / ARCHITECTURE.md not updated (orchestrator-owned); behaviour documented in module docstrings."
+    ]
+}
