@@ -15650,6 +15650,10 @@
           "file": "com/tplink/libtapocameranetwork/model/Section.java",
           "line": 48,
           "snippet": "SYS(NotificationCompat.CATEGORY_SYSTEM)  // \"sys\""
+        },
+        {
+          "source": "live",
+          "detail": "tools/diag_rename_noop.py: real C200 on the LAN (TapoControlClient) and real C510W through the IoT services-sync passthrough (RemoteControlClient) answered {\"method\":\"setDeviceAlias\",\"result\":{},\"error_code\":0} to a rename to their current alias; getDeviceInfo device_alias unchanged afterwards"
         }
       ],
       "confidence": "verified",

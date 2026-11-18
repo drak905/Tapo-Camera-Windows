@@ -25,7 +25,8 @@
         {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Method.java", "line": 39, "snippet": "SET_DEVICE_ALIAS(AbstractSmartDevice.setDeviceAlias)"},
         {"source": "jadx", "file": "com/tplinkra/iot/devices/AbstractSmartDevice.java", "line": 105, "snippet": "public static final String setDeviceAlias = \"setDeviceAlias\";"},
         {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Module.java", "line": 37, "snippet": "SYSTEM(\"system\")"},
-        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Section.java", "line": 48, "snippet": "SYS(NotificationCompat.CATEGORY_SYSTEM)  // \"sys\""}
+        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Section.java", "line": 48, "snippet": "SYS(NotificationCompat.CATEGORY_SYSTEM)  // \"sys\""},
+        {"source": "live", "detail": "tools/diag_rename_noop.py: real C200 on the LAN (TapoControlClient) and real C510W through the IoT services-sync passthrough (RemoteControlClient) answered {\"method\":\"setDeviceAlias\",\"result\":{},\"error_code\":0} to a rename to their current alias; getDeviceInfo device_alias unchanged afterwards"}
       ],
       "confidence": "verified"
     },

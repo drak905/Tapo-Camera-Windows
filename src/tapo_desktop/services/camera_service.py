@@ -548,7 +548,7 @@ class TapoCameraService(CameraService):
 
     def rename(self, name: str) -> None:
         """Set the camera's own name with setDeviceAlias [spec:rename.flow], through the same route as every
-        other command (LAN client, or the cloud passthrough for remote / shared cameras). A refusal of the
+        other command (LAN client, or the cloud passthrough for cameras away from this network). A refusal of the
         name (-63103 / -40210) is reported with a readable message and the camera's code."""
         from tapo_desktop.services.camera_names import ERR_ALIAS_FORMAT, MSG_REFUSED
 

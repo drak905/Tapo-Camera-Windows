@@ -20,6 +20,11 @@ Phase 3 (remote live view): after sign-in a real cloud client is attached to one
 ``max_remote_streams``, default 4) which is handed to the controller (``set_remote_provider``); sign-out
 detaches it. ``relay_factory(cloud_client) -> RelayClient`` replaces the default relay client (tests).
 
+Phase 7 (rename): the cloud alias is kept in ``CameraConfig.cloud_alias``; the shown ``name`` is
+:func:`~tapo_desktop.services.camera_names.resolve_cloud_name` - a local ``display_name`` (shared cameras)
+always wins, then a ``pending_name`` set on the camera that the cloud does not report yet (dropped when the
+alias matches or after 24 h), then the alias. A refresh without the cloud keeps the stored alias.
+
 The password is never logged and never written outside the DPAPI vault; the cloud token stays in
 the cloud client's memory.
 

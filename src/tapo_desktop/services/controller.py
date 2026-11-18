@@ -64,6 +64,11 @@ Phase 6 (view-driven streaming, :mod:`tapo_desktop.services.stream_policy`): eve
 :class:`~tapo_desktop.services.remote.RemoteStreamGate` before its start job runs, so every camera in the
 grid streams at once, local and remote; ``max_remote_streams`` only limits streams outside the view.
 
+Phase 7 (rename, :mod:`tapo_desktop.services.camera_names`): ``rename_camera(id, name) -> bool`` (True = the
+name is set on the camera with setDeviceAlias, optimistic with rollback; False = kept in this app only) and
+``reset_camera_name(id)``; signal ``rename_finished(id, error)``. Names are not connection fields: renaming
+never restarts a service or stream.
+
 Implementation notes (Wave 3):
 
 * Threading: a private :class:`~tapo_desktop.services._workers.WorkerPool` of daemon threads. Each

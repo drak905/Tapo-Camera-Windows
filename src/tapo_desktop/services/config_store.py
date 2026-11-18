@@ -73,7 +73,9 @@ class ConfigStore:
       ``os.replace`` it over the target. If anything fails, the previous file is left intact.
     * ``save()`` preserves settings; ``set_setting()`` preserves cameras.
     * Settings used: ``"grid_size"`` (1..5), ``"grid_slots"`` (list of camera id or null, see
-      :mod:`tapo_desktop.services.view_layout`), ``"minimize_to_tray"`` (bool), ``"notifications"`` (bool).
+      :mod:`tapo_desktop.services.view_layout`), ``"minimize_to_tray"`` (bool), ``"notifications"`` (bool),
+      ``"camera_sort"`` (``"name_asc"`` | ``"name_desc"`` | ``"account"``, see
+      :mod:`tapo_desktop.services.camera_names`).
 
     The file is re-read on every call, so several instances on the same path stay consistent.
     Methods are thread-safe within one instance.

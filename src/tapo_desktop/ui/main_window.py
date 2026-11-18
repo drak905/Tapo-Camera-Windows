@@ -1,7 +1,7 @@
 """Main window (contract: docs/CONTRACT_UI.md).
 
-objectNames: ``cameraList`` (QListWidget, one row per camera in ``controller.cameras()`` order,
-text = camera name, ``Qt.UserRole`` data = camera id), ``addCameraButton``, ``removeCameraButton``,
+objectNames: ``cameraList`` (QListWidget, one row per camera in the order chosen with ``sortButton``, see
+Phase 7 below; text = camera name, ``Qt.UserRole`` data = camera id), ``addCameraButton``, ``removeCameraButton``,
 ``layout1x1Button``, ``layout2x2Button``, ``layout3x3Button``, ``cameraGrid``, ``controlsPanel``,
 ``playbackPanel``.
 
@@ -39,6 +39,16 @@ slot list (setting ``"grid_slots"``, see :mod:`tapo_desktop.ui.grid`). ``cameraL
 onto a tile; their context menu (:meth:`MainWindow.camera_list_menu`) has "Add to view" and "Remove from
 view". Rows of cameras that are not in the current view are shown italic and dimmed (text and status
 suffix unchanged, tooltip says so); :data:`IN_VIEW_ROLE` holds True/False.
+
+Phase 7: ``sortButton`` (menu ``cameraSortMenu``: ``sortNameAscAction`` "Name A-Z" (default),
+``sortNameDescAction`` "Name Z-A", ``sortAccountAction`` "Account order" = ``controller.cameras()`` order)
+orders ``cameraList`` with :func:`~tapo_desktop.services.camera_names.sort_cameras` (QCollator: system locale,
+natural numbers, case-insensitive) by the camera name, never by the status suffix; persisted in setting
+``"camera_sort"`` (:meth:`MainWindow.set_camera_sort`). The list re-sorts on every ``cameras_changed`` (renames,
+cloud refreshes, status changes) and keeps the selection; grid slots never move. "Rename..." in the row menu
+(``renameAction``), F2 on the selected row and "Rename..." in the tile menu open :class:`RenameDialog`
+(:meth:`MainWindow.rename_camera`); ``resetNameAction`` "Reset to camera name" drops a cloud camera's
+local name. Failures arrive as ``command_failed(id, "rename_camera", message)`` in the status bar.
 """
 from __future__ import annotations
 
