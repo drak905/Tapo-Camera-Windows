@@ -131,6 +131,12 @@ class RemoteStreamGate:
         with self._lock:
             return list(self._holders)
 
+    def reserve(self, keys: Iterable[str]) -> None:
+        raise NotImplementedError
+
+    def reserved(self) -> frozenset[str]:
+        raise NotImplementedError
+
 
 def _default_relay_factory(cloud_client: Any) -> Any:
     from tapo_desktop.core.cloud.relay import RelayClient
