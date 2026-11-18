@@ -368,8 +368,11 @@ def has_more_clips(result: dict) -> bool:
 
 # --------------------------------------------------------------------------- system
 def set_device_alias_req(name: str) -> dict:
-    """setDeviceAlias [spec:rename.request]."""
-    raise NotImplementedError
+    """setDeviceAlias: ``{"system": {"sys": {"dev_alias": name}}}`` [spec:rename.request]. ``name`` is sent
+    as given (validation is the caller's job, see :mod:`tapo_desktop.services.camera_names`)."""
+    if not isinstance(name, str):
+        raise TypeError("name must be a string")
+    return _req("setDeviceAlias", {"system": {"sys": {"dev_alias": name}}})
 
 
 def reboot_req() -> dict:

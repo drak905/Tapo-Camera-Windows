@@ -57,6 +57,7 @@ from tapo_desktop.models import (
     LanDevice,
 )
 from tapo_desktop.services._workers import Strand, WorkerPool
+from tapo_desktop.services.camera_names import resolve_cloud_name
 
 log = logging.getLogger(__name__)
 
@@ -515,7 +516,8 @@ class AccountManager(QObject):
         if devices is not None and provider is not None:
             provider.update_devices(devices)  # device type / IoT-cloud flag for relay slots
         if devices is None:
-            devices = [CloudDevice(device_id=c.device_id or c.id, mac=c.mac, model=c.model, alias=c.name,
+            devices = [CloudDevice(device_id=c.device_id or c.id, mac=c.mac, model=c.model,
+                                   alias=c.cloud_alias or ("" if c.display_name or c.pending_name else c.name),
                                    online=c.online, role=c.role) for c in cached]
         online = self._thing_online if isinstance(getattr(self, "_thing_online", None), dict) else {}
         if online:
@@ -552,14 +554,16 @@ class AccountManager(QObject):
         role = role if isinstance(role, int) and not isinstance(role, bool) else int(dev.role or 0)
         share = getattr(thing, "share_type", None)
         share = share if isinstance(share, str) else ("" if role == 0 else base.share_type)
+        alias = dev.alias or base.cloud_alias  # the camera's own name; local / pending names win over it
+        name, pending, since = resolve_cloud_name(base, alias or base.name, time.time())
         return dataclasses.replace(
-            base, name=dev.alias or base.name, source="cloud", device_id=dev.device_id,
+            base, name=name, source="cloud", device_id=dev.device_id,
             mac=_normalise_mac(dev.mac) if dev.mac else base.mac, model=dev.model or base.model,
             online=bool(dev.online) or hit is not None,  # answering on the LAN means online
             host=hit.ip if hit is not None else "", lan_found=hit is not None,
             https_port=(hit.http_port or 443) if hit is not None else base.https_port,
             control_protocol=_control_protocol(hit) if hit is not None else base.control_protocol,
-            role=role, share_type=share)
+            role=role, share_type=share, cloud_alias=alias, pending_name=pending, pending_since=since)
 
     def _emit_counts(self) -> None:
         cams = [c for c in self._ctrl.cameras() if c.source == "cloud"]

@@ -251,6 +251,7 @@ class PlayerWindow(QWidget):
         controller.command_failed.connect(self._on_command_failed)
         controller.download_progress.connect(self._on_download_progress)
         controller.download_finished.connect(self._on_download_finished)
+        controller.cameras_changed.connect(self._on_cameras_changed)
         first = _epoch(start) if start is not None else None
         if clips is None:
             self._load_day(first)
@@ -597,6 +598,12 @@ class PlayerWindow(QWidget):
         self._update_controls()
 
     # ------------------------------------------------------------------ helpers
+    def _on_cameras_changed(self) -> None:
+        """Phase 7: a rename shows at once in the title bar and the header."""
+        name = self._camera_name()
+        self.setWindowTitle(f"Playback - {name}")
+        self._title.setText(name)
+
     def _camera_name(self) -> str:
         cfg = self._ctrl.camera(self._camera_id) if hasattr(self._ctrl, "camera") else None
         return cfg.name if cfg is not None else self._camera_id

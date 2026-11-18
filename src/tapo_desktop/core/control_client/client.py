@@ -277,8 +277,8 @@ class ControlApi:
         self.request(dtos.reboot_req())
 
     def rename(self, name: str) -> None:
-        """Set the camera's name (setDeviceAlias) [spec:rename.request]."""
-        raise NotImplementedError
+        """Set the camera's own name (setDeviceAlias) [spec:rename.request]; shows in the Tapo app too."""
+        self.request(dtos.set_device_alias_req(name))
 
 
 class TapoControlClient(ControlApi):

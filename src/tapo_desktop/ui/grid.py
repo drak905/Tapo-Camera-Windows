@@ -25,6 +25,8 @@
   camera; choosing one puts it into this slot, swapping with its previous slot) and "Full screen".
   Drag and drop: a camera (row of ``cameraList`` or another tile) dropped on a position is placed
   there (:meth:`handle_drop`). ``view_changed`` is emitted after every slot / size / fullscreen change.
+* Phase 7: the tile menu also has "Rename..." (``renameCameraAction``), which emits ``rename_requested(id)``
+  (the main window opens the rename dialog). Renaming never moves a camera to another slot.
 
 Decode sizes are fixed per quality (:func:`view_size`) rather than following the tile's pixel size,
 so resizing the window never restarts ffmpeg; tiles scale the frame aspect-fit.
@@ -58,6 +60,7 @@ def validate_grid_size(n: object) -> int:
 class CameraGrid(QWidget):
     camera_selected = pyqtSignal(str)   # lane addition: emitted when the selection changes ("" = none)
     view_changed = pyqtSignal()         # Phase 5: slots, grid size or fullscreen changed
+    rename_requested = pyqtSignal(str)  # Phase 7: "Rename..." chosen in a tile menu (camera_id)
 
     def __init__(self, controller, parent: QWidget | None = None):
         super().__init__(parent)
@@ -232,6 +235,11 @@ class CameraGrid(QWidget):
         full.setChecked(cid is not None and cid == self._fullscreen)
         if cid is not None:
             full.triggered.connect(lambda _checked=False, c=cid: self._full_screen_from_menu(c))
+        rename = menu.addAction("Rename\u2026")
+        rename.setObjectName("renameCameraAction")
+        rename.setEnabled(cid is not None)
+        if cid is not None:
+            rename.triggered.connect(lambda _checked=False, c=cid: self.rename_requested.emit(c))
         return menu
 
     # ------------------------------------------------------------------ tile events

@@ -17,6 +17,7 @@ so no sign flip is needed on the way to ``motorMove``.
 from __future__ import annotations
 
 import abc
+import dataclasses
 import logging
 import pathlib
 import threading
@@ -544,6 +545,22 @@ class TapoCameraService(CameraService):
     def set_alarm(self, on: bool) -> None:
         self._control().set_alarm(bool(on))
         self._alarm = bool(on)
+
+    def rename(self, name: str) -> None:
+        """Set the camera's own name with setDeviceAlias [spec:rename.flow], through the same route as every
+        other command (LAN client, or the cloud passthrough for remote / shared cameras). A refusal of the
+        name (-63103 / -40210) is reported with a readable message and the camera's code."""
+        from tapo_desktop.services.camera_names import ERR_ALIAS_FORMAT, MSG_REFUSED
+
+        try:
+            self._control().rename(str(name))
+        except TapoDeviceError as exc:
+            if exc.code in (ERR_ALIAS_FORMAT, -40210):
+                raise TapoDeviceError(exc.code, exc.method, f"{MSG_REFUSED} (error {exc.code})") from exc
+            raise
+        with self._lock:
+            if self._device_info is not None:
+                self._device_info = dataclasses.replace(self._device_info, alias=str(name))
 
     def set_motion_detection(self, on: bool) -> None:
         self._control().set_motion_detection(bool(on))

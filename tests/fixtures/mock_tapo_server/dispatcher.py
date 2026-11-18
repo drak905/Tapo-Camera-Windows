@@ -392,6 +392,24 @@ def reboot(s: DeviceShadow, p: Any) -> dict:
     return {}
 
 
+#: Longest dev_alias the mock accepts, in UTF-8 bytes (the app's limit [spec:rename.validation]).
+MAX_ALIAS_BYTES = 32
+
+
+def set_device_alias(s: DeviceShadow, p: Any) -> dict:
+    """setDeviceAlias {system:{sys:{dev_alias}}} [spec:rename.request]; getDeviceInfo then reports it."""
+    d = _section(p, "system", "sys")
+    if "dev_alias" not in d:
+        raise CommandError(MISSING)
+    alias = d["dev_alias"]
+    if not isinstance(alias, str) or not alias.strip():
+        raise CommandError(INVALID)
+    if len(alias.encode("utf-8", "surrogatepass")) > MAX_ALIAS_BYTES:
+        raise CommandError(INVALID)
+    s.alias = alias
+    return {}
+
+
 HANDLERS: dict[str, Callable[[DeviceShadow, Any], dict]] = {
     "getDeviceInfo": get_device_info,
     "getAppComponentList": get_component_list,
@@ -420,6 +438,7 @@ HANDLERS: dict[str, Callable[[DeviceShadow, Any], dict]] = {
     "searchDetectionList": search_detection_list,
     "getLastAlarmInfo": last_alarm_info,
     "rebootDevice": reboot,
+    "setDeviceAlias": set_device_alias,
 }
 
 

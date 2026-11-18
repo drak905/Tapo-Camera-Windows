@@ -351,10 +351,74 @@ class AppController(QObject):
 
     # ---------------------------------------------------------- Phase 7: rename
     def rename_camera(self, camera_id: str, name: str) -> bool:
-        raise NotImplementedError
+        """Rename a camera (see :mod:`tapo_desktop.services.camera_names`); GUI thread, non-blocking.
+
+        The name is validated first (:class:`~tapo_desktop.services.camera_names.InvalidCameraName`, nothing
+        changes); unknown id -> ``KeyError``. Owned cloud cameras: the new name is applied and saved at once as
+        a pending name, then ``setDeviceAlias`` runs on the camera's control strand; success emits
+        ``rename_finished(id, "")``, failure restores the previous name and emits
+        ``command_failed(id, "rename_camera", message)`` and ``rename_finished(id, message)``. Returns True.
+        Shared cloud cameras get a local ``display_name``, manual cameras a new ``name`` (saved at once,
+        ``rename_finished(id, "")``); returns False. Never restarts the camera's stream."""
+        from tapo_desktop.services import camera_names
+
+        cam = self._cams.get(camera_id)
+        if cam is None:
+            raise KeyError(camera_id)
+        new = camera_names.validate_camera_name(name)
+        old = cam.config
+        if not camera_names.renames_on_camera(old):
+            if old.source == "cloud":
+                alias = old.cloud_alias or old.name
+                cfg = dataclasses.replace(old, name=new, display_name="" if new == alias else new, cloud_alias=alias,
+                                          pending_name="", pending_since=0.0)
+            else:
+                cfg = dataclasses.replace(old, name=new)
+            self._replace_config(cam, cfg)
+            self.rename_finished.emit(cam.id, "")
+            return False
+        alias = old.cloud_alias or old.name
+        since = time.time() if new != alias else 0.0
+        cfg = dataclasses.replace(old, name=new, display_name="", cloud_alias=alias,
+                                  pending_name=new if since else "", pending_since=since)
+        self._replace_config(cam, cfg)
+
+        def rollback(msg: str) -> None:
+            current = cam.config
+            if not cam.removed and current.name == new and current.pending_name == cfg.pending_name \
+                    and current.pending_since == since:  # a newer rename or a cloud update wins over this rollback
+                self._replace_config(cam, dataclasses.replace(
+                    current, name=old.name, display_name=old.display_name, pending_name=old.pending_name,
+                    pending_since=old.pending_since))
+            self.command_failed.emit(cam.id, "rename_camera", msg)
+            self.rename_finished.emit(cam.id, msg)
+
+        self._submit(cam, "rename_camera", lambda svc: svc.rename(new),
+                     on_ok=lambda _result: self.rename_finished.emit(cam.id, ""), on_error=rollback)
+        return True
 
     def reset_camera_name(self, camera_id: str) -> None:
-        raise NotImplementedError
+        """Drop the local name of a cloud camera (``display_name``) and show the camera's own name again (the
+        last cloud alias); for other cameras nothing changes. Unknown id -> ``KeyError``."""
+        cam = self._cams.get(camera_id)
+        if cam is None:
+            raise KeyError(camera_id)
+        cfg = cam.config
+        if cfg.source != "cloud" or not cfg.display_name:
+            return
+        name = cfg.pending_name or cfg.cloud_alias or cfg.name
+        self._replace_config(cam, dataclasses.replace(cfg, name=name, display_name=""))
+
+    def _replace_config(self, cam: _Camera, config: CameraConfig) -> None:
+        """Swap in a config that differs only in non-connection fields (names): save, emit ``cameras_changed``;
+        the service keeps running. A failed save restores the old config and raises."""
+        old, cam.config = cam.config, config
+        try:
+            self._save()
+        except Exception:
+            cam.config = old
+            raise
+        self.cameras_changed.emit()
 
     # ---------------------------------------------------------- Phase 3: remote live view (relay)
     def set_remote_provider(self, provider: Any) -> None:

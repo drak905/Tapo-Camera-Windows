@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QEvent, QMimeData, QPoint, QSignalBlocker, Qt, QTimer
+from PyQt6.QtCore import QEvent, QMimeData, QPoint, QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QKeyEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -64,9 +64,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from tapo_desktop.services import camera_names
 from tapo_desktop.services.camera_service import NOT_ON_NETWORK
 from tapo_desktop.services.remote import REMOTE
-from tapo_desktop.ui import _theme, camera_dialog, sign_in_dialog
+from tapo_desktop.ui import _theme, camera_dialog, rename_dialog, sign_in_dialog
 from tapo_desktop.ui.controls_panel import ControlsPanel
 from tapo_desktop.ui.grid import GRID_SIZES, CameraGrid, validate_grid_size
 from tapo_desktop.ui.playback_panel import PlaybackPanel
@@ -104,13 +105,26 @@ def camera_row_status(cfg, remote: bool = False) -> str:
 
 
 class CameraListWidget(QListWidget):
-    """``cameraList``: rows drag as :data:`~tapo_desktop.ui.video_tile.CAMERA_MIME` payloads."""
+    """``cameraList``: rows drag as :data:`~tapo_desktop.ui.video_tile.CAMERA_MIME` payloads; F2 asks to
+    rename the current row (``rename_requested(camera_id)``)."""
+
+    rename_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setDragEnabled(True)
         self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 (Qt override)
+        if event.key() == Qt.Key.Key_F2 and not event.isAutoRepeat():
+            item = self.currentItem()
+            camera_id = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+            if isinstance(camera_id, str) and camera_id:
+                event.accept()
+                self.rename_requested.emit(camera_id)
+                return
+        super().keyPressEvent(event)
 
     def mimeData(self, items) -> QMimeData:  # noqa: N802 (Qt override)
         for item in items:
@@ -130,6 +144,7 @@ class MainWindow(QMainWindow):
         self._held_key: int | None = None
         self._quitting = False
         self._sign_in_dialog = None
+        self._sort = camera_names.sort_mode(self._store.get_setting(camera_names.SETTING_CAMERA_SORT, None))
         self.setWindowTitle("Tapo Desktop")
         self.setWindowIcon(_theme.app_icon())
         self.resize(1280, 800)
@@ -150,7 +165,9 @@ class MainWindow(QMainWindow):
 
         self._grid.camera_selected.connect(lambda cid: self._select(cid or None))
         self._grid.view_changed.connect(self._sync_view_marks)
+        self._grid.rename_requested.connect(self.rename_camera)
         self._list.currentRowChanged.connect(self._on_row_changed)
+        self._list.rename_requested.connect(self.rename_camera)
         controller.cameras_changed.connect(self._refresh_list)
         controller.command_failed.connect(self._on_command_failed)
         controller.stream_state.connect(self._on_stream_state)
@@ -184,6 +201,55 @@ class MainWindow(QMainWindow):
 
     def selected_camera_id(self) -> str | None:
         return self._selected
+
+    # ---------------------------------------------------------- Phase 7: sorting and renaming
+    def camera_sort(self) -> str:
+        """Order of ``cameraList``: ``"name_asc"`` (default), ``"name_desc"`` or ``"account"``."""
+        return self._sort
+
+    def set_camera_sort(self, mode: str) -> None:
+        """Re-sort ``cameraList`` (selection kept, grid slots unchanged) and persist setting ``camera_sort``;
+        ``ValueError`` for an unknown mode."""
+        if mode not in camera_names.SORT_MODES:
+            raise ValueError(f"unknown camera sort {mode!r}")
+        self._sort = mode
+        self._store.set_setting(camera_names.SETTING_CAMERA_SORT, mode)
+        self._sync_sort_actions()
+        self._refresh_list()
+
+    def rename_camera(self, camera_id: str | None = None) -> None:
+        """Ask for a new name of ``camera_id`` (default: the selected camera) in a :class:`RenameDialog` and
+        rename it through the controller (owned cloud cameras on the camera, others in this app only)."""
+        camera_id = camera_id or self._selected
+        cfg = self._config(camera_id) if camera_id else None
+        if cfg is None:
+            return
+        dialog = rename_dialog.RenameDialog(cfg.name, on_camera=camera_names.renames_on_camera(cfg), parent=self)
+        try:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            new = dialog.value()
+        except camera_names.InvalidCameraName as exc:
+            self.statusBar().showMessage(str(exc), _STATUS_MS)
+            return
+        finally:
+            dialog.deleteLater()
+        if new == cfg.name and not camera_names.renames_on_camera(cfg):
+            return
+        try:
+            on_camera = self._ctrl.rename_camera(cfg.id, new)
+        except (KeyError, ValueError, OSError) as exc:
+            self.statusBar().showMessage(f"Could not rename the camera: {exc}", _STATUS_MS)
+            return
+        self.statusBar().showMessage(f"Renaming \u201c{cfg.name}\u201d to \u201c{new}\u201d\u2026" if on_camera
+                                     else f"Renamed to \u201c{new}\u201d (in this app)", _STATUS_MS)
+
+    def reset_camera_name(self, camera_id: str) -> None:
+        """Drop this app's own name of a cloud camera and show the camera's name again."""
+        try:
+            self._ctrl.reset_camera_name(camera_id)
+        except (KeyError, OSError) as exc:
+            self.statusBar().showMessage(f"Could not reset the name: {exc}", _STATUS_MS)
 
     @property
     def accounts(self):
@@ -267,6 +333,7 @@ class MainWindow(QMainWindow):
         panel = QWidget(self)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(6, 6, 6, 6)
+        layout.addLayout(self._build_sort_row(panel))
         self._list = CameraListWidget(panel)
         self._list.setObjectName("cameraList")
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -288,6 +355,46 @@ class MainWindow(QMainWindow):
         dock.setWidget(panel)
         dock.setMinimumWidth(200)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+
+    _SORT_ACTIONS = ((camera_names.SORT_NAME_ASC, "sortNameAscAction", "Name A\u2013Z", "A\u2013Z"),
+                     (camera_names.SORT_NAME_DESC, "sortNameDescAction", "Name Z\u2013A", "Z\u2013A"),
+                     (camera_names.SORT_ACCOUNT, "sortAccountAction", "Account order", "Account"))
+
+    def _build_sort_row(self, parent: QWidget) -> QHBoxLayout:
+        """``sortButton``: a small menu choosing the order of ``cameraList`` (grid slots never move)."""
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addStretch(1)
+        menu = QMenu(parent)
+        menu.setObjectName("cameraSortMenu")
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        self._sort_actions: dict[str, QAction] = {}
+        for mode, name, text, _short in self._SORT_ACTIONS:
+            action = menu.addAction(text)
+            action.setObjectName(name)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, m=mode: self.set_camera_sort(m))
+            group.addAction(action)
+            self._sort_actions[mode] = action
+        button = QToolButton(parent)
+        button.setObjectName("sortButton")
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        button.setAutoRaise(True)
+        button.setMenu(menu)
+        row.addWidget(button)
+        self._sort_button = button
+        self._sync_sort_actions()
+        return row
+
+    def _sync_sort_actions(self) -> None:
+        action = self._sort_actions.get(self._sort)
+        if action is not None:
+            action.setChecked(True)
+        short = next(s for m, _n, _t, s in self._SORT_ACTIONS if m == self._sort)
+        self._sort_button.setText(f"Sort: {short}")
+        self._sort_button.setToolTip("Order of the camera list (the grid keeps its own layout)")
 
     def _build_side_dock(self) -> None:
         self._controls = ControlsPanel(self._ctrl, self)
@@ -347,7 +454,7 @@ class MainWindow(QMainWindow):
         return -1
 
     def _refresh_list(self) -> None:
-        cams = self._ctrl.cameras()
+        cams = camera_names.sort_cameras(self._ctrl.cameras(), self._sort)  # by display name, never the suffix
         remote_available = getattr(self._ctrl, "remote_available", None)
         with QSignalBlocker(self._list):
             self._list.clear()
@@ -408,6 +515,19 @@ class MainWindow(QMainWindow):
         remove.setObjectName("removeFromViewAction")
         remove.setEnabled(in_view)
         remove.triggered.connect(lambda _checked=False: self._grid.remove_from_view(camera_id))
+        menu.addSeparator()
+        cfg = self._config(camera_id)
+        rename = menu.addAction("Rename\u2026")
+        rename.setObjectName("renameAction")
+        rename.setShortcut(Qt.Key.Key_F2)
+        rename.setEnabled(cfg is not None)
+        rename.triggered.connect(lambda _checked=False: self.rename_camera(camera_id))
+        reset = menu.addAction("Reset to camera name")
+        reset.setObjectName("resetNameAction")
+        reset.setEnabled(cfg is not None and cfg.source == "cloud" and bool(cfg.display_name))
+        if cfg is not None and cfg.cloud_alias:
+            reset.setToolTip(f"Show \u201c{cfg.cloud_alias}\u201d again")
+        reset.triggered.connect(lambda _checked=False: self.reset_camera_name(camera_id))
         return menu
 
     def _show_list_menu(self, pos: QPoint) -> None:
@@ -455,6 +575,9 @@ class MainWindow(QMainWindow):
             self._ctrl.remove_camera(cfg.id)
 
     # ================================================================== feedback
+    def _config(self, camera_id: str | None):
+        return next((c for c in self._ctrl.cameras() if c.id == camera_id), None)
+
     def _camera_name(self, camera_id: str) -> str:
         return next((c.name for c in self._ctrl.cameras() if c.id == camera_id), camera_id)
 
@@ -528,6 +651,10 @@ class MainWindow(QMainWindow):
             return None
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_F2 and not event.isAutoRepeat() and self._selected is not None:
+            event.accept()
+            self.rename_camera(self._selected)
+            return
         delta = self._ptz_delta(event)
         if delta is None:
             super().keyPressEvent(event)
