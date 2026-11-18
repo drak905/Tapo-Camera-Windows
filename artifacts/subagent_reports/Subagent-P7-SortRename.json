@@ -1,0 +1,64 @@
+{
+  "agent_id": "Subagent-P7-SortRename",
+  "status": "done",
+  "request": "sort the list of camera names in A-Z order, and provide the ability to rename the cameras",
+  "commits": ["f605ba4 red tests", "3b55304 green", "abdb565 refactor + real check tool"],
+  "apk_findings": {
+    "rename_command": "setDeviceAlias {system:{sys:{dev_alias:<name>}}} in multipleRequest (mv0/zk.java:4662 t7, i6/k6), sent through the camera's normal transport (LAN, else IoT services-sync passthrough)",
+    "n2": "DeviceNameEditorViewModel.n2 -> CameraSettingRepository.k3 -> jm.ig -> qk.Nh -> zk.t7: the CAMERA command itself; on success only local caches + TPIoTClientManager.a6() (local change counter). No cloud alias / thing nickname call exists for cameras.",
+    "fc0.c0.J": "renames NVR channels only; returns EditCamResult(null) at once for stand-alone cameras",
+    "validation": "trim; 1..32 UTF-8 bytes (h2, f134487a=32); Save enabled only if non-empty and changed; no character regex; -63103 DEVICE_NAME_EXCESSIVE -> 'Incorrect alias format' message",
+    "shared": "DeviceDetailInfoViewModelV2:291 - shared users without OWNER/ADVANCED auth get camera_share_tip_no_permission (inferred: no rename for shared)",
+    "spec": "specs/rename_spec.json (4 items, merged; Gate 1 PASS)"
+  },
+  "tests_added": {
+    "dir": "tests/phase7",
+    "count": 66,
+    "files": ["conftest.py", "test_names.py", "test_rename_protocol.py", "test_rename_controller.py",
+              "test_sort_rename_ui.py", "test_rename_remote_e2e.py"],
+    "result": "66 passed"
+  },
+  "regression": {
+    "command": "pytest -m \"not soak and not hardware\"",
+    "result": "1437-1438 passed, 1-2 failed, 8 deselected (~455 s)",
+    "failures": "tests/phase3/test_relay_stream.py (test_plays_with_exact_frame_size / test_stop_is_fast_and_clean) and tests/phase3/test_relay_ui.py::test_end_to_end_remote_stream_through_real_wiring - ffmpeg / mock-relay timing flakes; a different one each run. Reproduced identically on the untouched base commit 2864bf3 (git archive copy, tests/phase3+phase6: same failures), so pre-existing on this machine, not caused by this lane.",
+    "phase1_tests_modified": false
+  },
+  "real_check": {
+    "tool": "tools/diag_rename_noop.py (runs on a temp copy of config/vault/pins; user files untouched)",
+    "lan": "C200 '000. Home Camera A' @192.168.1.10 via TapoControlClient: setDeviceAlias to its current alias -> {\"result\":{},\"error_code\":0}; alias unchanged",
+    "remote": "C510W '004. Remote Camera 1' via IoT passthrough (RemoteControlClient): -> {\"result\":{},\"error_code\":0}; alias unchanged",
+    "names_changed": false
+  },
+  "files": {
+    "new": ["src/tapo_desktop/services/camera_names.py", "src/tapo_desktop/ui/rename_dialog.py", "specs/rename_spec.json",
+            "tools/diag_rename_noop.py", "tests/phase7/*"],
+    "changed": ["src/tapo_desktop/models.py (CameraConfig + display_name, pending_name, pending_since, cloud_alias; additive defaults)",
+                "src/tapo_desktop/core/control_client/dtos.py (set_device_alias_req)",
+                "src/tapo_desktop/core/control_client/client.py (ControlApi.rename -> TapoControlClient + RemoteControlClient)",
+                "src/tapo_desktop/services/camera_service.py (CameraService.rename default, TapoCameraService.rename with -63103/-40210 message)",
+                "src/tapo_desktop/services/controller.py (rename_camera, reset_camera_name, rename_finished, _replace_config)",
+                "src/tapo_desktop/services/account.py (_cloud_config name resolution, offline fallback keeps cloud_alias)",
+                "src/tapo_desktop/services/config_store.py (docstring: camera_sort)",
+                "src/tapo_desktop/ui/main_window.py (sortButton/menu, sorted list, Rename/Reset menu, F2)",
+                "src/tapo_desktop/ui/grid.py (tile menu Rename..., rename_requested)",
+                "src/tapo_desktop/ui/player_window.py (title follows cameras_changed)",
+                "tests/fixtures/mock_tapo_server/dispatcher.py (additive setDeviceAlias handler; selfcheck passes)",
+                "tools/specs_tool.py (LANES rename)", "specs/tapo_protocol_spec.json (merged)"]
+  },
+  "decisions": [
+    "No TapoCloudClient change: the app makes no cloud call for a camera rename (verified in jadx).",
+    "Owned cloud cameras (role 0): setDeviceAlias via the camera's route (LAN or passthrough); name applied at once as pending_name, rolled back on failure (command_failed 'rename_camera' + rename_finished(id, msg)); pending cleared when the cloud alias matches or after 24 h. A rename to the current cloud alias still sends the command but sets nothing pending.",
+    "Shared cloud cameras: local display_name that refreshes never overwrite; 'Reset to camera name' restores cloud_alias. Manual cameras: CameraConfig.name changes (local only).",
+    "Validation = app rules (trim, 1..32 UTF-8 bytes) plus NFC composition and refusing control characters (this app's additions).",
+    "Sort: QCollator(QLocale() = system locale unless the app sets a default), numeric mode, case-insensitive; ties keep account order; setting camera_sort (name_asc default | name_desc | account); grid slots never move.",
+    "FakeCameraService.rename is added by a phase7 autouse monkeypatch, so tests/e2e fakes are untouched."
+  ],
+  "open_issues": [
+    "Default list order changed from account order to A-Z (as requested); 'Account order' in the sort menu restores the old behaviour.",
+    "How fast the TP-Link cloud reflects a new dev_alias is not in the APK and was not measured (only no-op renames were allowed); the 24 h pending window covers the delay.",
+    "Camera-side alias rules beyond 32 bytes (e.g. emoji) are unknown; any refusal is shown with the camera's error code.",
+    "docs/CONTRACT_UI.md / ARCHITECTURE.md not updated (orchestrator-owned); behaviour is documented in module docstrings.",
+    "Pre-existing phase3 relay-stream timing flakes on this machine (see regression)."
+  ]
+}
