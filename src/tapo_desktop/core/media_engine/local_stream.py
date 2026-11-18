@@ -64,6 +64,12 @@ def build_preview_request(resolution: str, channel: int = 0) -> dict:
         "channels": [int(channel)], "resolutions": [resolution], "audio": ["default"]}}}
 
 
+# After the stop request, wait this long before closing. Closing a Windows socket that still has unread
+# incoming media sends a TCP reset, and the peer discards data it has not read yet - including the stop
+# request, so the camera / relay would keep streaming until its own timeout.
+_STOP_LINGER_S = 0.15
+
+
 def build_stop_request() -> dict:
     """``do stop`` request without ``seq`` [spec:stream.control.preview ``stop``]."""
     return {"type": "request", "params": {"method": "do", "stop": "null"}}
@@ -290,6 +296,7 @@ class LocalStreamSupervisor(StreamSupervisor):
         if session.session_id:
             try:
                 session.send_json(build_stop_request())
+                time.sleep(_STOP_LINGER_S)  # the pump keeps reading; see _STOP_LINGER_S
             except TapoError:
                 pass
         session.close()
@@ -400,6 +407,7 @@ class LocalStreamSupervisor(StreamSupervisor):
             if session.session_id and (self._stopping.is_set() or self._pending is not None):
                 try:
                     session.send_json(build_stop_request())
+                    time.sleep(_STOP_LINGER_S)
                 except TapoError:
                     pass
             session.close()

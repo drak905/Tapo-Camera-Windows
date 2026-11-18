@@ -131,6 +131,11 @@ class _Tunnel:
                 if self.serialize_io:
                     time.sleep(0.002)  # let the sender take the lock
                 continue
+            except (BlockingIOError, InterruptedError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                # Windows WSAEWOULDBLOCK (10035) when the sender thread writes this TLS socket at the
+                # same moment: a transient condition, not a closed connection.
+                time.sleep(0.002)
+                continue
             except (OSError, ssl.SSLError):
                 return False
             if not chunk:

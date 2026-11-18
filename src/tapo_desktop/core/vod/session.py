@@ -674,16 +674,32 @@ class MediaSession:
                 part = MediaPart(part.headers, decrypt_part(part.body, *self._keys))
         if self._session_id is None and "json" in part.headers.get("Content-Type", ""):
             self._remember_session_id(part.body)
+        self._remember_session_header(part)
         return part
 
     def _remember_session_id(self, body: bytes) -> None:
+        """Learn the session id from a JSON reply. Real cameras and the relay answer with
+        ``params.session_id`` (C200 / C510W, live); the spec's ``result.session_id`` is accepted too."""
         try:
             msg = json.loads(body)
         except (ValueError, UnicodeDecodeError):
             return
-        result = msg.get("result") if isinstance(msg, dict) else None
-        if isinstance(result, dict) and result.get("session_id"):
-            self._session_id = str(result["session_id"])
+        if not isinstance(msg, dict):
+            return
+        for key in ("result", "params"):
+            inner = msg.get(key)
+            if not isinstance(inner, dict):
+                continue
+            sid = inner.get("session_id")
+            code = inner.get("error_code", 0)
+            if sid not in (None, "") and not isinstance(sid, bool) and code in (0, "0", None):
+                self._session_id = str(sid)
+                return
+
+    def _remember_session_header(self, part: MediaPart) -> None:
+        sid = part.headers.get("X-Session-Id")
+        if self._session_id is None and sid and sid.strip():
+            self._session_id = sid.strip()
 
     # ------------------------------------------------------------------ lifetime
     def _close_socket(self) -> None:
