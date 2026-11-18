@@ -9,6 +9,10 @@
 * Visible tiles are streamed: ``controller.start_view(id, config.grid_quality, w, h)``; tiles that
   become hidden get ``controller.stop_view(id)``. Moving a camera between visible slots does not
   restart its stream. At most ``n*n`` streams run (a camera is never in two slots).
+* Phase 6 view-driven streaming: what streams is decided by
+  :func:`~tapo_desktop.services.stream_policy.plan_streams` - every camera in a visible slot, local and
+  remote, streams at the same time in every grid size; the controller reserves relay slots for them, so
+  the remote stream limit no longer leaves visible tiles on "Remote - click to view".
 * ``controller.frame_ready`` -> ``tile.set_frame``; ``controller.stream_state`` ->
   ``tile.set_stream_state``. ``controller.cameras_changed`` rebuilds the tiles and syncs the slots
   (removed cameras leave an empty slot, new cameras fill the first empty slot).
@@ -34,19 +38,15 @@ from PyQt6.QtGui import QAction, QImage
 from PyQt6.QtWidgets import QGridLayout, QMenu, QWidget
 
 from tapo_desktop.models import CameraConfig, StreamQuality
+from tapo_desktop.services.stream_policy import StreamRequest, plan_streams, view_size
 from tapo_desktop.services.view_layout import MAX_SLOTS, SETTING_KEY, ViewLayout
 from tapo_desktop.ui.video_tile import EmptySlotTile, VideoTile, camera_id_from_mime
 
 log = logging.getLogger(__name__)
 
 GRID_SIZES: tuple[int, ...] = (1, 2, 3, 4, 5)
-_HD_QUALITIES = (StreamQuality.HD, StreamQuality.TELE_HD)
 
-
-def view_size(quality: StreamQuality) -> tuple[int, int]:
-    """Decoded frame size requested for ``quality`` (16:9; the supervisor letterboxes)."""
-    return (1280, 720) if quality in _HD_QUALITIES else (640, 360)
-
+__all__ = ["GRID_SIZES", "CameraGrid", "validate_grid_size", "view_size"]
 
 def validate_grid_size(n: object) -> int:
     """Return ``n`` if it is one of :data:`GRID_SIZES`, else raise ValueError."""
@@ -385,15 +385,14 @@ class CameraGrid(QWidget):
         self._remember_active_slot()
         if self._fullscreen is not None:
             self._relayout([(0, self._tiles[self._fullscreen])], 1)
-            streamed = {self._fullscreen}
         else:
             widgets: list[tuple[int, QWidget]] = []
             for index, cid in enumerate(self.visible_slots()):
                 tile = self._tiles.get(cid) if cid is not None else None
                 widgets.append((index, tile if tile is not None else self._empty_tile(index)))
             self._relayout(widgets, self._n)
-            streamed = set(self._visible_cameras())
-        self._sync_streams(streamed)
+        visible = [cid if cid in self._tiles else None for cid in self.visible_slots()]
+        self._sync_streams(plan_streams(visible, self._configs, self._fullscreen))
         self.view_changed.emit()
 
     def _relayout(self, widgets: list[tuple[int, QWidget]], cols: int) -> None:
@@ -410,13 +409,12 @@ class CameraGrid(QWidget):
             self._layout.setRowStretch(i, 1 if i < cols else 0)
             self._layout.setColumnStretch(i, 1 if i < cols else 0)
 
-    def _sync_streams(self, visible: set[str]) -> None:
+    def _sync_streams(self, plan: dict[str, StreamRequest]) -> None:
+        """Start / switch / stop streams so that exactly the cameras of ``plan`` stream (view-driven
+        streaming, :func:`~tapo_desktop.services.stream_policy.plan_streams`)."""
         for cid, tile in self._tiles.items():
-            want = None
-            if cid in visible:
-                cfg = self._configs[cid]
-                quality = cfg.fullscreen_quality if cid == self._fullscreen else cfg.grid_quality
-                want = (quality, *view_size(quality))
+            request = plan.get(cid)
+            want = request.as_args() if request is not None else None
             if want == self._requested.get(cid):
                 continue
             if want is None:

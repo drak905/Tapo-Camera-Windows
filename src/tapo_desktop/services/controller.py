@@ -59,6 +59,11 @@ playback authenticates its own media session), signals ``playback_frame(id, QIma
 ``frame_ready``), ``playback_state(id, state_name, reason)`` and ``playback_position(id, utc_seconds)``.
 ``stop_all`` and removing a camera also stop its playback.
 
+Phase 6 (view-driven streaming, :mod:`tapo_desktop.services.stream_policy`): every viewed camera
+(``start_view`` without a later ``stop_view``) is reserved a relay slot in the remote provider's
+:class:`~tapo_desktop.services.remote.RemoteStreamGate` before its start job runs, so every camera in the
+grid streams at once, local and remote; ``max_remote_streams`` only limits streams outside the view.
+
 Implementation notes (Wave 3):
 
 * Threading: a private :class:`~tapo_desktop.services._workers.WorkerPool` of daemon threads. Each
@@ -80,7 +85,7 @@ import logging
 import pathlib
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import date, datetime
@@ -103,6 +108,7 @@ from tapo_desktop.services._workers import Strand, WorkerPool
 from tapo_desktop.services.camera_service import CameraService
 from tapo_desktop.services.config_store import ConfigStore
 from tapo_desktop.services.remote import cloud_routed
+from tapo_desktop.services.stream_policy import reserved_relay_streams
 
 if TYPE_CHECKING:  # pragma: no cover
     from tapo_desktop.core.auth.vault import CredentialVault
@@ -348,7 +354,10 @@ class AppController(QObject):
         :class:`~tapo_desktop.services.remote.RelayProvider`. Remote cameras that are on screen are
         started again so they pick it up. Does not emit ``cameras_changed`` (the account sync does)."""
         changed = provider is not self._remote
-        self._remote = provider
+        old, self._remote = self._remote, provider
+        if changed and old is not None:
+            self._reserve_relay_slots(old, ())  # signed out / switched account: the old gate reserves nothing
+        self._sync_relay_reservations()
         if not changed or provider is None:
             return
         for cam in list(self._cams.values()):
@@ -424,6 +433,7 @@ class AppController(QObject):
         cam.removed = True
         cam.view = None
         cam.last_image = None
+        self._sync_relay_reservations()
         cam.control.submit(self._guarded(cam, "remove", partial(self._close_service, cam, stop_first=True)))
         self._vault.delete(camera_id)
 
@@ -434,6 +444,7 @@ class AppController(QObject):
         if cam is None:
             return
         cam.view = (quality, int(width), int(height))
+        self._sync_relay_reservations()  # before the start job runs: a viewed camera always gets a relay slot
         self._submit_start(cam, *cam.view)
 
     def stop_view(self, camera_id: str) -> None:
@@ -442,6 +453,7 @@ class AppController(QObject):
         if cam is None:
             return
         cam.view = None
+        self._sync_relay_reservations()
         self._submit(cam, "stop_view", lambda svc: svc.stop_stream(), connect=False,
                      on_error=lambda _msg: None)  # already logged; nothing for the UI to roll back
 
@@ -451,6 +463,7 @@ class AppController(QObject):
         for cam in list(self._cams.values()):
             cam.view = None
             futures.append(cam.control.submit(self._guarded(cam, "stop_all", partial(self._stop_service, cam))))
+        self._sync_relay_reservations()
         deadline = time.monotonic() + STOP_ALL_TIMEOUT_S
         for fut in futures:
             try:
@@ -714,6 +727,19 @@ class AppController(QObject):
             svc.close()
 
     # ================================================================== internals: streaming
+    def _sync_relay_reservations(self) -> None:
+        """Phase 6 view-driven streaming (GUI thread): the current provider's gate reserves a relay slot for
+        every viewed camera, so the remote stream limit never leaves a visible tile waiting for a click."""
+        if self._remote is not None:
+            self._reserve_relay_slots(self._remote, reserved_relay_streams(
+                {cid: cam.view for cid, cam in self._cams.items()}))
+
+    @staticmethod
+    def _reserve_relay_slots(provider: Any, keys: Iterable[str]) -> None:
+        reserve = getattr(getattr(provider, "gate", None), "reserve", None)
+        if callable(reserve):  # duck-typed providers without reservations keep their own limit
+            reserve(keys)
+
     def _submit_start(self, cam: _Camera, quality: StreamQuality, width: int, height: int) -> None:
         def fail(msg: str) -> None:
             self.stream_state.emit(cam.id, "FAILED", msg)

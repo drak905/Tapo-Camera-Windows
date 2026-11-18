@@ -38,6 +38,7 @@ from tapo_desktop.models import (
     RecordingClip,
     StreamQuality,
 )
+from tapo_desktop.services.stream_policy import decoder_for
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from tapo_desktop.core.auth.vault import CredentialVault
@@ -223,7 +224,8 @@ class TapoCameraService(CameraService):
     :data:`NOT_ON_NETWORK` and do no network I/O - unless they are cloud cameras that are online and
     ``remote()`` returns a signed-in :class:`~tapo_desktop.services.remote.RelayProvider`: then the live
     view goes through the TP-Link cloud relay (:class:`RelayStreamSupervisor`, VGA in the grid, HD
-    fullscreen, at most ``provider.gate.capacity`` remote streams; extra ones report FAILED
+    fullscreen, at most ``provider.gate.capacity`` remote streams outside the view (the controller reserves a
+    relay slot for every viewed camera, Phase 6); extra ones report FAILED
     :data:`~tapo_desktop.services.remote.REMOTE_CLICK_TO_VIEW` until ``start_stream(..., preempt=True)``),
     ``connect()`` succeeds without network I/O and control, PTZ, status, presets and recordings go through
     the cloud passthrough (``provider.control_client``, a RemoteControlClient; status is one batched call),
@@ -243,7 +245,9 @@ class TapoCameraService(CameraService):
     ``provider.create_playback`` (relay playback slot, no live-view gate slot). A camera refusing another
     media session reports FAILED :data:`PLAYBACK_LIMIT_MESSAGE`.
 
-    The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily.
+    The ``*_factory`` arguments replace the core classes (tests); defaults import them lazily. Every live
+    view supervisor gets ``hwaccel=``:func:`~tapo_desktop.services.stream_policy.decoder_for` ``(quality)``
+    (Phase 6: software decoding for SD grid streams, hardware with software fallback for HD).
 
     Credentials are read from ``vault.get(config.id, CredentialKind.CLOUD | CAMERA_ACCOUNT)``; a
     ``CredentialKind.LOCAL_TOKEN`` entry (cloud-issued LAT, [spec:lat.*]) is passed as ``local_token``
@@ -622,7 +626,7 @@ class TapoCameraService(CameraService):
             gen = self._stream_gen
             callbacks = dict(on_frame=lambda f: self._forward_frame(gen, f),
                              on_state=lambda s, r: self._forward_state(gen, s, r),
-                             limiter=self._limiter, limiter_key=self.config.host)
+                             limiter=self._limiter, limiter_key=self.config.host, hwaccel=decoder_for(quality))
             if transport == "rtsp":
                 sup = self._new_rtsp_supervisor(target, width, height, callbacks)
             else:
@@ -685,7 +689,8 @@ class TapoCameraService(CameraService):
             gen = self._stream_gen
             callbacks = dict(on_frame=lambda f: self._forward_frame(gen, f),
                              on_state=lambda s, r: self._forward_state(gen, s, r),
-                             limiter=self._limiter, limiter_key=self.config.device_id or self.config.id)
+                             limiter=self._limiter, limiter_key=self.config.device_id or self.config.id,
+                             hwaccel=decoder_for(quality))
             try:
                 sup = provider.create_stream(self.config, width, height, resolution=resolution, channel=channel,
                                              **callbacks)

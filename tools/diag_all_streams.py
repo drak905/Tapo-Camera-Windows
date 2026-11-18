@@ -1,6 +1,7 @@
 """View-only capacity test: every camera in a 4x4 grid streams at once (remote cap lifted) on a COPY
 of the user's settings. Measures per-camera fps, start time, app + ffmpeg memory and CPU.
-Usage: python build/diag_all_streams.py [hwaccel: auto|none]"""
+Usage: python tools/diag_all_streams.py [decoder: policy|none|hw]  (policy = the app default since Phase 6:
+software for grid tiles, hardware for HD; none / hw force software / d3d11va for every stream)"""
 import json
 import os
 import shutil
@@ -28,13 +29,13 @@ from tapo_desktop.services.config_store import ConfigStore  # noqa: E402
 from tapo_desktop.services.controller import AppController  # noqa: E402
 from tapo_desktop.ui.main_window import MainWindow  # noqa: E402
 
-HW = sys.argv[1] if len(sys.argv) > 1 else "auto"
-if HW == "none":
+HW = sys.argv[1] if len(sys.argv) > 1 else "policy"
+if HW in ("none", "hw"):
     import tapo_desktop.core.media_engine.supervisor as sup_mod
     orig = sup_mod.StreamSupervisor.__init__
 
     def init(self, *a, **k):
-        k["hwaccel"] = None
+        k["hwaccel"] = None if HW == "none" else "auto"
         orig(self, *a, **k)
     sup_mod.StreamSupervisor.__init__ = init
 

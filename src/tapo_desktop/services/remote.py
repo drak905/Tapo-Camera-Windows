@@ -6,10 +6,11 @@
   It builds the :class:`~tapo_desktop.core.cloud.relay.RelayClient` lazily and creates
   :class:`~tapo_desktop.core.media_engine.relay_stream.RelayStreamSupervisor` instances with the
   device type / ``cloudType`` from the cloud device list.
-* :class:`RemoteStreamGate` - at most ``max_remote_streams`` (setting, default 4) relay streams at once,
-  so a 3x3 grid of remote cameras does not open 9 relay sessions. Extra tiles show
-  :data:`REMOTE_CLICK_TO_VIEW`; clicking one takes the slot of the remote stream that has been running
-  longest.
+* :class:`RemoteStreamGate` - at most ``max_remote_streams`` (setting, default 4) relay streams at once
+  outside the view. Phase 6 (view-driven streaming, :mod:`tapo_desktop.services.stream_policy`): the
+  controller reserves a slot for every camera in the view, so every remote tile of a 1x1..5x5 grid
+  streams at the same time. A tile that still cannot get a slot shows :data:`REMOTE_CLICK_TO_VIEW`;
+  clicking one takes the slot of the unreserved remote stream that has been running longest.
 
 Only live view goes through the relay in Phase 3. Phase 4 adds remote control, recordings and shared
 cameras: :meth:`RelayProvider.control_client` gives a
@@ -74,8 +75,12 @@ class RemoteStreamGate:
     """Thread-safe counting gate for remote streams, keyed by camera id (in acquisition order).
 
     ``acquire(key, on_evict)``: True if ``key`` holds (or now holds) a slot. When full, ``preempt=True``
-    evicts the oldest holder: it is removed first, then its ``on_evict()`` runs (outside the lock, on the
-    caller's thread) so it can stop its stream.
+    evicts the oldest holder that is not reserved: it is removed first, then its ``on_evict()`` runs
+    (outside the lock, on the caller's thread) so it can stop its stream.
+
+    Phase 6 (view-driven streaming): :meth:`reserve` names the cameras in the view; a reserved key always
+    gets a slot (all holders may then exceed ``capacity``) and is never evicted. ``capacity`` only limits
+    the other keys. With no reservations the gate behaves as in Phase 3.
     """
 
     def __init__(self, capacity: int = DEFAULT_MAX_REMOTE_STREAMS):
@@ -84,9 +89,10 @@ class RemoteStreamGate:
         self._capacity = capacity
         self._lock = threading.Lock()
         self._holders: OrderedDict[str, Callable[[], None]] = OrderedDict()
+        self._reserved: frozenset[str] = frozenset()
 
     def __repr__(self) -> str:
-        return f"RemoteStreamGate({len(self._holders)}/{self._capacity})"
+        return f"RemoteStreamGate({len(self._holders)}/{self._capacity}, reserved={len(self._reserved)})"
 
     @property
     def capacity(self) -> int:
@@ -104,10 +110,11 @@ class RemoteStreamGate:
         with self._lock:
             if key in self._holders:
                 return True  # already holds a slot (its first on_evict stays registered)
-            if len(self._holders) >= self._capacity:
-                if not preempt:
+            if key not in self._reserved and len(self._holders) >= self._capacity:
+                victim = next((k for k in self._holders if k not in self._reserved), None)
+                if not preempt or victim is None:
                     return False
-                victim, evicted = self._holders.popitem(last=False)
+                evicted = self._holders.pop(victim)
                 log.info("remote stream limit (%d): %s gives its slot to %s", self._capacity, victim, key)
             self._holders[key] = on_evict
         if evicted is not None:
@@ -132,10 +139,19 @@ class RemoteStreamGate:
             return list(self._holders)
 
     def reserve(self, keys: Iterable[str]) -> None:
-        raise NotImplementedError
+        """Replace the reserved keys (cameras in the view): a reserved key always gets a slot, even above
+        the capacity, and is never evicted by ``preempt``. Running holders that lose their reservation keep
+        their slot until released."""
+        reserved = frozenset(keys)
+        if not all(isinstance(k, str) for k in reserved):
+            raise TypeError("reserved keys must be strings")
+        with self._lock:
+            self._reserved = reserved
 
     def reserved(self) -> frozenset[str]:
-        raise NotImplementedError
+        """The reserved keys."""
+        with self._lock:
+            return self._reserved
 
 
 def _default_relay_factory(cloud_client: Any) -> Any:
