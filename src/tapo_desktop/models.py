@@ -68,6 +68,11 @@ class CameraConfig:
     # Phase 4 (remote control / shared cameras): from the IoT thing list (fallback: the device list)
     role: int = 0  # 0 = owned by the signed-in account; otherwise shared to it (control/video via the cloud only)
     share_type: str = ""  # "deviceShare" | "familyShare" | "" (owned)
+    # Phase 7 (rename, see tapo_desktop.services.camera_names): ``name`` is always the name shown in the app.
+    display_name: str = ""  # local-only name of a cloud camera (shared cameras); cloud refreshes never overwrite it
+    pending_name: str = ""  # owned cloud camera renamed on the camera; kept until the cloud alias matches (or 24 h)
+    pending_since: float = 0.0  # epoch seconds of the pending rename
+    cloud_alias: str = ""  # the camera's name as last reported by the TP-Link cloud ("Reset to camera name")
 
 
 @dataclass(frozen=True)

@@ -276,6 +276,10 @@ class ControlApi:
         """Reboot the camera."""
         self.request(dtos.reboot_req())
 
+    def rename(self, name: str) -> None:
+        """Set the camera's name (setDeviceAlias) [spec:rename.request]."""
+        raise NotImplementedError
+
 
 class TapoControlClient(ControlApi):
     """Thread-safe client. Auto-logs-in on first use; on -40401 (top-level or per-item) or HTTP 401

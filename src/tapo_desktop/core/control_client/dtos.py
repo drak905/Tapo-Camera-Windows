@@ -367,6 +367,11 @@ def has_more_clips(result: dict) -> bool:
 
 
 # --------------------------------------------------------------------------- system
+def set_device_alias_req(name: str) -> dict:
+    """setDeviceAlias [spec:rename.request]."""
+    raise NotImplementedError
+
+
 def reboot_req() -> dict:
     """rebootDevice [spec:control.system.reboot]."""
     return _req("rebootDevice", {"system": {"reboot": {}}})

@@ -31,6 +31,7 @@ LANES = {
     "lat": "lat_spec.json",
     "remote": "remote_spec.json",
     "remote_control": "remote_control_spec.json",
+    "rename": "rename_spec.json",
 }
 MERGED = SPECS / "tapo_protocol_spec.json"
 CONFIDENCE = {"verified", "inferred", "external"}

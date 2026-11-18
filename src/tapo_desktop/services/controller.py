@@ -199,6 +199,7 @@ class AppController(QObject):
     playback_frame = pyqtSignal(str, QImage)          # Phase 5: camera_id, playback frame
     playback_state = pyqtSignal(str, str, str)        # Phase 5: camera_id, StreamState.name, reason ("" if none)
     playback_position = pyqtSignal(str, float)        # Phase 5: camera_id, recording time (UTC epoch s)
+    rename_finished = pyqtSignal(str, str)            # Phase 7: camera_id, error ("" = renamed)
 
     _invoke = pyqtSignal(object)                      # private: run a callable on the GUI thread
 
@@ -347,6 +348,13 @@ class AppController(QObject):
         """The newest frame delivered for ``camera_id`` (for snapshots), or None."""
         cam = self._cams.get(camera_id)
         return cam.last_image if cam is not None else None
+
+    # ---------------------------------------------------------- Phase 7: rename
+    def rename_camera(self, camera_id: str, name: str) -> bool:
+        raise NotImplementedError
+
+    def reset_camera_name(self, camera_id: str) -> None:
+        raise NotImplementedError
 
     # ---------------------------------------------------------- Phase 3: remote live view (relay)
     def set_remote_provider(self, provider: Any) -> None:

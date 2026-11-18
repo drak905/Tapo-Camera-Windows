@@ -1,0 +1,99 @@
+{
+  "spec_id": "rename_spec",
+  "apk": {
+    "package": "com.tplink.iot",
+    "version_name": "3.22.806",
+    "version_code": "7276"
+  },
+  "summary": "How the Tapo app renames a camera (Device info > Name). The app trims the text, checks 1..32 UTF-8 bytes, and sends ONE camera command, setDeviceAlias {system:{sys:{dev_alias}}}, wrapped in multipleRequest through the camera's normal transport (LAN, or IoT cloud passthrough when away). There is no separate cloud alias/nickname call: on success the app only updates its in-memory caches and fires a local 'device list changed' tick. fc0.c0.J (the second half of the save) only renames NVR channels and is a no-op for stand-alone cameras.",
+  "items": [
+    {
+      "id": "rename.request",
+      "kind": "request",
+      "description": "Rename request built by mv0.zk.t7(name): Method.SET_DEVICE_ALIAS (\"setDeviceAlias\") with Wrapper(Module.SYSTEM \"system\", Section.SYS \"sys\", SystemInfo{alias}) where SystemInfo.alias is serialized as \"dev_alias\". i6() wraps it in multipleRequest like every other camera setter.",
+      "value": {
+        "method": "setDeviceAlias",
+        "params": {"system": {"sys": {"dev_alias": "<name>"}}},
+        "envelope": "multipleRequest {requests:[<request>]} (i6 -> j6 -> k6)",
+        "result": "{} on success (Response.isSuccess)"
+      },
+      "evidence": [
+        {"source": "jadx", "file": "mv0/zk.java", "line": 4662, "snippet": "public Request t7(String str) { SystemInfo systemInfo = new SystemInfo(); systemInfo.setAlias(str); return i6(new Request(Method.SET_DEVICE_ALIAS, new Wrapper(Module.SYSTEM, Section.SYS, systemInfo)));"},
+        {"source": "jadx", "file": "mv0/zk.java", "line": 3679, "snippet": "protected Request i6(Request request) { return j6(new Request(request.getMethod(), new Wrappers(Collections.singletonList((Wrapper) request.getParams())))); }"},
+        {"source": "jadx", "file": "mv0/zk.java", "line": 3855, "snippet": "public Request k6(List list) { return new Request(Method.MULTIPLE_REQUEST, new MultipleRequest(list)); }"},
+        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/SystemInfo.java", "line": 16, "snippet": "@SerializedName(\"dev_alias\") private String alias;"},
+        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Method.java", "line": 39, "snippet": "SET_DEVICE_ALIAS(AbstractSmartDevice.setDeviceAlias)"},
+        {"source": "jadx", "file": "com/tplinkra/iot/devices/AbstractSmartDevice.java", "line": 105, "snippet": "public static final String setDeviceAlias = \"setDeviceAlias\";"},
+        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Module.java", "line": 37, "snippet": "SYSTEM(\"system\")"},
+        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/model/Section.java", "line": 48, "snippet": "SYS(NotificationCompat.CATEGORY_SYSTEM)  // \"sys\""}
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "rename.flow",
+      "kind": "flow",
+      "description": "Save button of DeviceNameEditorActivity: strTrim = text.trim(); for cameras not bound to an NVR channel by ONVIF it zips viewModel.n2(strTrim) (the camera command) with fc0.c0.J(strTrim, id) (NVR channel rename). n2 -> CameraSettingRepository.k3 -> jm.ig -> qk.Nh -> zk.t7, sent through the camera client's normal transport (jm.xd(null): LOCAL if ready, else IOT_REMOTE passthrough, see remote.control.transport_selection). On success Q2() updates CameraInfoCache name and the cached basic_info device alias and calls TPIoTClientManager.a6() (a local change counter, no network). fc0.c0.J returns EditCamResult(null) at once for a camera that is not an NVR channel.",
+      "value": {
+        "camera_call": "setDeviceAlias via the camera transport (LAN or cloud passthrough)",
+        "cloud_call": "none (no thing nickname / device alias cloud API is used for cameras)",
+        "after_success": "local caches only (CameraInfoCache.setName, basicInfo.setDeviceAlias, a6() tick)",
+        "nvr_channel": "fc0.c0.J edits the NVR channel name (only for cameras behind an NVR)"
+      },
+      "evidence": [
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/setting/DeviceNameEditorActivity.java", "line": 127, "snippet": "final String strTrim = this.f117934a.f45160e.getText().toString().trim();"},
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/setting/DeviceNameEditorActivity.java", "line": 138, "snippet": "this.f117935b.n2(strTrim).W1(fc0.c0.J(strTrim, this.f117935b.f134493g)..."},
+        {"source": "jadx", "file": "com/tplink/iot/viewmodel/ipcamera/setting/DeviceNameEditorViewModel.java", "line": 112, "snippet": "public vr1.r n2(String str) { return h2(str) ? this.f134496j.k3(str) : vr1.r.c0(new CameraException(-63103, \"DEVICE NAME EXCESSIVE\")); }"},
+        {"source": "jadx", "file": "com/tplink/libtapocameraapi/repo/CameraSettingRepository.java", "line": 5743, "snippet": "public vr1.r k3(final String str) { return j0().ig(str)...W(... Q2(str, (Response) obj))"},
+        {"source": "jadx", "file": "com/tplink/libtapocameraapi/repo/CameraSettingRepository.java", "line": 723, "snippet": "Q2: if (response.isSuccess()) { getCameraInfo().setName(str); cameraDevice.getBasicInfo().setDeviceAlias(str); this.mClientManager.a6(); }"},
+        {"source": "jadx", "file": "bv0/jm.java", "line": 4940, "snippet": "public vr1.r ig(final String str) { return xd(null).h0(... ((mv0.qk) obj).Nh(str)); }"},
+        {"source": "jadx", "file": "mv0/qk.java", "line": 2307, "snippet": "public vr1.r Nh(String str) { return zg(this.f212730b.t7(str)).x1(1L)..."},
+        {"source": "jadx", "file": "com/tplink/libtpnetwork/IoTNetwork/TPIoTClientManager.java", "line": 5573, "snippet": "public void a6() { int i12 = this.f171265r0 + 1; ... this.f171263q0.onNext(Integer.valueOf(i12)); }"},
+        {"source": "jadx", "file": "fc0/c0.java", "line": 137, "snippet": "public static final vr1.r J(final String str, String str2) { ... NVR channel EditChannelDeviceInfo.setName(str) ... }"},
+        {"source": "jadx", "file": "fc0/c0.java", "line": 192, "snippet": "vr1.r rVarD0 = vr1.r.D0(new EditCamResult(null, null, null));  // not an NVR channel: nothing to do"}
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "rename.validation",
+      "kind": "constraint",
+      "description": "Name rules of the app: the text is trimmed; it must be 1..32 bytes in UTF-8 (h2: getBytes(\"UTF-8\").length > 0 && <= 32; f134487a = 32); the editor refuses input that would exceed 32 bytes and pre-fills the current name cut to 32 bytes (u1.J). Save is enabled only when the text is non-empty and differs from the current name. No character regex exists in code; a name the camera or app rejects is reported as error -63103 DEVICE_NAME_EXCESSIVE, shown as R.string.device_setting_device_name_len_error (log 'Incorrect alias format'); any other error shows general_failed.",
+      "value": {
+        "trim": true,
+        "min_bytes_utf8": 1,
+        "max_bytes_utf8": 32,
+        "error_code_bad_name": -63103,
+        "save_enabled": "non-empty and != current name"
+      },
+      "evidence": [
+        {"source": "jadx", "file": "com/tplink/iot/viewmodel/ipcamera/setting/DeviceNameEditorViewModel.java", "line": 55, "snippet": "this.f134487a = 32;"},
+        {"source": "jadx", "file": "com/tplink/iot/viewmodel/ipcamera/setting/DeviceNameEditorViewModel.java", "line": 89, "snippet": "public boolean h2(String str) { length = str.getBytes(\"UTF-8\").length; ... return length > 0 && length <= 32; }"},
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/setting/DeviceNameEditorActivity.java", "line": 204, "snippet": "if (...f117937d.toString().getBytes().length > 32) { setText(f117938e) /* refuse */ }"},
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/setting/DeviceNameEditorActivity.java", "line": 177, "snippet": "com.tplink.iot.Utils.iot.u1.J(drawableEditText, str, 32);"},
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/setting/DeviceNameEditorActivity.java", "line": 108, "snippet": "if (((CameraException) th2).getErrorCode() != -63103) { general_failed } else { oc1.a.d(\"setDeviceName\", \"Incorrect alias format\"); device_setting_device_name_len_error }"},
+        {"source": "jadx", "file": "com/tplink/libtapocameranetwork/net/CameraException.java", "line": 9, "snippet": "public static final int DEVICE_NAME_EXCESSIVE = -63103;"}
+      ],
+      "confidence": "verified"
+    },
+    {
+      "id": "rename.shared_permission",
+      "kind": "constraint",
+      "description": "Shared cameras: DeviceDetailInfoViewModelV2 marks a camera shared to the user (isUserRoleTypeDevice) whose auth type is neither OWNER nor ADVANCED as 'no permission'; the device-info page then shows camera_share_tip_no_permission instead of opening settings. This app therefore never sends setDeviceAlias for shared cameras (role != 0) and renames them only locally.",
+      "value": {"owner": "rename on the camera", "shared (role != 0)": "local display name only in this app"},
+      "evidence": [
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/settingv2/viewmodel/DeviceDetailInfoViewModelV2.java", "line": 291, "snippet": "boolean z12 = (cameraDevice == null || !cameraDevice.isUserRoleTypeDevice() || getAuthType() == OWNER || getAuthType() == ADVANCED) ? false : true;"},
+        {"source": "jadx", "file": "com/tplink/iot/view/ipcamera/settingv2/view/CameraDeviceInfoActivity.java", "line": 832, "snippet": "Toast.makeText(this, R.string.camera_share_tip_no_permission, 0).show();"}
+      ],
+      "confidence": "inferred"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "cloud alias propagation delay",
+      "detail": "The app never updates the cloud itself; the cloud device list / thing nickname is expected to follow the camera's own report. How fast the cloud reflects a new dev_alias is not in the APK; this app keeps a pending local name until the cloud alias matches or 24 h pass."
+    },
+    {
+      "topic": "camera-side alias rules",
+      "detail": "The camera's own error code for a refused dev_alias (too long / bad characters) is not named in the APK; the app maps its own pre-check to -63103. This app reports any setDeviceAlias failure with the camera's code."
+    }
+  ]
+}

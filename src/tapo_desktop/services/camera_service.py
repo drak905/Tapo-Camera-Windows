@@ -197,6 +197,11 @@ class CameraService(abc.ABC):
     def stop_playback(self) -> None:
         """Stop the playback (idempotent)."""
 
+    # ------------------------------------------------------------------ Phase 7: rename
+    def rename(self, name: str) -> None:
+        """Set the camera's own name (setDeviceAlias). Default: not supported."""
+        raise TapoError("Renaming this camera is not supported")
+
 
 
 #: Coordinate units per PTZ unit for diagonal relative moves (``motorMove``); the app's default
