@@ -37,6 +37,8 @@ Notes
 - If live view or SD downloads fail, check that no local web filter (for example AdGuard) intercepts
   traffic from TapoDesktop.exe / fmpeg.exe. The camera media port 8800 uses plain HTTP.
 ## Development
+Agents and new contributors: start with [AGENTS.md](AGENTS.md) (handover: state, rules, protocol facts, open items).
+
 ```powershell
 python -m venv .venv; .venv\Scripts\pip install -e .[dev]
 .venv\Scripts\python -m tapo_desktop            # run from source

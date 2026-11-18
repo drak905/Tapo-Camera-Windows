@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: tapo-desktop
+Version: 0.1.0
+Summary: Native Windows desktop client for TP-Link Tapo cameras (local LAN: HTTPS, RTSP, ONVIF)
+Requires-Python: >=3.12
+Requires-Dist: PyQt6>=6.7
+Requires-Dist: cryptography>=42
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-qt>=4.4; extra == "dev"
+Requires-Dist: pytest-timeout>=2.3; extra == "dev"
+Requires-Dist: hypothesis>=6; extra == "dev"
+Requires-Dist: psutil>=5.9; extra == "dev"
+Requires-Dist: pyinstaller>=6.10; extra == "dev"

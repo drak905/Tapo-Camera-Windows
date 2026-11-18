@@ -1,0 +1,2 @@
+[console_scripts]
+tapo-desktop = tapo_desktop.app:main

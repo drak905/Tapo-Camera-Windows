@@ -20,6 +20,41 @@
       "barrier": "phase2",
       "status": "passed_on_mocks",
       "detail": "Mobile parity: TP-Link ID sign-in (signed v2 API, MFA, region), cloud device list, TDP LAN discovery (2 real C200 found), TPAP/SPAKE2+ login for encrypt_type 4, :8800 live view, auth circuit breaker. 1008 tests pass; mobile-flow smoke PASS; release rebuilt to release/ (dist/ ACL locked)."
+    },
+    {
+      "barrier": "phase2b",
+      "status": "passed_on_hardware",
+      "detail": "Local access tokens (LAT) for TPAP and :8800; HKDF media keys; online state from the IoT thing list."
+    },
+    {
+      "barrier": "phase3",
+      "status": "passed_on_hardware",
+      "detail": "Remote live view via the TP-Link cloud relay (cloudType 2, exact tunnel headers, 15 s heartbeat, serialised TLS I/O)."
+    },
+    {
+      "barrier": "phase4",
+      "status": "passed_on_hardware",
+      "detail": "Remote/shared controls via services-sync passthrough; relay SD playback/download; -71103 player_id fallback."
+    },
+    {
+      "barrier": "phase5",
+      "status": "passed_on_hardware",
+      "detail": "4x4/5x5 grids, assignable grid slots, PlayerWindow with 24 h timeline, single instance."
+    },
+    {
+      "barrier": "phase6",
+      "status": "passed_on_hardware",
+      "detail": "View-driven streaming: all visible tiles stream; software decode for SD tiles (13 cameras about 470 MB ffmpeg)."
+    },
+    {
+      "barrier": "phase7",
+      "status": "passed_on_hardware",
+      "detail": "A-Z/Z-A/account sorting, rename via setDeviceAlias or local name; session_id from params; 150 ms stop linger."
+    },
+    {
+      "barrier": "handover",
+      "status": "done",
+      "detail": "AGENTS.md handover, tools/setup_dev.ps1; public repo github.com/drak905/Tapo-Camera-Windows (history scrubbed of personal data)."
     }
   ],
   "environment_notes": [
