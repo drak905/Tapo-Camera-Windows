@@ -22,6 +22,12 @@ COUNTRIES = [("US", "United States"), ("VN", "Vietnam"), ("DE", "Germany")]
 SECRET = "hunter2-not-a-real-password"
 
 
+def _cfg(**kw):
+    kw.setdefault("name", "Test camera")
+    kw.setdefault("host", "")
+    return CameraConfig(**kw)
+
+
 class FakeKamiManager(QObject):
     """Same surface as lane A's KamiAccountManager; records calls, never touches a network."""
 
@@ -279,7 +285,7 @@ def test_real_tapo_base_class_has_no_flags():
 
 
 def test_kami_service_disables_live_view_ptz_playback_rename():
-    svc = KamiCameraService(CameraConfig(id="kami:u1", name="Kami A", source="kami"))
+    svc = KamiCameraService(_cfg(id="kami:u1", name="Kami A", source="kami"))
     for control in ("live_view", "ptz", "playback", "rename", "controls", "events"):
         assert kami_status.control_enabled(svc, control) is False
 
@@ -288,7 +294,7 @@ def test_flipping_a_flag_enables_just_that_control():
     class Later(KamiCameraService):
         supports_live_view = True
 
-    svc = Later(CameraConfig(id="kami:u1", name="Kami A", source="kami"))
+    svc = Later(_cfg(id="kami:u1", name="Kami A", source="kami"))
     assert kami_status.control_enabled(svc, "live_view") is True
     assert kami_status.control_enabled(svc, "ptz") is False
 
@@ -300,7 +306,7 @@ def test_unknown_control_name_is_an_error():
 
 def test_overlay_text_is_the_fixed_plain_sentence():
     assert kami_status.LIVE_VIEW_UNSUPPORTED_TEXT == "Live view is not supported for this Kami camera"
-    svc = KamiCameraService(CameraConfig(id="kami:u1", source="kami"))
+    svc = KamiCameraService(_cfg(id="kami:u1", source="kami"))
     assert kami_status.live_view_overlay_text(svc) == kami_status.LIVE_VIEW_UNSUPPORTED_TEXT
 
 
@@ -308,7 +314,7 @@ def test_overlay_text_is_static_no_spinner_no_retry():
     text = kami_status.LIVE_VIEW_UNSUPPORTED_TEXT.lower()
     for bad in ("...", "\u2026", "connecting", "retry", "reconnect", "try again", "loading"):
         assert bad not in text
-    svc = KamiCameraService(CameraConfig(id="kami:u1", source="kami"))
+    svc = KamiCameraService(_cfg(id="kami:u1", source="kami"))
     assert kami_status.live_view_overlay_text(svc) == kami_status.live_view_overlay_text(svc)
 
 
@@ -318,7 +324,7 @@ def test_no_overlay_for_tapo_or_when_live_view_is_supported():
     class Later(KamiCameraService):
         supports_live_view = True
 
-    assert kami_status.live_view_overlay_text(Later(CameraConfig(id="kami:u1", source="kami"))) == ""
+    assert kami_status.live_view_overlay_text(Later(_cfg(id="kami:u1", source="kami"))) == ""
 
 
 def test_online_label():
@@ -327,14 +333,14 @@ def test_online_label():
 
 
 def test_list_tooltip_only_for_kami():
-    assert kami_status.list_tooltip(CameraConfig(id="kami:u1", source="kami")) == "Kami (unofficial)"
-    assert kami_status.list_tooltip(CameraConfig(id="abc", source="cloud")) == ""
-    assert kami_status.list_tooltip(CameraConfig(id="192.168.1.5", source="manual")) == ""
+    assert kami_status.list_tooltip(_cfg(id="kami:u1", source="kami")) == "Kami (unofficial)"
+    assert kami_status.list_tooltip(_cfg(id="abc", source="cloud")) == ""
+    assert kami_status.list_tooltip(_cfg(id="192.168.1.5", source="manual")) == ""
 
 
 def test_is_kami():
-    assert kami_status.is_kami(CameraConfig(id="kami:u1", source="kami"))
-    assert not kami_status.is_kami(CameraConfig(id="abc", source="cloud"))
+    assert kami_status.is_kami(_cfg(id="kami:u1", source="kami"))
+    assert not kami_status.is_kami(_cfg(id="abc", source="cloud"))
 
 
 def test_new_files_import_no_tapo_core_or_vendor_modules():
