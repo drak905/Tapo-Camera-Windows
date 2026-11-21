@@ -31,11 +31,11 @@ EXTRA_STEP_CODE = 20282  # [spec:kami.auth.result_codes] "handled as a social / 
 SESSION_INVALID_CODE = 20202
 
 
-def make_device(uid: str, name: str = "", *, model: str = "1", online: bool = True, share: bool = False,
+def make_device(uid: str, name: str | None = None, *, model: str = "1", online: bool = True, share: bool = False,
                 **extra) -> dict:
     """One element of ``data[]`` of ``/v5/devices/list`` [spec:kami.cloud.device_fields]."""
     dev = {
-        "uid": uid, "name": name or f"Kami {uid}", "model": model, "did": f"did-{uid}", "flag": True,
+        "uid": uid, "name": f"Kami {uid}" if name is None else name, "model": model, "did": f"did-{uid}", "flag": True,
         "share": share, "category": 1 if share else 0, "count": 0, "type": 0, "interVersion": "1.0.0",
         "accessRight": 1 if share else 0, "state": 1 if online else 0, "online": online,
         "password": "ENCRYPTED-CAMERA-PASSWORD-DO-NOT-STORE", "relayFlag": 0,
@@ -66,6 +66,7 @@ class MockKamiCloud:
         self.raw_body: dict[str, bytes] = {}  # path -> forced raw body (malformed JSON etc.)
         self._sessions: dict[str, tuple[str, str]] = {}  # userid -> (token, token_secret)
         self._lock = threading.Lock()
+        self._port = 0
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -87,6 +88,7 @@ class MockKamiCloud:
                 mock._handle(self)
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._port = self._server.server_address[1]  # kept after stop() so a client can still aim at the dead port
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True, name="mock-kami")
         self._thread.start()
         return self
@@ -99,8 +101,7 @@ class MockKamiCloud:
 
     @property
     def url(self) -> str:
-        assert self._server is not None
-        return f"http://127.0.0.1:{self._server.server_address[1]}"
+        return f"http://127.0.0.1:{self._port}"
 
     # ------------------------------------------------------------------ inspection
     def count(self, path: str) -> int:

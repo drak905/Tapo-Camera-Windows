@@ -162,7 +162,7 @@ def test_parse_devices_fields_shared_offline_and_skips_entries_without_uid():
         make_device("UID-B", "Garden", online=False),
         make_device("UID-C", "Friend's cam", share=True),
         {"name": "no uid"},
-        make_device("UID-D", ""),
+        make_device("UID-D", name=""),
         "not a dict",
     ]}
     devs = parse_devices(reply, "eu")
