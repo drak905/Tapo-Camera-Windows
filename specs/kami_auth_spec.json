@@ -1,0 +1,331 @@
+{
+  "spec_id": "kami_auth_spec",
+  "apk": {
+    "package": "com.yitechnology.kamihome",
+    "version_name": "5.0.2_20261110110712",
+    "version_code": "252",
+    "bundle": "apkmirror .apkm (base + 33 splits), arm64-v8a + armeabi-v7a"
+  },
+  "summary": "Kami Home 5.0.2 account sign-in: regional gateways, GET /v4/users/login with an HMAC-SHA256 password hash, HMAC-SHA1 request signing with token&token_secret, captcha/OTP flows, social login.",
+  "items": [
+    {
+      "id": "kami.auth.base_urls",
+      "kind": "endpoint",
+      "description": "Account/device REST gateway per region group. Group USA -> gw-us, EU -> gw-eu, SEA (and others) -> gw-sg, China -> api.xiaoyi.com. HTTPS, host names are vendor constants.",
+      "confidence": "verified",
+      "value": {
+        "USA": "https://gw-us.xiaoyi.com",
+        "EU": "https://gw-eu.xiaoyi.com",
+        "SEA": "https://gw-sg.xiaoyi.com",
+        "CHN": "https://api.xiaoyi.com",
+        "path_builder": "e9.c.b(path) = group_base + path"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "g8/d.java",
+          "line": 107,
+          "snippet": "f90345c = \"https://gw-us.xiaoyi.com\";"
+        },
+        {
+          "source": "jadx",
+          "file": "g8/d.java",
+          "line": 108,
+          "snippet": "f90346d = \"https://gw-eu.xiaoyi.com\";"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/c.java",
+          "line": 29,
+          "snippet": "return g8.d.f90345c + str;"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.region_selection",
+      "kind": "algorithm",
+      "description": "The region group is chosen from the account's country code, NOT discovered from the server: assets/locale.json maps each country code to server USA|EU|SEA (245 entries: EU 111, SEA 81, USA 53). The app stores the picked country in 'LoginSelectedCountry'. A wrong country sends the login to the wrong gateway.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e8/d.java",
+          "line": 203,
+          "snippet": "f89022j = localeInfo.server;"
+        },
+        {
+          "source": "jadx",
+          "file": "e8/d.java",
+          "line": 172,
+          "snippet": "String strN = kl.r.f().n(\"LoginSelectedCountry\");"
+        },
+        {
+          "source": "apktool",
+          "file": "assets/locale.json",
+          "snippet": "list of {code, server, phoneCode, english}; server in USA|EU|SEA"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.required_headers",
+      "kind": "header",
+      "description": "Every REST call carries x-kamihome-appType=ANDROID, x-kamihome-packageType=RELEASE (most verbs), a User-Agent, x-xiaoyi-appCountryCode (country code) and x-xiaoyi-appVersion.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/http/okhttp/request/a.java",
+          "line": 27,
+          "snippet": "return new Request.Builder().url(k(str, null)).addHeader(\"x-kamihome-appType\", \"ANDROID\").addHeader(\"x-kamihome-packageType\", \"RELEASE\").addHeader(Command.HTTP_HEADER_USE"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/http/okhttp/request/a.java",
+          "line": 79,
+          "snippet": "public static void l(String str, String str2) {"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.login_request",
+      "kind": "request",
+      "description": "Password sign-in is GET {gateway}/v4/users/login with query params seq=1, account=<e-mail> (CHN build uses email= or mobile=), password=<hashed, see kami.auth.password_hash>, dev_name, dev_type, dev_os_version. No signature on this call. The password is therefore in the URL query (HTTPS only).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 1026,
+          "snippet": "return t(e9.c.b(\"/v4/users/login\"), f89105b, new com.ants360.yicamera.http.okhttp.request.b(linkedHashMap));"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 75,
+          "snippet": "public static String f89105b = \"GET\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 986,
+          "snippet": "e9.d.J0(str, str2).subscribe(new c(str, cVar));"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.password_hash",
+      "kind": "algorithm",
+      "description": "The password is never sent in clear: password = base64(HMAC-SHA256(key = a static app string constant, msg = password UTF-8)), no line wraps. The key is a Java string constant in the APK (vendor secret; value deliberately NOT recorded here). Needs the owner decision in the scout report before it may enter public source.",
+      "confidence": "verified",
+      "vendor_secret": {
+        "name": "KAMI_PASSWORD_HMAC_KEY",
+        "where": "ra/d2.java field f104281a",
+        "type": "static string, Java"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ra/d2.java",
+          "line": 33,
+          "snippet": "HmacSHA256 over the password; key = constant field f104281a (value not recorded)"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/d2.java",
+          "line": 35,
+          "snippet": "return new String(Base64.encode(mac.doFinal(str.getBytes()), 2));"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.login_response",
+      "kind": "response",
+      "description": "Success is JSON {code:20000, data:{userid, token, token_secret, name, img, register_time, flag, aiOptionFlag, ...}}. token + token_secret are the session credentials used to sign later calls. The app keeps them in memory/prefs; no expiry time is returned or tracked client side.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 357,
+          "snippet": "e0VarB.i0(jSONObjectOptJSONObject.optString(\"token\"));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 358,
+          "snippet": "e0VarB.j0(jSONObjectOptJSONObject.optString(\"token_secret\"));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 123,
+          "snippet": "if (iOptInt != 20000) {"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.result_codes",
+      "kind": "error_code",
+      "description": "Login result codes seen in the callback: 20000 ok; 20281 handed to a separate callback (extra step, meaning not proven); 20282 makes the app retry the third-party login with opt flag '1'; 30301 and -10003 are passed to the UI as distinct errors; anything else is a plain failure. Exact meanings need the strings/UI or a real response.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 114,
+          "snippet": "if (iOptInt == 20282) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 119,
+          "snippet": "if (iOptInt == 20281) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 124,
+          "snippet": "if (iOptInt == 30301) {"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.request_signing",
+      "kind": "algorithm",
+      "description": "Every call after sign-in adds seq=1, userid=<userid> and hmac=base64(HMAC-SHA1(key = token + '&' + token_secret, msg = 'k1=v1&k2=v2...')). The message is the parameters in the map's iteration order (insertion order for LinkedHashMap, sorted for TreeMap callers) joined with & and NOT url-encoded; the hmac param itself is excluded. Key material comes from the login response, not from the APK.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 2059,
+          "snippet": "public static String m0(LinkedHashMap<String, String> linkedHashMap, String str) {"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/c1.java",
+          "line": 27,
+          "snippet": "SecretKeySpec secretKeySpec = new SecretKeySpec(str.getBytes(\"UTF-8\"), \"HmacSHA1\");"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 675,
+          "snippet": "bVar.d(\"hmac\", m0(linkedHashMap, e0VarB.A() + \"&\" + e0VarB.B()));"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.social_login",
+      "kind": "request",
+      "description": "Third-party sign-in (Google/Facebook/Apple style) uses POST/GET /v4/auth/login with form fields code, user_sub, user_name, type, token, reftoken, expires, opt_type, email, dev_*. If the owner's Kami account was created with a social login there may be no password at all; the account would need a password set in the app first.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "g8/d.java",
+          "line": 35,
+          "snippet": "public static String f90350h = \"/v4/auth/login\";"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/e.java",
+          "line": 34,
+          "snippet": "linkedHashMap.put(\"user_sub\", b0Var.l() != null ? b0Var.l() : b0Var.f());"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/e.java",
+          "line": 67,
+          "snippet": "linkedHashMap.put(\"reftoken\", b0Var.g());"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.validation_code",
+      "kind": "endpoint",
+      "description": "Captcha-style validation code: GET /v4/users/validation_code returns an image/code id; POST /v4/users/validation_code with validationCodeId verifies. Registration (/v4/users/register) and password reset (request_reset_pwd) carry validationCodeId. The plain login call does NOT carry one.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 35,
+          "snippet": "e.f88301c.f(d(\"/v4/users/validation_code\"), cVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 162,
+          "snippet": "linkedHashMap.put(\"validationCodeId\", str14);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 198,
+          "snippet": "linkedHashMap.put(\"validationCodeId\", str3);"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.mfa",
+      "kind": "state_machine",
+      "description": "No second factor is part of /v4/users/login in this build. The only code flows found are: e-mail code for security property edits (/v4/users/security_prop, request_edit_security_prop), SMS OTP for mobile (/v8/user/mobile/send/otp, verify/otp) and e-mail verify (/v4/users/email/verify_code). 20281/20282 may be a new-device or social-bind step (unproven).",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 94,
+          "snippet": "i(\"/v4/users/security_prop\", bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/data/remote/c.java",
+          "line": 15,
+          "snippet": "@o(\"vas/v8/user/mobile/send/otp\")"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 1608,
+          "snippet": "return t(e9.c.b(\"/v4/users/email/verify_code\"), f89105b, bVar);"
+        }
+      ]
+    },
+    {
+      "id": "kami.auth.session_check",
+      "kind": "endpoint",
+      "description": "GET/POST /v4/users/auth_token with userid, token, hmac, country and appName=kami is the token check used when the app restores a stored session. No refresh-token exchange for password accounts was found.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 189,
+          "snippet": "i(\"/v4/users/auth_token\", bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 188,
+          "snippet": "bVar.d(AppKeyManager.APP_NAME_INIT, \"kami\");"
+        }
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "Does a second sign-in end the phone's session?",
+      "detail": "Static code shows no client logic either way. The P2P layer has an explicit device-side 'kick' error (see kami.media.session_limits). The REST token behaviour must be learned from a real response, which the scout was not allowed to make."
+    },
+    {
+      "topic": "Token lifetime",
+      "detail": "No expiry field is parsed. Server-side lifetime unknown."
+    },
+    {
+      "topic": "Exact meaning of 20281 / 20282 / 30301",
+      "detail": "Needs UI strings or a real response."
+    }
+  ]
+}

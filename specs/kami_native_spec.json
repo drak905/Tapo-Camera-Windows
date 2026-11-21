@@ -1,0 +1,188 @@
+{
+  "spec_id": "kami_native_spec",
+  "apk": {
+    "package": "com.yitechnology.kamihome",
+    "version_name": "5.0.2_20261110110712",
+    "version_code": "252",
+    "bundle": "apkmirror .apkm (base + 33 splits), arm64-v8a + armeabi-v7a"
+  },
+  "summary": "Kami Home 5.0.2 native libraries (arm64-v8a + armeabi-v7a), what each does and which Java class loads it.",
+  "items": [
+    {
+      "id": "kami.native.libIOTCAPIs",
+      "kind": "constant",
+      "description": "ThroughTek (TUTK) IOTC: UID discovery, NAT traversal, relay, sessions. JNI class com.tutk.IOTC.IOTCAPIs (IOTC_Initialize2, IOTC_Connect_ByUID_Parallel, IOTC_Session_Read/Write...). Proprietary, licensed SDK.",
+      "confidence": "verified",
+      "library": "libIOTCAPIs.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/IOTCAPIs.java",
+          "line": 96,
+          "snippet": "public static native int IOTC_Connect_ByUID_Parallel(String str, int i10);"
+        },
+        {
+          "source": "apktool",
+          "file": "lib/arm64-v8a/libIOTCAPIs.so",
+          "snippet": "strings: IOTC_Device_Update_Authkey, tutk_SockTaskMng_Init"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.libAVAPIs",
+      "kind": "constant",
+      "description": "TUTK AV layer on top of IOTC: avClientStart2, avRecvFrameData2, avSendIOCtrl, avRecvIOCtrl. Loaded by com.tutk.IOTC.AVAPIs.",
+      "confidence": "verified",
+      "library": "libAVAPIs.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVAPIs.java",
+          "line": 89,
+          "snippet": "System.loadLibrary(\"AVAPIs\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVAPIs.java",
+          "line": 134,
+          "snippet": "public static native int avClientStart2(int i10, String str, String str2, int i11, int[] iArr, int i12, int[] iArr2);"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.libPPPP_API",
+      "kind": "constant",
+      "description": "YI 'TNP' P2P transport (namespace tnp::PPPP_Proto_*, DevLgn/P2PServerReq/ConnectReport messages). JNI class com.p2p.pppp_api.PPPP_APIs (PPPP_Initialize, PPPP_Connect, PPPP_Read, PPPP_Write, PPPP_CheckDevOnline). Used by com.tnp.TnpCamera. Loaded by name from AntsApplication.",
+      "confidence": "verified",
+      "library": "libPPPP_API.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 68,
+          "snippet": "public static native int PPPP_Connect(String str, byte b10, int i10, String str2, String str3);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/AntsApplication.java",
+          "line": 220,
+          "snippet": "Iterator it = Arrays.asList(\"VoAACEncoder\", \"PPPP_API\", \"faad\", \"G726Android\", \"c++_shared\", \"ijkffmpeg\", \"webrtc_apm\", \"webrtc_audio_preprocessing\", \"yimedia\", \"audiopro"
+        },
+        {
+          "source": "apktool",
+          "file": "lib/arm64-v8a/libPPPP_API.so",
+          "snippet": "strings: tnp::PPPP_Proto_Send_DevLgn_Proxy, PPPP_Proto_Write_P2PServerReq"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.libglnkio",
+      "kind": "constant",
+      "description": "Langtao (glnk) P2P stack for older cameras, 32-bit only (armeabi-v7a split, absent from arm64). Wrapper package glnk.ants (MyRuntime) and AntsCameraLangtao.",
+      "confidence": "verified",
+      "library": "libglnkio.so + libasp.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "glnk/ants/MyRuntime.java",
+          "line": 15,
+          "snippet": "System.loadLibrary(\"glnkio\");"
+        },
+        {
+          "source": "apktool",
+          "file": "split_config.armeabi_v7a.apk:lib/armeabi-v7a/libglnkio.so",
+          "snippet": "present only in the 32-bit split"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.libkami_core",
+      "kind": "constant",
+      "description": "'Phone as camera' (Kami mobile IPC): encoder feed, motion, cloud recorder, p2p_service. Not the viewer path. JNI class com.kami.mobileipc.KamiMobileIPC.",
+      "confidence": "verified",
+      "library": "libkami_core.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/kami/mobileipc/KamiMobileIPC.java",
+          "line": 431,
+          "snippet": "System.loadLibrary(\"kami_core\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/kami/mobileipc/KamiMobileIPC.java",
+          "line": 496,
+          "snippet": "static native int nativeFeedVideo(int i10, byte[] bArr, int i11, int i12, int i13, int i14, int i15, int i16, long j10);"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.media_decode",
+      "kind": "constant",
+      "description": "Players, decoders and muxers (FFmpeg-based). libyimedia = Hls2Mp4 (cloud clip conversion). A desktop client replaces these with FFmpeg.",
+      "confidence": "verified",
+      "library": "libijkffmpeg, libijkplayer, libijksdl, libavcodec/avformat/avutil/swscale, libh265decoder, libfaad, libG726Android, libFFmpegUtil, libFFMuxing, libtranscode, libyimedia",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/media/Hls2Mp4.java",
+          "line": 44,
+          "snippet": "System.loadLibrary(\"yimedia\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/AntsApplication.java",
+          "line": 220,
+          "snippet": "Iterator it = Arrays.asList(\"VoAACEncoder\", \"PPPP_API\", \"faad\", \"G726Android\", \"c++_shared\", \"ijkffmpeg\", \"webrtc_apm\", \"webrtc_audio_preprocessing\", \"yimedia\", \"audiopro"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.audio",
+      "kind": "constant",
+      "description": "Echo cancellation / AGC / encoders for talk-back. Only needed for two-way audio.",
+      "confidence": "verified",
+      "library": "libwebrtc_apm, libwebrtc_audio_preprocessing, libaudioproc, libmi_aec, libpcmjni, libVoAACEncoder, libpcm",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "jni/AcousticEchoCancellationCore.java",
+          "line": 10,
+          "snippet": "System.loadLibrary(\"mi_aec\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/util/PcmUtil.java",
+          "line": 22,
+          "snippet": "System.loadLibrary(\"pcmjni\");"
+        }
+      ]
+    },
+    {
+      "id": "kami.native.other",
+      "kind": "constant",
+      "description": "UI/analytics/recording support. libapp.so is the Flutter AOT module (assets/flutter_assets: activity/health icons); its Dart code is not decompiled by JADX and was not analysed. The REST and P2P code found is in the Java layer.",
+      "confidence": "verified",
+      "library": "libflutter, libapp (Dart AOT), libtensorflowlite, libMotionMagnifier, libsxpen, libmp4recorder, libmp4v2, libcrypto, libssl, ad/crash SDK libs",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "io/flutter/embedding/engine/FlutterJNI.java",
+          "line": 489,
+          "snippet": "System.loadLibrary(\"flutter\");"
+        },
+        {
+          "source": "apktool",
+          "file": "assets/flutter_assets/AssetManifest.json",
+          "snippet": "Flutter module present; Dart AOT in libapp.so"
+        }
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "libapp.so (Dart)",
+      "detail": "Flutter module logic not inspected; if the account/device flow also lives there, the REST facts above still hold for the Java path."
+    }
+  ]
+}

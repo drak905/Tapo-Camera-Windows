@@ -1,0 +1,91 @@
+{
+  "spec_id": "kami_control_spec",
+  "apk": {
+    "package": "com.yitechnology.kamihome",
+    "version_name": "5.0.2_20261110110712",
+    "version_code": "252",
+    "bundle": "apkmirror .apkm (base + 33 splits), arm64-v8a + armeabi-v7a"
+  },
+  "summary": "Kami Home 5.0.2 camera controls and SD playback as IOCTRL commands; per-model feature flags.",
+  "items": [
+    {
+      "id": "kami.control.ioctrl_catalog",
+      "kind": "constant",
+      "description": "All camera controls and SD-card playback are IOCTRL command numbers (203 IOTYPE_USER_IPCAM_* constants) sent over the same P2P session, wrapped by CameraCommandHelper (250 KB) with request/response structs in AVIOCTRLDEFs. Pure Python is possible once a session exists; struct layouts are in Java.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 178,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_LISTEVENT_REQ = 792;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 188,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_RESET = 5104;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/CameraCommandHelper.java",
+          "line": 21,
+          "snippet": "public class CameraCommandHelper {"
+        }
+      ]
+    },
+    {
+      "id": "kami.control.sd_playback",
+      "kind": "state_machine",
+      "description": "SD playback: list events with IOTYPE_USER_IPCAM_LISTEVENT_REQ (792) / RESP (793), then IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL (794; 12718 '2' variant when p2p_encrypt) with a play-record struct and time. Video then arrives on the normal frame channel.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraTutk.java",
+          "line": 188,
+          "snippet": "int i10 = this.p2pDevice.isEncrypted ? AVIOCTRLDEFs.IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL2 : AVIOCTRLDEFs.IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 184,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL = 794;"
+        }
+      ]
+    },
+    {
+      "id": "kami.control.feature_flags",
+      "kind": "constant",
+      "description": "Per-model capabilities (PTZ, alarm, h265, audio mode, cloud, ...) are shipped as assets/feature_config/config_<model>.json (61 files) plus a base file. A client can read them offline to decide which controls to show.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "apktool",
+          "file": "assets/feature_config/config_base.json",
+          "snippet": "keys: alertSupport, audioMode, h265Support, motionDetectSupport, cloudSupport, ..."
+        }
+      ]
+    },
+    {
+      "id": "kami.control.destructive",
+      "kind": "constant",
+      "description": "Destructive controls exist (IOTYPE_USER_IPCAM_RESET 5104, REBOOT_PHONE_REQ 4873). A first release must not expose them (owner rule: no toggles on real cameras).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 188,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_RESET = 5104;"
+        }
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "PTZ command ids",
+      "detail": "No constant named PTZ was found in AVIOCTRLDEFs; PTZ goes through another command id in CameraCommandHelper. Not traced."
+    }
+  ]
+}

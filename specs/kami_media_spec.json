@@ -1,0 +1,298 @@
+{
+  "spec_id": "kami_media_spec",
+  "apk": {
+    "package": "com.yitechnology.kamihome",
+    "version_name": "5.0.2_20261110110712",
+    "version_code": "252",
+    "bundle": "apkmirror .apkm (base + 33 splits), arm64-v8a + armeabi-v7a"
+  },
+  "summary": "Kami Home 5.0.2 live view: TUTK / TNP(PPPP) / Langtao P2P transports, command auth, framing, I-frame encryption, codecs, session limits.",
+  "items": [
+    {
+      "id": "kami.media.transports",
+      "kind": "constant",
+      "description": "Live video does not use HTTPS/RTSP/WebRTC. Three vendor P2P stacks sit behind one AntsCamera class: TUTK (IOTC+AVAPI, libIOTCAPIs/libAVAPIs), TNP (YI's own 'PPPP'-based stack, libPPPP_API, Java wrapper com.tnp.TnpCamera) and Langtao (libglnkio, 32-bit only). Constants TYPE_TUTK=0, TYPE_LANGTAO=1, TYPE_TNP=2.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 33,
+          "snippet": "public static final int TYPE_TNP = 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 35,
+          "snippet": "public static final int TYPE_TUTK = 0;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraManage.java",
+          "line": 108,
+          "snippet": "antsCameraTnp = new AntsCameraLangtao(p2PDevice);"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.tutk_connect",
+      "kind": "state_machine",
+      "description": "TUTK path: IOTC_Initialize2(0) (no license key passed from Java), IOTC_Get_SessionID, IOTC_Connect_ByUID_Parallel(uid, sid), then avClientStart2(sid, account, password, timeout...). When p2p_encrypt is true the account is a random 15-char nonce and the password is derived from it (see kami.media.command_auth). Needs the vendor's native TUTK stack.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/TutkCamera.java",
+          "line": 1513,
+          "snippet": "IOTCRet = IOTCAPIs.IOTC_Initialize2(0);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/TutkCamera.java",
+          "line": 220,
+          "snippet": "tutkCamera.mSID = IOTCAPIs.IOTC_Connect_ByUID_Parallel(tutkCamera.mDevUID, this.nGet_SID);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/TutkCamera.java",
+          "line": 1441,
+          "snippet": "iAvClientStart2 = AVAPIs.avClientStart2(TutkCamera.this.mSID, strGenNonce, password, avClientStartTimeOut, iArr, 0, this.resend);"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.tnp_connect",
+      "kind": "state_machine",
+      "description": "TNP path: PPPP_Initialize(InitString bytes, 12) once, then PPPP_Connect(p2pid, flag, 0, serverString, licenseDeviceKey) (or PPPP_WakeUp_And_Connect for battery cameras), PPPP_Check(session) for NAT/relay info, then PPPP_Read/PPPP_Write on channels. NAT traversal, relay selection and the session crypto are inside libPPPP_API.so. serverString and licenseDeviceKey come from kami.cloud.tnp_device_info.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 227,
+          "snippet": "PPPP_APIs.PPPP_Initialize(bytes, 12);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 228,
+          "snippet": "tnpCamera4.mHandleSession = PPPP_APIs.PPPP_Connect(tnpCamera4.p2pid, b10, 0, TnpCamera.this.serverString, TnpCamera.this.licenseDeviceKey);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 225,
+          "snippet": "tnpCamera3.mHandleSession = PPPP_APIs.PPPP_WakeUp_And_Connect(tnpCamera3.p2pid, b10, 0, TnpCamera.this.serverString, TnpCamera.this.licenseDeviceKey);"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.tnp_framing",
+      "kind": "header",
+      "description": "Above the PPPP byte pipe the TNP protocol is plain Java: an 8-byte TNPHead {version, ioType(1 video, 2 audio, 3 command), abilityRet, reserved, dataSize u32}; commands add a 40-byte TNPIOCtrlHead {commandType u16, commandNumber u16, exHeaderSize u16, dataSize u16, authInfo[32]}; video/audio use TNPFrameHead then a 24-byte AVFrame header. Byte order is a per-camera flag. This part is reimplementable once a PPPP session exists.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tnp/model/TNPHead.java",
+          "line": 11,
+          "snippet": "public static final int LEN_HEAD = 8;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/model/TNPIOCtrlHead.java",
+          "line": 8,
+          "snippet": "public static final int LEN_HEAD = 40;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/model/TNPHead.java",
+          "line": 8,
+          "snippet": "public static final byte IO_TYPE_COMMAND = 3;"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.command_auth",
+      "kind": "algorithm",
+      "description": "Per-command / per-session authentication (TNP and TUTK, when p2p_encrypt): nonce = random string from [A-Za-z0-9] (TNP: noncePrefix(7) + 8 chars; TUTK: 15 chars); user = nonce; pass = first 15 chars of base64(HMAC-SHA1(key = camera password, msg = 'user=xiaoyiuser&nonce=' + nonce)). Without p2p_encrypt, account 'admin' and the plain password are sent. The camera password comes from kami.cloud.camera_password. No app-wide secret.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AntsUtil.java",
+          "line": 127,
+          "snippet": "String strHmacSha1 = hmacSha1(str2, \"user=xiaoyiuser&nonce=\" + str);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 1377,
+          "snippet": "str = TnpCamera.this.noncePrefix + AntsUtil.genNonce(8);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AntsUtil.java",
+          "line": 128,
+          "snippet": "return strHmacSha1.length() > 15 ? strHmacSha1.substring(0, 15) : strHmacSha1;"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.live_start",
+      "kind": "request",
+      "description": "Live view is started by an IOCTRL: IOTYPE_USER_IPCAM_START2 (8190) when p2p_encrypt else IOTYPE_USER_IPCAM_START (511), payload = a use-counter. Stop is IOTYPE_USER_IPCAM_STOP (767). Audio start 768, speaker (talk-back) start 848.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraTutk.java",
+          "line": 66,
+          "snippet": "int i10 = this.p2pDevice.isEncrypted ? AVIOCTRLDEFs.IOTYPE_USER_IPCAM_START2 : AVIOCTRLDEFs.IOTYPE_USER_IPCAM_START;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 298,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_START2 = 8190;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 304,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_STOP = 767;"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.iframe_encryption",
+      "kind": "algorithm",
+      "description": "Media is not fully encrypted. When p2p_encrypt is true only the first two 16-byte blocks of each I-frame payload (offsets 4 and 20) are AES-128-ECB encrypted with key = camera password + '0'; P/B frames are clear. Audio frames are AES-ECB per 16-byte block. Key comes from the account's device list, so a client with the password can decrypt in pure Python.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AntsUtil.java",
+          "line": 73,
+          "snippet": "System.arraycopy(bArr, 4, bArr2, 0, 16);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AESIPC.java",
+          "line": 66,
+          "snippet": "cipher = Cipher.getInstance(\"AES/ECB/NoPadding\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 1517,
+          "snippet": "this.decryptKey = str6 + \"0\";"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.codecs",
+      "kind": "constant",
+      "description": "Video H.264 (78) and H.265 (81), also MJPEG/MPEG4/H263 ids; audio AAC (138), ADPCM, PCM (140), Speex, MP3, G.726 (143). FFmpeg can decode all of them from an Annex-B/ADTS byte stream; the app also ships a separate libh265decoder.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVFrame.java",
+          "line": 38,
+          "snippet": "public static final int MEDIA_CODEC_VIDEO_H264 = 78;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVFrame.java",
+          "line": 39,
+          "snippet": "public static final int MEDIA_CODEC_VIDEO_H265 = 81;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVFrame.java",
+          "line": 30,
+          "snippet": "public static final int MEDIA_CODEC_AUDIO_AAC = 138;"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.session_limits",
+      "kind": "error_code",
+      "description": "A camera allows few concurrent P2P sessions. The TNP wrapper defines device-side errors ERROR_PPPP_DEVICE_KICK (-3100) and ERROR_PPPP_DEVICE_KICK_MAX_SESSION (-3101); PPPP_APIs also has ERROR_PPPP_DEVICE_MAX_SESSION (-3029). A PC client opening a stream can therefore push the phone's live view out (or be pushed out).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 61,
+          "snippet": "public static final int ERROR_PPPP_DEVICE_KICK = -3100;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 62,
+          "snippet": "public static final int ERROR_PPPP_DEVICE_KICK_MAX_SESSION = -3101;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 10,
+          "snippet": "public static final int ERROR_PPPP_DEVICE_MAX_SESSION = -3029;"
+        }
+      ]
+    },
+    {
+      "id": "kami.media.pppp_error_model",
+      "kind": "error_code",
+      "description": "The TNP library enforces signed access: error codes include INVALID_APILICENSE (-3021), INVALID_SERVER_STRING (-3023), INVALID_SIGNATURE (-3034), INVALID_TICKET (-3032), INVALID_TIMESTAMP (-3033), INVALID_TOKEN (-3037). So a client without the per-device InitString/License (cloud) or without the native signing cannot connect. This is not the open 'CS2 PPPP' handshake documented by community projects.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 24,
+          "snippet": "public static final int ERROR_PPPP_INVALID_SIGNATURE = -3034;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 16,
+          "snippet": "public static final int ERROR_PPPP_INVALID_APILICENSE = -3021;"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/nosoop/pppp_api",
+          "snippet": "Community notes on libPPPP_API (CS2-style UDP camera protocol); archived. Proves a related protocol exists, not that it matches Kami TNP."
+        }
+      ]
+    },
+    {
+      "id": "kami.media.no_lan_rtsp",
+      "kind": "constant",
+      "description": "Stock firmware has no RTSP/ONVIF. The only RTSP/ONVIF route is custom firmware (yi-hack family), which modifies the camera and is out of scope.",
+      "confidence": "external",
+      "evidence": [
+        {
+          "source": "external",
+          "url": "https://github.com/ferraroroberto/home-automation/issues/85",
+          "snippet": "Feasibility issue: stock YI/Kami firmware has no RTSP/ONVIF; community routes need a firmware flash."
+        }
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "Which camera models use TUTK vs TNP vs Langtao",
+      "detail": "Decided by server data per device (UID/DID format), not by a model table in the APK. Needs the owner's model and one device-list reply."
+    },
+    {
+      "topic": "Native PPPP/TNP handshake",
+      "detail": "Session setup, relay selection, signed tickets and channel crypto are inside libPPPP_API.so. Stopped here: needs native RE (own decision)."
+    },
+    {
+      "topic": "TUTK license",
+      "detail": "Java passes no license key to IOTC_Initialize2(0); where the license lives (native lib or device side) is unknown."
+    }
+  ]
+}
