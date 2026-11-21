@@ -45,6 +45,7 @@ from PyQt6.QtWidgets import QApplication, QSizePolicy, QWidget
 
 from tapo_desktop.services.remote import REMOTE_CLICK_TO_VIEW
 from tapo_desktop.ui import _theme
+from tapo_desktop.ui.kami_status import LIVE_VIEW_UNSUPPORTED_TEXT
 
 OVERLAY_TEXT: dict[str, str] = {
     "IDLE": "",
@@ -54,8 +55,10 @@ OVERLAY_TEXT: dict[str, str] = {
     "STOPPED": "Offline",
     "FAILED": "Offline",
 }
-#: FAILED reasons that replace the "Offline" headline (Phase 3: remote tile waiting for a relay slot).
-REASON_HEADLINES: dict[str, str] = {REMOTE_CLICK_TO_VIEW: REMOTE_CLICK_TO_VIEW}
+#: FAILED reasons that replace the "Offline" headline (Phase 3: remote tile waiting for a relay slot; Kami:
+#: a camera whose live view is not supported).
+REASON_HEADLINES: dict[str, str] = {REMOTE_CLICK_TO_VIEW: REMOTE_CLICK_TO_VIEW,
+                                    LIVE_VIEW_UNSUPPORTED_TEXT: LIVE_VIEW_UNSUPPORTED_TEXT}
 
 #: MIME type of a dragged camera (payload: the camera id, UTF-8).
 CAMERA_MIME = "application/x-tapo-camera-id"

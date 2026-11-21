@@ -16,6 +16,8 @@ from typing import Any
 KAMI_SOURCE = "kami"
 LIVE_VIEW_UNSUPPORTED_TEXT = "Live view is not supported for this Kami camera"
 LIST_TOOLTIP = "Kami (unofficial)"
+#: Setting: country code last chosen in the Kami sign-in dialog (not secret).
+SETTING_KAMI_LAST_COUNTRY = "kami_last_country"
 
 #: Control name -> service flag name. Names are the part after ``supports_``.
 CONTROLS = ("live_view", "ptz", "controls", "playback", "events", "rename")
@@ -31,6 +33,16 @@ def control_enabled(service: Any, control: str) -> bool:
     if control not in CONTROLS:
         raise ValueError(f"unknown control {control!r}; expected one of {CONTROLS}")
     return bool(getattr(service, f"supports_{control}", True))
+
+
+def capability_service(config: Any) -> Any:
+    """Object whose ``supports_*`` flags apply to this camera: the ``KamiCameraService`` class for a Kami
+    camera, ``None`` for everything else (a Tapo camera has no flags, so every control stays enabled)."""
+    if not is_kami(config):
+        return None
+    from tapo_desktop.services.kami_camera_service import KamiCameraService
+
+    return KamiCameraService
 
 
 def live_view_overlay_text(service: Any) -> str:

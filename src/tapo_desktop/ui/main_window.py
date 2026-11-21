@@ -77,7 +77,7 @@ from PyQt6.QtWidgets import (
 from tapo_desktop.services import camera_names
 from tapo_desktop.services.camera_service import NOT_ON_NETWORK
 from tapo_desktop.services.remote import REMOTE
-from tapo_desktop.ui import _theme, camera_dialog, rename_dialog, sign_in_dialog
+from tapo_desktop.ui import _theme, camera_dialog, kami_sign_in_dialog, kami_status, rename_dialog, sign_in_dialog
 from tapo_desktop.ui.controls_panel import ControlsPanel
 from tapo_desktop.ui.grid import GRID_SIZES, CameraGrid, validate_grid_size
 from tapo_desktop.ui.playback_panel import PlaybackPanel
@@ -107,6 +107,8 @@ _HIDDEN_TIP = "Not in the current view (right-click or drag it onto a tile to sh
 def camera_row_status(cfg, remote: bool = False) -> str:
     """Status suffix of a camera row: "Offline" (cloud says offline), "Remote" (not on this LAN but
     viewable through the cloud relay: ``remote``), NOT_ON_NETWORK, or ""."""
+    if cfg.source == kami_status.KAMI_SOURCE:  # a Kami camera has no host and is never "on this network"
+        return "" if cfg.online else "Offline"
     if not cfg.online:
         return "Offline"
     if not cfg.lan_found or not cfg.host:
@@ -145,10 +147,12 @@ class CameraListWidget(QListWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller, tray_enabled: bool = True, accounts=None):
+    def __init__(self, controller, tray_enabled: bool = True, accounts=None, kami_accounts=None):
         super().__init__()
         self._ctrl = controller
         self._accounts = accounts
+        self._kami = kami_accounts
+        self._kami_dialog = None
         self._store = controller.config_store
         self._selected: str | None = None
         self._held_key: int | None = None
@@ -189,6 +193,11 @@ class MainWindow(QMainWindow):
             accounts.cameras_refreshed.connect(self._on_cameras_refreshed)
             accounts.mfa_required.connect(self._on_mfa_required)
         self._sync_account()
+        if kami_accounts is not None:
+            kami_accounts.signed_in.connect(lambda _label: self._sync_kami())
+            kami_accounts.signed_out.connect(self._on_kami_signed_out)
+            kami_accounts.sign_in_failed.connect(self._on_kami_sign_in_failed)
+        self._sync_kami()
 
         self._grid.set_grid_size(self._initial_grid_size())
         self._sync_layout_buttons()
@@ -330,6 +339,13 @@ class MainWindow(QMainWindow):
         self._refresh_action.triggered.connect(lambda _checked=False: self._refresh_cameras())
         self._sign_out_action = menu.addAction("Sign out")
         self._sign_out_action.triggered.connect(lambda _checked=False: self._sign_out())
+        menu.addSeparator()
+        self._kami_sign_in_action = menu.addAction("Kami account\u2026")
+        self._kami_sign_in_action.setObjectName("kamiSignInAction")
+        self._kami_sign_in_action.triggered.connect(lambda _checked=False: self.show_kami_sign_in())
+        self._kami_sign_out_action = menu.addAction("Sign out of Kami")
+        self._kami_sign_out_action.setObjectName("kamiSignOutAction")
+        self._kami_sign_out_action.triggered.connect(lambda _checked=False: self._kami_sign_out())
         self._account_menu = menu
         button = QToolButton(bar)
         button.setObjectName("accountButton")
@@ -476,7 +492,9 @@ class MainWindow(QMainWindow):
                 item.setData(STATUS_ROLE, status)
                 tip = cfg.host or ("Not on this network: live view through the TP-Link cloud" if remote
                                    else "No address on this network")
-                if cfg.model:
+                if kami_status.is_kami(cfg):  # no host: say what it is and whether the Kami cloud sees it
+                    tip = f"{kami_status.list_tooltip(cfg)}, {kami_status.online_label(cfg.online)}"
+                if cfg.model and not kami_status.is_kami(cfg):  # a Kami model is a server code, not a name
                     tip = f"{cfg.model} - {tip}"
                 if cfg.source == "cloud":
                     uses = getattr(self._ctrl, "uses_local_token", None)
@@ -648,6 +666,54 @@ class MainWindow(QMainWindow):
             mfa_types = [int(t) for t in (types or [])]
             QTimer.singleShot(0, lambda: self.show_sign_in(mfa_types or [3]))
 
+    # ================================================================== Kami Home (unofficial)
+    @property
+    def kami_accounts(self):
+        """The KamiAccountManager given to ``__init__`` (None = no Kami entries enabled)."""
+        return self._kami
+
+    def _ptz_supported(self, camera_id: str) -> bool:
+        return kami_status.control_enabled(kami_status.capability_service(self._config(camera_id)), "ptz")
+
+    def show_kami_sign_in(self) -> bool:
+        """Run the KamiSignInDialog modally; True when the user signed in. The chosen country is remembered."""
+        if self._kami is None or self._kami_dialog is not None:
+            return False
+        from tapo_desktop.core.kami import regions
+
+        dialog = kami_sign_in_dialog.KamiSignInDialog(
+            self._kami, regions.countries(), self,
+            last_country=self._store.get_setting(kami_status.SETTING_KAMI_LAST_COUNTRY, None))
+        dialog.country_chosen.connect(
+            lambda code: self._store.set_setting(kami_status.SETTING_KAMI_LAST_COUNTRY, code))
+        self._kami_dialog = dialog
+        try:
+            return dialog.exec() == QDialog.DialogCode.Accepted
+        finally:
+            self._kami_dialog = None
+            dialog.deleteLater()
+
+    def _sync_kami(self) -> None:
+        signed = self._kami is not None and self._kami.is_signed_in()
+        self._kami_sign_in_action.setEnabled(self._kami is not None and not signed)
+        self._kami_sign_out_action.setEnabled(signed)
+        self._kami_sign_in_action.setToolTip(f"Signed in to Kami as {self._kami.account_label()}" if signed
+                                             else "Sign in to Kami Home (unofficial)")
+
+    def _kami_sign_out(self) -> None:
+        if self._kami is not None and self._kami.is_signed_in():
+            self._kami.sign_out()
+
+    def _on_kami_signed_out(self) -> None:
+        self._sync_kami()
+        self.statusBar().showMessage("Signed out of Kami", _STATUS_MS)
+
+    def _on_kami_sign_in_failed(self, message: str) -> None:
+        self._sync_kami()
+        if self._kami_dialog is None:  # the dialog shows its own errors inline; this is e.g. a dead session
+            self.statusBar().showMessage(f"{message} Use the account button to sign in to Kami again.",
+                                         _STATUS_MS * 2)
+
     # ================================================================== keyboard PTZ
     @staticmethod
     def _ptz_delta(event: QKeyEvent) -> tuple[int, int] | None:
@@ -671,6 +737,8 @@ class MainWindow(QMainWindow):
             return
         event.accept()
         if event.isAutoRepeat() or self._held_key is not None or self._selected is None:
+            return
+        if not self._ptz_supported(self._selected):
             return
         self._held_key = event.key()
         self._ctrl.ptz_move(self._selected, *delta)

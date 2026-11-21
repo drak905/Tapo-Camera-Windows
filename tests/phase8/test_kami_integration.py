@@ -272,6 +272,7 @@ def test_kami_selection_disables_controls_and_calls_no_service(make_env, qtbot):
     window = make_window(qtbot, env)
     panel = window.findChild(QObject, "controlsPanel")
     playback = window.findChild(QObject, "playbackPanel")
+    env.calls.clear()  # the window selects the first camera while it is built
     window._select("lan0", force=True)
     qtbot.wait(100)
     assert [c[1] for c in env.called("refresh_status")] == ["lan0"]
