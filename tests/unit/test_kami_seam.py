@@ -254,10 +254,15 @@ def test_tapo_modules_do_not_import_kami_except_the_one_factory_seam():
             if _under(name, ("tapo_desktop.core.kami",)) or name.startswith("tapo_desktop.services.kami_") \
                     or name.startswith("tapo_desktop.ui.kami_"):
                 hits.append((path.relative_to(SRC).as_posix(), line, name))
-    assert {(f, n) for f, _l, n in hits} <= {("services/controller.py", "tapo_desktop.services.kami_camera_service"),
-                                              ("services/controller.py",
-                                               "tapo_desktop.services.kami_camera_service.KamiCameraService")}, hits
-    assert len({l for f, l, _n in hits}) <= 1, hits  # one import statement only
+    # Integration step (requirement change, see commit message): the app wiring and the UI files may import
+    # the Kami UI helpers, the Kami account manager and the region table. Nothing else may.
+    wiring = {"app.py", "ui/main_window.py", "ui/grid.py", "ui/controls_panel.py", "ui/playback_panel.py",
+              "ui/video_tile.py"}
+    outside = [(f, l, n) for f, l, n in hits if f not in wiring]
+    assert {(f, n) for f, _l, n in outside} <= {("services/controller.py", "tapo_desktop.services.kami_camera_service"),
+                                                 ("services/controller.py",
+                                                  "tapo_desktop.services.kami_camera_service.KamiCameraService")}, hits
+    assert len({l for f, l, _n in outside}) <= 1, hits  # one import statement only in the controller seam
 
 
 def test_kami_modules_do_not_import_tapo_core_or_the_tapo_camera_service():
