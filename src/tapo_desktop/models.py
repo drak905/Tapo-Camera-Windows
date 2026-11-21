@@ -30,6 +30,8 @@ class CredentialKind(str, enum.Enum):
     # Cloud-issued local access token (LAT) of one camera [spec:lat.*]: username "admin", password =
     # the raw LAT string. TPAP passcode SHA256_HEX_UPPER(LAT) and the :8800 digest secret in LAT mode.
     LOCAL_TOKEN = "local_token"
+    # Kami Home account (e-mail + password), stored under KAMI_ACCOUNT_VAULT_ID. Never mixed with CLOUD.
+    KAMI_ACCOUNT = "kami_account"
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ class CameraConfig:
     fullscreen_quality: StreamQuality = StreamQuality.HD
     enable_onvif_events: bool = True
     # Phase 2 (mobile parity): cameras imported from the TP-Link cloud account
-    source: str = "manual"  # "manual" (added by IP) | "cloud" (from the signed-in account)
+    source: str = "manual"  # "manual" (added by IP) | "cloud" (from the signed-in account) | "kami" (Kami Home)
     device_id: str = ""  # cloud deviceId (stable identity; cloud cameras use it as `id`)
     mac: str = ""  # "AA-BB-CC-DD-EE-FF" style as reported by cloud/TDP, normalised upper-case
     model: str = ""  # e.g. "C210"
@@ -73,6 +75,8 @@ class CameraConfig:
     pending_name: str = ""  # owned cloud camera renamed on the camera; kept until the cloud alias matches (or 24 h)
     pending_since: float = 0.0  # epoch seconds of the pending rename
     cloud_alias: str = ""  # the camera's name as last reported by the TP-Link cloud ("Reset to camera name")
+    # Kami Home cameras (source "kami", id "kami:<uid>"): non-secret vendor facts (uid, region). Empty for Tapo.
+    vendor_data: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,7 @@ class AccountInfo:
 
 
 ACCOUNT_VAULT_ID = "__tplink_account__"
+KAMI_ACCOUNT_VAULT_ID = "__kami_account__"
 
 
 @dataclass(frozen=True)

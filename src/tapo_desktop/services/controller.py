@@ -690,6 +690,10 @@ class AppController(QObject):
 
     def _default_factory(self, config: CameraConfig) -> CameraService:
         """Real wiring; core modules are imported lazily so the UI imports with core stubbed."""
+        if config.source == "kami":  # the one Kami seam; everything else is a Tapo camera
+            from tapo_desktop.services.kami_camera_service import KamiCameraService
+
+            return KamiCameraService(config, self._vault)
         from tapo_desktop.services.camera_service import TapoCameraService
 
         with self._factory_lock:

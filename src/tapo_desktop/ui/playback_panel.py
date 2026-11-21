@@ -32,7 +32,10 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.models import RecordingClip
+from tapo_desktop.ui.kami_status import capability_service, control_enabled
 from tapo_desktop.ui.player_window import PlayerWindow
+
+PLAYBACK_UNSUPPORTED_TEXT = "Recordings are not supported for this Kami camera"
 
 #: PlayBackEventType codes [spec:vod.search.*] -> label shown in the row tooltip.
 EVENT_LABELS: dict[int, str] = {1: "Continuous", 2: "Motion", 6: "Person", 8: "Vehicle", 9: "Pet"}
@@ -161,6 +164,9 @@ class PlaybackPanel(QWidget):
         if self._camera_id is None:
             self._status.setText("")
             return
+        if not self._playback_supported():
+            self._status.setText(PLAYBACK_UNSUPPORTED_TEXT)
+            return
         self._status.setText("Loading recordings...")
         self._ctrl.load_recordings(self._camera_id, self._selected_day())
 
@@ -220,9 +226,14 @@ class PlaybackPanel(QWidget):
     def _camera_name(self) -> str | None:
         return next((c.name for c in self._ctrl.cameras() if c.id == self._camera_id), None)
 
+    def _playback_supported(self) -> bool:
+        """False for a camera whose service has no recordings (Kami); Tapo cameras are always supported."""
+        cfg = next((c for c in self._ctrl.cameras() if c.id == self._camera_id), None)
+        return control_enabled(capability_service(cfg), "playback")
+
     def _update_buttons(self) -> None:
         busy = self._download_camera is not None
         selected = self._camera_id is not None and self._list.currentItem() is not None
         self._button.setEnabled(not busy and selected)
         self._play_button.setEnabled(selected)
-        self._refresh.setEnabled(self._camera_id is not None)
+        self._refresh.setEnabled(self._camera_id is not None and self._playback_supported())

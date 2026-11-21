@@ -1,0 +1,1224 @@
+{
+  "spec_id": "kami_protocol_spec",
+  "spec_version": 1,
+  "apk": {
+    "package": "com.yitechnology.kamihome",
+    "version_name": "5.0.2_20261110110712",
+    "version_code": "252",
+    "bundle": "apkmirror .apkm (base + 33 splits), arm64-v8a + armeabi-v7a"
+  },
+  "lanes": {
+    "auth": {
+      "source_file": "specs/kami_auth_spec.json",
+      "summary": "Kami Home 5.0.2 account sign-in: regional gateways, GET /v4/users/login with an HMAC-SHA256 password hash, HMAC-SHA1 request signing with token&token_secret, captcha/OTP flows, social login.",
+      "item_count": 12
+    },
+    "cloud": {
+      "source_file": "specs/kami_cloud_spec.json",
+      "summary": "Kami Home 5.0.2 cloud: device list (/v5/devices/list), online state, per-camera password, TNP device info (InitString/License), sharing, cloud clips.",
+      "item_count": 11
+    },
+    "media": {
+      "source_file": "specs/kami_media_spec.json",
+      "summary": "Kami Home 5.0.2 live view: TUTK / TNP(PPPP) / Langtao P2P transports, command auth, framing, I-frame encryption, codecs, session limits.",
+      "item_count": 11
+    },
+    "control": {
+      "source_file": "specs/kami_control_spec.json",
+      "summary": "Kami Home 5.0.2 camera controls and SD playback as IOCTRL commands; per-model feature flags.",
+      "item_count": 4
+    },
+    "native": {
+      "source_file": "specs/kami_native_spec.json",
+      "summary": "Kami Home 5.0.2 native libraries (arm64-v8a + armeabi-v7a), what each does and which Java class loads it.",
+      "item_count": 8
+    }
+  },
+  "items": [
+    {
+      "id": "kami.auth.base_urls",
+      "kind": "endpoint",
+      "description": "Account/device REST gateway per region group. Group USA -> gw-us, EU -> gw-eu, SEA (and others) -> gw-sg, China -> api.xiaoyi.com. HTTPS, host names are vendor constants.",
+      "confidence": "verified",
+      "value": {
+        "USA": "https://gw-us.xiaoyi.com",
+        "EU": "https://gw-eu.xiaoyi.com",
+        "SEA": "https://gw-sg.xiaoyi.com",
+        "CHN": "https://api.xiaoyi.com",
+        "path_builder": "e9.c.b(path) = group_base + path"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "g8/d.java",
+          "line": 107,
+          "snippet": "f90345c = \"https://gw-us.xiaoyi.com\";"
+        },
+        {
+          "source": "jadx",
+          "file": "g8/d.java",
+          "line": 108,
+          "snippet": "f90346d = \"https://gw-eu.xiaoyi.com\";"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/c.java",
+          "line": 29,
+          "snippet": "return g8.d.f90345c + str;"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.region_selection",
+      "kind": "algorithm",
+      "description": "The region group is chosen from the account's country code, NOT discovered from the server: assets/locale.json maps each country code to server USA|EU|SEA (245 entries: EU 111, SEA 81, USA 53). The app stores the picked country in 'LoginSelectedCountry'. A wrong country sends the login to the wrong gateway.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e8/d.java",
+          "line": 203,
+          "snippet": "f89022j = localeInfo.server;"
+        },
+        {
+          "source": "jadx",
+          "file": "e8/d.java",
+          "line": 172,
+          "snippet": "String strN = kl.r.f().n(\"LoginSelectedCountry\");"
+        },
+        {
+          "source": "apktool",
+          "file": "assets/locale.json",
+          "snippet": "list of {code, server, phoneCode, english}; server in USA|EU|SEA"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.required_headers",
+      "kind": "header",
+      "description": "Every REST call carries x-kamihome-appType=ANDROID, x-kamihome-packageType=RELEASE (most verbs), a User-Agent, x-xiaoyi-appCountryCode (country code) and x-xiaoyi-appVersion.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/http/okhttp/request/a.java",
+          "line": 27,
+          "snippet": "return new Request.Builder().url(k(str, null)).addHeader(\"x-kamihome-appType\", \"ANDROID\").addHeader(\"x-kamihome-packageType\", \"RELEASE\").addHeader(Command.HTTP_HEADER_USE"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/http/okhttp/request/a.java",
+          "line": 79,
+          "snippet": "public static void l(String str, String str2) {"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.login_request",
+      "kind": "request",
+      "description": "Password sign-in is GET {gateway}/v4/users/login with query params seq=1, account=<e-mail> (CHN build uses email= or mobile=), password=<hashed, see kami.auth.password_hash>, dev_name, dev_type, dev_os_version. No signature on this call. The password is therefore in the URL query (HTTPS only).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 1026,
+          "snippet": "return t(e9.c.b(\"/v4/users/login\"), f89105b, new com.ants360.yicamera.http.okhttp.request.b(linkedHashMap));"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 75,
+          "snippet": "public static String f89105b = \"GET\";"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 986,
+          "snippet": "e9.d.J0(str, str2).subscribe(new c(str, cVar));"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.password_hash",
+      "kind": "algorithm",
+      "description": "The password is never sent in clear: password = base64(HMAC-SHA256(key = a static app string constant, msg = password UTF-8)), no line wraps. The key is a Java string constant in the APK (vendor secret; value deliberately NOT recorded here). Needs the owner decision in the scout report before it may enter public source.",
+      "confidence": "verified",
+      "vendor_secret": {
+        "name": "KAMI_PASSWORD_HMAC_KEY",
+        "where": "ra/d2.java field f104281a",
+        "type": "static string, Java"
+      },
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "ra/d2.java",
+          "line": 33,
+          "snippet": "HmacSHA256 over the password; key = constant field f104281a (value not recorded)"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/d2.java",
+          "line": 35,
+          "snippet": "return new String(Base64.encode(mac.doFinal(str.getBytes()), 2));"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.login_response",
+      "kind": "response",
+      "description": "Success is JSON {code:20000, data:{userid, token, token_secret, name, img, register_time, flag, aiOptionFlag, ...}}. token + token_secret are the session credentials used to sign later calls. The app keeps them in memory/prefs; no expiry time is returned or tracked client side.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 357,
+          "snippet": "e0VarB.i0(jSONObjectOptJSONObject.optString(\"token\"));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 358,
+          "snippet": "e0VarB.j0(jSONObjectOptJSONObject.optString(\"token_secret\"));"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 123,
+          "snippet": "if (iOptInt != 20000) {"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.result_codes",
+      "kind": "error_code",
+      "description": "Login result codes seen in the callback: 20000 ok; 20281 handed to a separate callback (extra step, meaning not proven); 20282 makes the app retry the third-party login with opt flag '1'; 30301 and -10003 are passed to the UI as distinct errors; anything else is a plain failure. Exact meanings need the strings/UI or a real response.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 114,
+          "snippet": "if (iOptInt == 20282) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 119,
+          "snippet": "if (iOptInt == 20281) {"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/base/e1.java",
+          "line": 124,
+          "snippet": "if (iOptInt == 30301) {"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.request_signing",
+      "kind": "algorithm",
+      "description": "Every call after sign-in adds seq=1, userid=<userid> and hmac=base64(HMAC-SHA1(key = token + '&' + token_secret, msg = 'k1=v1&k2=v2...')). The message is the parameters in the map's iteration order (insertion order for LinkedHashMap, sorted for TreeMap callers) joined with & and NOT url-encoded; the hmac param itself is excluded. Key material comes from the login response, not from the APK.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 2059,
+          "snippet": "public static String m0(LinkedHashMap<String, String> linkedHashMap, String str) {"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/c1.java",
+          "line": 27,
+          "snippet": "SecretKeySpec secretKeySpec = new SecretKeySpec(str.getBytes(\"UTF-8\"), \"HmacSHA1\");"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 675,
+          "snippet": "bVar.d(\"hmac\", m0(linkedHashMap, e0VarB.A() + \"&\" + e0VarB.B()));"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.social_login",
+      "kind": "request",
+      "description": "Third-party sign-in (Google/Facebook/Apple style) uses POST/GET /v4/auth/login with form fields code, user_sub, user_name, type, token, reftoken, expires, opt_type, email, dev_*. If the owner's Kami account was created with a social login there may be no password at all; the account would need a password set in the app first.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "g8/d.java",
+          "line": 35,
+          "snippet": "public static String f90350h = \"/v4/auth/login\";"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/e.java",
+          "line": 34,
+          "snippet": "linkedHashMap.put(\"user_sub\", b0Var.l() != null ? b0Var.l() : b0Var.f());"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/e.java",
+          "line": 67,
+          "snippet": "linkedHashMap.put(\"reftoken\", b0Var.g());"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.validation_code",
+      "kind": "endpoint",
+      "description": "Captcha-style validation code: GET /v4/users/validation_code returns an image/code id; POST /v4/users/validation_code with validationCodeId verifies. Registration (/v4/users/register) and password reset (request_reset_pwd) carry validationCodeId. The plain login call does NOT carry one.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 35,
+          "snippet": "e.f88301c.f(d(\"/v4/users/validation_code\"), cVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 162,
+          "snippet": "linkedHashMap.put(\"validationCodeId\", str14);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 198,
+          "snippet": "linkedHashMap.put(\"validationCodeId\", str3);"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.mfa",
+      "kind": "state_machine",
+      "description": "No second factor is part of /v4/users/login in this build. The only code flows found are: e-mail code for security property edits (/v4/users/security_prop, request_edit_security_prop), SMS OTP for mobile (/v8/user/mobile/send/otp, verify/otp) and e-mail verify (/v4/users/email/verify_code). 20281/20282 may be a new-device or social-bind step (unproven).",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 94,
+          "snippet": "i(\"/v4/users/security_prop\", bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/data/remote/c.java",
+          "line": 15,
+          "snippet": "@o(\"vas/v8/user/mobile/send/otp\")"
+        },
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 1608,
+          "snippet": "return t(e9.c.b(\"/v4/users/email/verify_code\"), f89105b, bVar);"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.auth.session_check",
+      "kind": "endpoint",
+      "description": "GET/POST /v4/users/auth_token with userid, token, hmac, country and appName=kami is the token check used when the app restores a stored session. No refresh-token exchange for password accounts was found.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 189,
+          "snippet": "i(\"/v4/users/auth_token\", bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 188,
+          "snippet": "bVar.d(AppKeyManager.APP_NAME_INIT, \"kami\");"
+        }
+      ],
+      "lane": "auth"
+    },
+    {
+      "id": "kami.cloud.device_list",
+      "kind": "endpoint",
+      "description": "GET {gateway}/v5/devices/list?seq=1&userid=<id>&hmac=<signed>. Response data[] has one object per camera (owned and shared, see 'share'/'accessRight').",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 2286,
+          "snippet": "return x(e9.c.b(\"/v5/devices/list\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2221,
+          "snippet": "yo.m<JSONObject> mVarZ = e9.d.s0(com.ants360.yicamera.base.e1.z().B().t()).z(Schedulers.io());"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.device_fields",
+      "kind": "response",
+      "description": "Per-device JSON fields read by the app: uid (also used as DID and P2P id), name, model, did, flag, share, category, count, type, interVersion, accessRight, state, online (bool), password (encrypted), relayFlag, groupBindable, webPairStatus, and ipcParam (a JSON string with p2p_encrypt, ssid, mac, ip, rssi, battery, wakeup, signal_quality).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1376,
+          "snippet": "deviceInfo.online = jSONObject.optBoolean(androidx.browser.customtabs.c.ONLINE_EXTRAS_KEY);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1413,
+          "snippet": "deviceInfo.isMediaEncrypted = jSONObject2.optBoolean(\"p2p_encrypt\", true);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1406,
+          "snippet": "deviceInfo.forceRelay = jSONObject.optInt(\"relayFlag\", 0) == 1;"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.online_state",
+      "kind": "state_machine",
+      "description": "Online state has two sources: (1) the list's 'online' boolean (cheap, REST); (2) for P2P cameras the app also asks over the P2P layer (PPPP_CheckDevOnline for TNP, getOnlineStatus command). The REST flag is enough for a camera list.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1376,
+          "snippet": "deviceInfo.online = jSONObject.optBoolean(androidx.browser.customtabs.c.ONLINE_EXTRAS_KEY);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 422,
+          "snippet": "iPPPP_CheckDevOnline = PPPP_APIs.PPPP_CheckDevOnline(TnpCamera.this.p2pid, TnpCamera.this.serverString, 2, iArr);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 590,
+          "snippet": "antsCameraTnp.getCommandHelper().getOnlineStatus(new g(deviceInfo, u1Var, atomicInteger, subscribe));"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.camera_password",
+      "kind": "algorithm",
+      "description": "Each camera has its own P2P view password. Server field 'password' is AES-128-ECB/PKCS7 encrypted with key = first 16 chars of the UID; the plaintext is the camera password used for all P2P commands. If the field is empty the app uses the default '888888'. The account name is always 'admin'. No app-wide secret is involved (the key is the UID).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1388,
+          "snippet": "strA = ra.k.a(strSubstring, strOptString5);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1386,
+          "snippet": "String strSubstring = UID.substring(0, 16);"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/a.java",
+          "line": 15,
+          "snippet": "private String f104256b = \"AES/ECB/PKCS7Padding\";"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/k.java",
+          "line": 62,
+          "snippet": "return \"888888\";"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.tnp_device_info",
+      "kind": "endpoint",
+      "description": "For TNP cameras: GET /v4/tnp/device_info (uid + signed) returns data.DID (a string like TNP-xxx-yyy that also fixes the transport type), data.InitString (the P2P server list for the native library) and data.License (per-device license key, 'x:y' where the second part is the device key). These three feed PPPP_Initialize/PPPP_Connect. Cached in prefs as TNP_DID_/TNP_SEV_/TNP_KEY_<uid>.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 655,
+          "snippet": "return t(e9.c.b(\"/v4/tnp/device_info\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2916,
+          "snippet": "final String strOptString2 = jSONObjectOptJSONObject.optString(\"InitString\", \"\");"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2900,
+          "snippet": "kl.r.f().u(\"TNP_SEV_PREFIX_\" + str, str3);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 97,
+          "snippet": "private static boolean isTnpDeviceType(String str) {"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.transport_by_uid",
+      "kind": "algorithm",
+      "description": "Transport per camera: P2PDevice.type 0 = TUTK (UID is upper/mixed case), 1 = Langtao (all-lowercase id), 2 = TNP (DID matching TNP-a-b), 3 = TX (declared, no factory branch). AntsCameraManage builds AntsCameraTutk / AntsCameraLangtao / AntsCameraTnp from it. Which model uses which cannot be read from the APK; it is server data per device.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 90,
+          "snippet": "return str.toLowerCase().equals(str) ? 1 : 0;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraManage.java",
+          "line": 106,
+          "snippet": "antsCameraTnp = new AntsCameraTutk(p2PDevice);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraManage.java",
+          "line": 110,
+          "snippet": "antsCameraTnp = new AntsCameraTnp(p2PDevice);"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.shared_devices",
+      "kind": "endpoint",
+      "description": "Sharing is server side: /v5/deviceshare/{invite,accept,friends,shareddetail,record,invitee/invitations,invitor/invitations}. A shared camera appears in the same devices/list with share=true and an accessRight value.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/i.java",
+          "line": 152,
+          "snippet": "e.f88301c.m(i(\"/v5/deviceshare/shareddetail\", bVar), cVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/i.java",
+          "line": 75,
+          "snippet": "e.f88301c.m(i(\"/v5/deviceshare/accept\", bVar), cVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1371,
+          "snippet": "deviceInfo.accessRight = jSONObject.optInt(\"accessRight\");"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.rename",
+      "kind": "endpoint",
+      "description": "Rename/edit uses /v2/devices/edit (userid, uid, name, message + signature).",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 702,
+          "snippet": "return t(e9.c.b(\"/v2/devices/edit\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2329,
+          "snippet": "yo.m<JSONObject> mVarC1 = e9.d.C1(e0VarB.t(), deviceInfo.UID, nickname, deviceInfo.description, e0VarB.A(), e0VarB.B());"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.video_api",
+      "kind": "endpoint",
+      "description": "Cloud-stored clips (paid Kami Cloud) are plain HTTPS: GET /vas/v8/cloud/videos (returns a map of URLs), /vas/v8/cloud/videos/quickview (per-day index), /vas/v8/cloud/ts/metadata (segment list), /vas/v8/cloud/images (thumbnails), /vas/v8/cloud/service (plan state), DELETE /vas/v8/cloud/videos. The app parses HLS playlists locally. Gated by a Cloud plan.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "hm/a.java",
+          "line": 95,
+          "snippet": "@f(\"/vas/v8/cloud/videos/quickview\")"
+        },
+        {
+          "source": "jadx",
+          "file": "hm/a.java",
+          "line": 128,
+          "snippet": "@f(\"/vas/v8/cloud/ts/metadata\")"
+        },
+        {
+          "source": "jadx",
+          "file": "hm/a.java",
+          "line": 110,
+          "snippet": "@f(\"/vas/v8/cloud/service\")"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.alert_events",
+      "kind": "endpoint",
+      "description": "Motion/AI alert list: /v5/alert/events (and /v4/alert/events, /v5/alert/events/top), push settings /v5/alert/push_prop. Plain REST with the same signature.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 1328,
+          "snippet": "return t(e9.c.b(\"/v5/alert/events/top\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 268,
+          "snippet": "e.f88301c.m(i(\"/v4/alert/app_push_prop\", bVar), cVar);"
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.cloud.reverse_direction_api",
+      "kind": "endpoint",
+      "description": "libkami_core.so (the 'phone as camera' feature) talks to the same cloud with hmac-signed URLs (/v6/ipc/on_line, /v4/alert/event, /vas/v8/ipc/ball/STSToken). Not needed for a viewer client, listed so nobody mistakes it for the viewer path.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "apktool",
+          "file": "lib/arm64-v8a/libkami_core.so",
+          "snippet": "strings: kami_cloud_api_report_online, \"/v6/ipc/on_line?hmac=%s&seq=9&uid=%s\""
+        }
+      ],
+      "lane": "cloud"
+    },
+    {
+      "id": "kami.media.transports",
+      "kind": "constant",
+      "description": "Live video does not use HTTPS/RTSP/WebRTC. Three vendor P2P stacks sit behind one AntsCamera class: TUTK (IOTC+AVAPI, libIOTCAPIs/libAVAPIs), TNP (YI's own 'PPPP'-based stack, libPPPP_API, Java wrapper com.tnp.TnpCamera) and Langtao (libglnkio, 32-bit only). Constants TYPE_TUTK=0, TYPE_LANGTAO=1, TYPE_TNP=2.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 33,
+          "snippet": "public static final int TYPE_TNP = 2;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 35,
+          "snippet": "public static final int TYPE_TUTK = 0;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraManage.java",
+          "line": 108,
+          "snippet": "antsCameraTnp = new AntsCameraLangtao(p2PDevice);"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.tutk_connect",
+      "kind": "state_machine",
+      "description": "TUTK path: IOTC_Initialize2(0) (no license key passed from Java), IOTC_Get_SessionID, IOTC_Connect_ByUID_Parallel(uid, sid), then avClientStart2(sid, account, password, timeout...). When p2p_encrypt is true the account is a random 15-char nonce and the password is derived from it (see kami.media.command_auth). Needs the vendor's native TUTK stack.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/TutkCamera.java",
+          "line": 1513,
+          "snippet": "IOTCRet = IOTCAPIs.IOTC_Initialize2(0);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/TutkCamera.java",
+          "line": 220,
+          "snippet": "tutkCamera.mSID = IOTCAPIs.IOTC_Connect_ByUID_Parallel(tutkCamera.mDevUID, this.nGet_SID);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/TutkCamera.java",
+          "line": 1441,
+          "snippet": "iAvClientStart2 = AVAPIs.avClientStart2(TutkCamera.this.mSID, strGenNonce, password, avClientStartTimeOut, iArr, 0, this.resend);"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.tnp_connect",
+      "kind": "state_machine",
+      "description": "TNP path: PPPP_Initialize(InitString bytes, 12) once, then PPPP_Connect(p2pid, flag, 0, serverString, licenseDeviceKey) (or PPPP_WakeUp_And_Connect for battery cameras), PPPP_Check(session) for NAT/relay info, then PPPP_Read/PPPP_Write on channels. NAT traversal, relay selection and the session crypto are inside libPPPP_API.so. serverString and licenseDeviceKey come from kami.cloud.tnp_device_info.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 227,
+          "snippet": "PPPP_APIs.PPPP_Initialize(bytes, 12);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 228,
+          "snippet": "tnpCamera4.mHandleSession = PPPP_APIs.PPPP_Connect(tnpCamera4.p2pid, b10, 0, TnpCamera.this.serverString, TnpCamera.this.licenseDeviceKey);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 225,
+          "snippet": "tnpCamera3.mHandleSession = PPPP_APIs.PPPP_WakeUp_And_Connect(tnpCamera3.p2pid, b10, 0, TnpCamera.this.serverString, TnpCamera.this.licenseDeviceKey);"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.tnp_framing",
+      "kind": "header",
+      "description": "Above the PPPP byte pipe the TNP protocol is plain Java: an 8-byte TNPHead {version, ioType(1 video, 2 audio, 3 command), abilityRet, reserved, dataSize u32}; commands add a 40-byte TNPIOCtrlHead {commandType u16, commandNumber u16, exHeaderSize u16, dataSize u16, authInfo[32]}; video/audio use TNPFrameHead then a 24-byte AVFrame header. Byte order is a per-camera flag. This part is reimplementable once a PPPP session exists.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tnp/model/TNPHead.java",
+          "line": 11,
+          "snippet": "public static final int LEN_HEAD = 8;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/model/TNPIOCtrlHead.java",
+          "line": 8,
+          "snippet": "public static final int LEN_HEAD = 40;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/model/TNPHead.java",
+          "line": 8,
+          "snippet": "public static final byte IO_TYPE_COMMAND = 3;"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.command_auth",
+      "kind": "algorithm",
+      "description": "Per-command / per-session authentication (TNP and TUTK, when p2p_encrypt): nonce = random string from [A-Za-z0-9] (TNP: noncePrefix(7) + 8 chars; TUTK: 15 chars); user = nonce; pass = first 15 chars of base64(HMAC-SHA1(key = camera password, msg = 'user=xiaoyiuser&nonce=' + nonce)). Without p2p_encrypt, account 'admin' and the plain password are sent. The camera password comes from kami.cloud.camera_password. No app-wide secret.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AntsUtil.java",
+          "line": 127,
+          "snippet": "String strHmacSha1 = hmacSha1(str2, \"user=xiaoyiuser&nonce=\" + str);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 1377,
+          "snippet": "str = TnpCamera.this.noncePrefix + AntsUtil.genNonce(8);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AntsUtil.java",
+          "line": 128,
+          "snippet": "return strHmacSha1.length() > 15 ? strHmacSha1.substring(0, 15) : strHmacSha1;"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.live_start",
+      "kind": "request",
+      "description": "Live view is started by an IOCTRL: IOTYPE_USER_IPCAM_START2 (8190) when p2p_encrypt else IOTYPE_USER_IPCAM_START (511), payload = a use-counter. Stop is IOTYPE_USER_IPCAM_STOP (767). Audio start 768, speaker (talk-back) start 848.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraTutk.java",
+          "line": 66,
+          "snippet": "int i10 = this.p2pDevice.isEncrypted ? AVIOCTRLDEFs.IOTYPE_USER_IPCAM_START2 : AVIOCTRLDEFs.IOTYPE_USER_IPCAM_START;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 298,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_START2 = 8190;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 304,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_STOP = 767;"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.iframe_encryption",
+      "kind": "algorithm",
+      "description": "Media is not fully encrypted. When p2p_encrypt is true only the first two 16-byte blocks of each I-frame payload (offsets 4 and 20) are AES-128-ECB encrypted with key = camera password + '0'; P/B frames are clear. Audio frames are AES-ECB per 16-byte block. Key comes from the account's device list, so a client with the password can decrypt in pure Python.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AntsUtil.java",
+          "line": 73,
+          "snippet": "System.arraycopy(bArr, 4, bArr2, 0, 16);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/util/AESIPC.java",
+          "line": 66,
+          "snippet": "cipher = Cipher.getInstance(\"AES/ECB/NoPadding\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 1517,
+          "snippet": "this.decryptKey = str6 + \"0\";"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.codecs",
+      "kind": "constant",
+      "description": "Video H.264 (78) and H.265 (81), also MJPEG/MPEG4/H263 ids; audio AAC (138), ADPCM, PCM (140), Speex, MP3, G.726 (143). FFmpeg can decode all of them from an Annex-B/ADTS byte stream; the app also ships a separate libh265decoder.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVFrame.java",
+          "line": 38,
+          "snippet": "public static final int MEDIA_CODEC_VIDEO_H264 = 78;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVFrame.java",
+          "line": 39,
+          "snippet": "public static final int MEDIA_CODEC_VIDEO_H265 = 81;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVFrame.java",
+          "line": 30,
+          "snippet": "public static final int MEDIA_CODEC_AUDIO_AAC = 138;"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.session_limits",
+      "kind": "error_code",
+      "description": "A camera allows few concurrent P2P sessions. The TNP wrapper defines device-side errors ERROR_PPPP_DEVICE_KICK (-3100) and ERROR_PPPP_DEVICE_KICK_MAX_SESSION (-3101); PPPP_APIs also has ERROR_PPPP_DEVICE_MAX_SESSION (-3029). A PC client opening a stream can therefore push the phone's live view out (or be pushed out).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 61,
+          "snippet": "public static final int ERROR_PPPP_DEVICE_KICK = -3100;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 62,
+          "snippet": "public static final int ERROR_PPPP_DEVICE_KICK_MAX_SESSION = -3101;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 10,
+          "snippet": "public static final int ERROR_PPPP_DEVICE_MAX_SESSION = -3029;"
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.pppp_error_model",
+      "kind": "error_code",
+      "description": "The TNP library enforces signed access: error codes include INVALID_APILICENSE (-3021), INVALID_SERVER_STRING (-3023), INVALID_SIGNATURE (-3034), INVALID_TICKET (-3032), INVALID_TIMESTAMP (-3033), INVALID_TOKEN (-3037). So a client without the per-device InitString/License (cloud) or without the native signing cannot connect. This is not the open 'CS2 PPPP' handshake documented by community projects.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 24,
+          "snippet": "public static final int ERROR_PPPP_INVALID_SIGNATURE = -3034;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 16,
+          "snippet": "public static final int ERROR_PPPP_INVALID_APILICENSE = -3021;"
+        },
+        {
+          "source": "external",
+          "url": "https://github.com/nosoop/pppp_api",
+          "snippet": "Community notes on libPPPP_API (CS2-style UDP camera protocol); archived. Proves a related protocol exists, not that it matches Kami TNP."
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.media.no_lan_rtsp",
+      "kind": "constant",
+      "description": "Stock firmware has no RTSP/ONVIF. The only RTSP/ONVIF route is custom firmware (yi-hack family), which modifies the camera and is out of scope.",
+      "confidence": "external",
+      "evidence": [
+        {
+          "source": "external",
+          "url": "https://github.com/ferraroroberto/home-automation/issues/85",
+          "snippet": "Feasibility issue: stock YI/Kami firmware has no RTSP/ONVIF; community routes need a firmware flash."
+        }
+      ],
+      "lane": "media"
+    },
+    {
+      "id": "kami.control.ioctrl_catalog",
+      "kind": "constant",
+      "description": "All camera controls and SD-card playback are IOCTRL command numbers (203 IOTYPE_USER_IPCAM_* constants) sent over the same P2P session, wrapped by CameraCommandHelper (250 KB) with request/response structs in AVIOCTRLDEFs. Pure Python is possible once a session exists; struct layouts are in Java.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 178,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_LISTEVENT_REQ = 792;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 188,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_RESET = 5104;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/CameraCommandHelper.java",
+          "line": 21,
+          "snippet": "public class CameraCommandHelper {"
+        }
+      ],
+      "lane": "control"
+    },
+    {
+      "id": "kami.control.sd_playback",
+      "kind": "state_machine",
+      "description": "SD playback: list events with IOTYPE_USER_IPCAM_LISTEVENT_REQ (792) / RESP (793), then IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL (794; 12718 '2' variant when p2p_encrypt) with a play-record struct and time. Video then arrives on the normal frame channel.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraTutk.java",
+          "line": 188,
+          "snippet": "int i10 = this.p2pDevice.isEncrypted ? AVIOCTRLDEFs.IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL2 : AVIOCTRLDEFs.IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 184,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_RECORD_PLAYCONTROL = 794;"
+        }
+      ],
+      "lane": "control"
+    },
+    {
+      "id": "kami.control.feature_flags",
+      "kind": "constant",
+      "description": "Per-model capabilities (PTZ, alarm, h265, audio mode, cloud, ...) are shipped as assets/feature_config/config_<model>.json (61 files) plus a base file. A client can read them offline to decide which controls to show.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "apktool",
+          "file": "assets/feature_config/config_base.json",
+          "snippet": "keys: alertSupport, audioMode, h265Support, motionDetectSupport, cloudSupport, ..."
+        }
+      ],
+      "lane": "control"
+    },
+    {
+      "id": "kami.control.destructive",
+      "kind": "constant",
+      "description": "Destructive controls exist (IOTYPE_USER_IPCAM_RESET 5104, REBOOT_PHONE_REQ 4873). A first release must not expose them (owner rule: no toggles on real cameras).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVIOCTRLDEFs.java",
+          "line": 188,
+          "snippet": "public static final int IOTYPE_USER_IPCAM_RESET = 5104;"
+        }
+      ],
+      "lane": "control"
+    },
+    {
+      "id": "kami.native.libIOTCAPIs",
+      "kind": "constant",
+      "description": "ThroughTek (TUTK) IOTC: UID discovery, NAT traversal, relay, sessions. JNI class com.tutk.IOTC.IOTCAPIs (IOTC_Initialize2, IOTC_Connect_ByUID_Parallel, IOTC_Session_Read/Write...). Proprietary, licensed SDK.",
+      "confidence": "verified",
+      "library": "libIOTCAPIs.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/IOTCAPIs.java",
+          "line": 96,
+          "snippet": "public static native int IOTC_Connect_ByUID_Parallel(String str, int i10);"
+        },
+        {
+          "source": "apktool",
+          "file": "lib/arm64-v8a/libIOTCAPIs.so",
+          "snippet": "strings: IOTC_Device_Update_Authkey, tutk_SockTaskMng_Init"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.libAVAPIs",
+      "kind": "constant",
+      "description": "TUTK AV layer on top of IOTC: avClientStart2, avRecvFrameData2, avSendIOCtrl, avRecvIOCtrl. Loaded by com.tutk.IOTC.AVAPIs.",
+      "confidence": "verified",
+      "library": "libAVAPIs.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVAPIs.java",
+          "line": 89,
+          "snippet": "System.loadLibrary(\"AVAPIs\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tutk/IOTC/AVAPIs.java",
+          "line": 134,
+          "snippet": "public static native int avClientStart2(int i10, String str, String str2, int i11, int[] iArr, int i12, int[] iArr2);"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.libPPPP_API",
+      "kind": "constant",
+      "description": "YI 'TNP' P2P transport (namespace tnp::PPPP_Proto_*, DevLgn/P2PServerReq/ConnectReport messages). JNI class com.p2p.pppp_api.PPPP_APIs (PPPP_Initialize, PPPP_Connect, PPPP_Read, PPPP_Write, PPPP_CheckDevOnline). Used by com.tnp.TnpCamera. Loaded by name from AntsApplication.",
+      "confidence": "verified",
+      "library": "libPPPP_API.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/p2p/pppp_api/PPPP_APIs.java",
+          "line": 68,
+          "snippet": "public static native int PPPP_Connect(String str, byte b10, int i10, String str2, String str3);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/AntsApplication.java",
+          "line": 220,
+          "snippet": "Iterator it = Arrays.asList(\"VoAACEncoder\", \"PPPP_API\", \"faad\", \"G726Android\", \"c++_shared\", \"ijkffmpeg\", \"webrtc_apm\", \"webrtc_audio_preprocessing\", \"yimedia\", \"audiopro"
+        },
+        {
+          "source": "apktool",
+          "file": "lib/arm64-v8a/libPPPP_API.so",
+          "snippet": "strings: tnp::PPPP_Proto_Send_DevLgn_Proxy, PPPP_Proto_Write_P2PServerReq"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.libglnkio",
+      "kind": "constant",
+      "description": "Langtao (glnk) P2P stack for older cameras, 32-bit only (armeabi-v7a split, absent from arm64). Wrapper package glnk.ants (MyRuntime) and AntsCameraLangtao.",
+      "confidence": "verified",
+      "library": "libglnkio.so + libasp.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "glnk/ants/MyRuntime.java",
+          "line": 15,
+          "snippet": "System.loadLibrary(\"glnkio\");"
+        },
+        {
+          "source": "apktool",
+          "file": "split_config.armeabi_v7a.apk:lib/armeabi-v7a/libglnkio.so",
+          "snippet": "present only in the 32-bit split"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.libkami_core",
+      "kind": "constant",
+      "description": "'Phone as camera' (Kami mobile IPC): encoder feed, motion, cloud recorder, p2p_service. Not the viewer path. JNI class com.kami.mobileipc.KamiMobileIPC.",
+      "confidence": "verified",
+      "library": "libkami_core.so",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/kami/mobileipc/KamiMobileIPC.java",
+          "line": 431,
+          "snippet": "System.loadLibrary(\"kami_core\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/kami/mobileipc/KamiMobileIPC.java",
+          "line": 496,
+          "snippet": "static native int nativeFeedVideo(int i10, byte[] bArr, int i11, int i12, int i13, int i14, int i15, int i16, long j10);"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.media_decode",
+      "kind": "constant",
+      "description": "Players, decoders and muxers (FFmpeg-based). libyimedia = Hls2Mp4 (cloud clip conversion). A desktop client replaces these with FFmpeg.",
+      "confidence": "verified",
+      "library": "libijkffmpeg, libijkplayer, libijksdl, libavcodec/avformat/avutil/swscale, libh265decoder, libfaad, libG726Android, libFFmpegUtil, libFFMuxing, libtranscode, libyimedia",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/media/Hls2Mp4.java",
+          "line": 44,
+          "snippet": "System.loadLibrary(\"yimedia\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/AntsApplication.java",
+          "line": 220,
+          "snippet": "Iterator it = Arrays.asList(\"VoAACEncoder\", \"PPPP_API\", \"faad\", \"G726Android\", \"c++_shared\", \"ijkffmpeg\", \"webrtc_apm\", \"webrtc_audio_preprocessing\", \"yimedia\", \"audiopro"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.audio",
+      "kind": "constant",
+      "description": "Echo cancellation / AGC / encoders for talk-back. Only needed for two-way audio.",
+      "confidence": "verified",
+      "library": "libwebrtc_apm, libwebrtc_audio_preprocessing, libaudioproc, libmi_aec, libpcmjni, libVoAACEncoder, libpcm",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "jni/AcousticEchoCancellationCore.java",
+          "line": 10,
+          "snippet": "System.loadLibrary(\"mi_aec\");"
+        },
+        {
+          "source": "jadx",
+          "file": "com/ants360/yicamera/util/PcmUtil.java",
+          "line": 22,
+          "snippet": "System.loadLibrary(\"pcmjni\");"
+        }
+      ],
+      "lane": "native"
+    },
+    {
+      "id": "kami.native.other",
+      "kind": "constant",
+      "description": "UI/analytics/recording support. libapp.so is the Flutter AOT module (assets/flutter_assets: activity/health icons); its Dart code is not decompiled by JADX and was not analysed. The REST and P2P code found is in the Java layer.",
+      "confidence": "verified",
+      "library": "libflutter, libapp (Dart AOT), libtensorflowlite, libMotionMagnifier, libsxpen, libmp4recorder, libmp4v2, libcrypto, libssl, ad/crash SDK libs",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "io/flutter/embedding/engine/FlutterJNI.java",
+          "line": 489,
+          "snippet": "System.loadLibrary(\"flutter\");"
+        },
+        {
+          "source": "apktool",
+          "file": "assets/flutter_assets/AssetManifest.json",
+          "snippet": "Flutter module present; Dart AOT in libapp.so"
+        }
+      ],
+      "lane": "native"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "Does a second sign-in end the phone's session?",
+      "detail": "Static code shows no client logic either way. The P2P layer has an explicit device-side 'kick' error (see kami.media.session_limits). The REST token behaviour must be learned from a real response, which the scout was not allowed to make.",
+      "lane": "auth"
+    },
+    {
+      "topic": "Token lifetime",
+      "detail": "No expiry field is parsed. Server-side lifetime unknown.",
+      "lane": "auth"
+    },
+    {
+      "topic": "Exact meaning of 20281 / 20282 / 30301",
+      "detail": "Needs UI strings or a real response.",
+      "lane": "auth"
+    },
+    {
+      "topic": "Sub-account / hub devices",
+      "detail": "d9/i also has /v5/users/ipc/state and group binding; not analysed.",
+      "lane": "cloud"
+    },
+    {
+      "topic": "Cloud clip encryption",
+      "detail": "CloudVideoParser parses HLS with an EncryptionMethod model; whether clips are AES-128 with a key URL was not traced.",
+      "lane": "cloud"
+    },
+    {
+      "topic": "Which camera models use TUTK vs TNP vs Langtao",
+      "detail": "Decided by server data per device (UID/DID format), not by a model table in the APK. Needs the owner's model and one device-list reply.",
+      "lane": "media"
+    },
+    {
+      "topic": "Native PPPP/TNP handshake",
+      "detail": "Session setup, relay selection, signed tickets and channel crypto are inside libPPPP_API.so. Stopped here: needs native RE (own decision).",
+      "lane": "media"
+    },
+    {
+      "topic": "TUTK license",
+      "detail": "Java passes no license key to IOTC_Initialize2(0); where the license lives (native lib or device side) is unknown.",
+      "lane": "media"
+    },
+    {
+      "topic": "PTZ command ids",
+      "detail": "No constant named PTZ was found in AVIOCTRLDEFs; PTZ goes through another command id in CameraCommandHelper. Not traced.",
+      "lane": "control"
+    },
+    {
+      "topic": "libapp.so (Dart)",
+      "detail": "Flutter module logic not inspected; if the account/device flow also lives there, the REST facts above still hold for the Java path.",
+      "lane": "native"
+    }
+  ]
+}

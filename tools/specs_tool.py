@@ -3,6 +3,7 @@
 Usage:
     python tools/specs_tool.py merge     # writes specs/tapo_protocol_spec.json
     python tools/specs_tool.py verify    # Gate 1; exit code 0 = pass
+    python tools/specs_tool.py merge-kami  # writes specs/kami_protocol_spec.json only (Tapo file untouched)
 
 Gate 1 rules
   * every item has id, kind, description, confidence in {verified, inferred, external}
@@ -11,10 +12,18 @@ Gate 1 rules
   * "verified" items must cite APK evidence (jadx file or rea command)
   * when the JADX tree is present, every cited jadx file must exist and the cited
     line must be within the file (evidence is re-checked against the decompiled APK)
+
+Kami lanes (additive, separate vendor)
+  * lanes in KAMI_LANES merge to specs/kami_protocol_spec.json, never into the Tapo file
+  * every Kami id starts with "kami."; no Tapo id may start with it
+  * Kami jadx evidence is re-checked against the tree named by the KAMI_JADX env var
+    (the "sources" folder of a Kami decompile) or artifacts/jadx_kami/sources; the Tapo
+    tree is never used for Kami items
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -34,23 +43,37 @@ LANES = {
     "rename": "rename_spec.json",
 }
 MERGED = SPECS / "tapo_protocol_spec.json"
+KAMI_LANES = {
+    "auth": "kami_auth_spec.json",
+    "cloud": "kami_cloud_spec.json",
+    "media": "kami_media_spec.json",
+    "control": "kami_control_spec.json",
+    "native": "kami_native_spec.json",
+}
+KAMI_MERGED = SPECS / "kami_protocol_spec.json"
+KAMI_PREFIX = "kami."
 CONFIDENCE = {"verified", "inferred", "external"}
+
+
+def kami_jadx() -> Path:
+    env = os.environ.get("KAMI_JADX")
+    return Path(env) if env else ROOT / "artifacts" / "jadx_kami" / "sources"
 
 
 def _load(name: str) -> dict:
     return json.loads((SPECS / name).read_text(encoding="utf-8"))
 
 
-def merge() -> dict:
+def _merge(lanes: dict, spec_id: str, out: Path) -> dict:
     merged: dict = {
-        "spec_id": "tapo_protocol_spec",
+        "spec_id": spec_id,
         "spec_version": 1,
         "apk": None,
         "lanes": {},
         "items": [],
         "unresolved": [],
     }
-    for lane, name in LANES.items():
+    for lane, name in lanes.items():
         d = _load(name)
         merged["apk"] = merged["apk"] or d.get("apk")
         merged["lanes"][lane] = {"source_file": f"specs/{name}", "summary": d.get("summary"),
@@ -59,18 +82,30 @@ def merge() -> dict:
             merged["items"].append({**it, "lane": lane})
         for u in d.get("unresolved", []):
             merged["unresolved"].append({**(u if isinstance(u, dict) else {"detail": u}), "lane": lane})
-    MERGED.write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
+    out.write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
     return merged
 
 
-def verify() -> list[str]:
+def merge() -> dict:
+    return _merge(LANES, "tapo_protocol_spec", MERGED)
+
+
+def merge_kami() -> dict:
+    return _merge(KAMI_LANES, "kami_protocol_spec", KAMI_MERGED)
+
+
+def _check(data: dict, jadx: Path, prefix: str | None = None) -> list[str]:
+    """Gate 1 for one vendor. prefix=KAMI_PREFIX: ids must start with it; None: ids must not."""
     errors: list[str] = []
-    data = json.loads(MERGED.read_text(encoding="utf-8"))
     seen: set[str] = set()
     line_cache: dict[str, int] = {}
-    jadx_present = JADX.is_dir()
+    jadx_present = jadx.is_dir()
     for it in data["items"]:
         iid = it.get("id", "<missing id>")
+        if prefix is not None and not str(iid).startswith(prefix):
+            errors.append(f"{iid}: id must start with {prefix!r}")
+        if prefix is None and str(iid).startswith(KAMI_PREFIX):
+            errors.append(f"{iid}: Tapo lane id must not use the {KAMI_PREFIX!r} prefix")
         for key in ("id", "kind", "description", "confidence"):
             if not it.get(key):
                 errors.append(f"{iid}: missing {key}")
@@ -93,7 +128,7 @@ def verify() -> list[str]:
                 rel = str(e["file"]).replace("/", "\\").lstrip("\\")
                 if rel.startswith("sources\\"):
                     rel = rel[len("sources\\"):]
-                p = JADX / rel
+                p = jadx / rel
                 if not p.is_file():
                     errors.append(f"{iid}: evidence file not found {e['file']}")
                     continue
@@ -105,11 +140,21 @@ def verify() -> list[str]:
     return errors
 
 
+def verify() -> list[str]:
+    errors = _check(json.loads(MERGED.read_text(encoding="utf-8")), JADX)
+    if KAMI_MERGED.is_file():  # Kami lanes are optional; absent file = Tapo-only output, unchanged
+        errors += _check(json.loads(KAMI_MERGED.read_text(encoding="utf-8")), kami_jadx(), KAMI_PREFIX)
+    return errors
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "verify"
     if cmd == "merge":
         m = merge()
         print(f"merged {len(m['items'])} items -> {MERGED.relative_to(ROOT)}")
+    if cmd in ("merge", "merge-kami") and all((SPECS / n).is_file() for n in KAMI_LANES.values()):
+        mk = merge_kami()
+        print(f"merged {len(mk['items'])} items -> {KAMI_MERGED.relative_to(ROOT)}")
     errs = verify()
     if errs:
         print(f"GATE 1 FAIL: {len(errs)} problem(s)")

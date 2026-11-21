@@ -9,22 +9,39 @@ Usage: python tools/audit_release.py dist/TapoDesktop [--json report.json]
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 FORBIDDEN_NAMES = re.compile(
     r"(\.apk$|\.xapk$|\.dex$|\.smali$|jadx|apktool|ghidra|rea-agents|tapo_protocol_spec|"
-    r"_spec\.json$|rea_evidence|subagent_reports|libtapocameranetwork|com\.tplink\.iot)", re.I)
+    r"_spec\.json$|rea_evidence|subagent_reports|libtapocameranetwork|com\.tplink\.iot|"
+    r"\.apkm$|kami_app_key)", re.I)
 # byte patterns that would indicate decompiled/proprietary content or dev tooling inside binaries
 FORBIDDEN_BYTES = [b"jadx.core", b"brut.androlib", b"ghidra.app", b"rea-agents", b"com.tplink.libtapocameranetwork",
-                   b"import com.tplink."]
+                   b"import com.tplink.",
+                   # Kami Home (unofficial support): package names of the vendor app and its P2P libraries
+                   b"com.yitechnology.", b"com.xiaoyi.", b"com.tutk.", b"com.p2p.pppp_api", b"com.tnp."]
+#: Text file with the Kami vendor key (env KAMI_APP_KEY_FILE overrides). If it exists, the key value must not
+#: be inside a release. It is compared as bytes and never printed.
+KAMI_KEY_FILE = r"F:\kami_re\kami_app_key.txt"
 SCAN_LIMIT = 64 * 1024 * 1024  # skip content scan above this size (e.g. Qt WebEngine is not bundled anyway)
 SKIP_CONTENT = {"ffmpeg.exe"}  # third-party binary, name-checked only
 
 
+def _vendor_key() -> bytes | None:
+    path = Path(os.environ.get("KAMI_APP_KEY_FILE") or KAMI_KEY_FILE)
+    try:
+        key = path.read_text(encoding="utf-8").strip().encode("utf-8")
+    except OSError:
+        return None
+    return key if len(key) >= 8 else None
+
+
 def audit(root: Path) -> dict:
     problems: list[str] = []
+    key = _vendor_key()
     files = [p for p in root.rglob("*") if p.is_file()]
     for p in files:
         rel = p.relative_to(root).as_posix()
@@ -37,6 +54,8 @@ def audit(root: Path) -> dict:
         for pat in FORBIDDEN_BYTES:
             if pat in data:
                 problems.append(f"forbidden content {pat.decode()!r} in {rel}")
+        if key is not None and key in data:
+            problems.append(f"Kami vendor key found in {rel}")  # the value itself is never printed
     total = sum(p.stat().st_size for p in files)
     return {"root": str(root), "files": len(files), "bytes": total, "problems": problems,
             "passed": not problems}

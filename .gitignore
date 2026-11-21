@@ -15,3 +15,7 @@ dist/
 .coverage
 htmlcov/
 release/
+
+# Kami Home (unofficial support): vendor app bundles and the vendor key are never committed
+*.apkm
+kami_app_key.txt

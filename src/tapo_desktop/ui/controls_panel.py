@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 
 from tapo_desktop.models import DayNightMode
 from tapo_desktop.ui import snapshot
+from tapo_desktop.ui.kami_status import capability_service, control_enabled
 from tapo_desktop.ui.ptz_pad import PtzPad
 
 log = logging.getLogger(__name__)
@@ -89,8 +90,10 @@ class ControlsPanel(QWidget):
         self._presets.clear()
         self._goto.setEnabled(False)
         self._update_title()
-        self._set_enabled(self._camera_id is not None)
-        if self._camera_id is not None:
+        target = self._capabilities(self._camera_id)
+        ptz_ok, controls_ok = control_enabled(target, "ptz"), control_enabled(target, "controls")
+        self._set_enabled(self._camera_id is not None, ptz_ok, controls_ok)
+        if self._camera_id is not None and (ptz_ok or controls_ok):  # a Kami service rejects both calls
             self._ctrl.refresh_status(self._camera_id)
             self._ctrl.load_presets(self._camera_id)
 
@@ -115,6 +118,7 @@ class ControlsPanel(QWidget):
     # ------------------------------------------------------------------ construction
     def _build_ptz(self) -> QGroupBox:
         box = QGroupBox("Pan / tilt", self)
+        self._ptz_box = box
         layout = QVBoxLayout(box)
         self._pad = PtzPad(box)
         self._pad.move_requested.connect(self._on_move)
@@ -220,9 +224,13 @@ class ControlsPanel(QWidget):
             self._update_title()
 
     # ------------------------------------------------------------------ helpers
-    def _set_enabled(self, enabled: bool) -> None:
+    def _capabilities(self, camera_id: str | None):
+        cfg = next((c for c in self._ctrl.cameras() if c.id == camera_id), None)
+        return capability_service(cfg)
+
+    def _set_enabled(self, enabled: bool, ptz: bool = True, controls: bool = True) -> None:
         for child in self.findChildren(QGroupBox):
-            child.setEnabled(enabled)
+            child.setEnabled(enabled and (ptz if child is self._ptz_box else controls))
 
     def _update_title(self) -> None:
         name = None

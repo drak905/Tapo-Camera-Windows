@@ -27,6 +27,10 @@ log = logging.getLogger(__name__)
 DEFAULT_SETTINGS: dict = {"grid_size": 2, "minimize_to_tray": True, "notifications": True}
 
 FILE_VERSION = 1
+#: Settings keys of the Kami Home account (non-secret; the password lives in the vault, see KAMI_ACCOUNT_VAULT_ID).
+SETTING_KAMI_ACCOUNT = "kami_account"  # signed-in Kami account info (dict) or None
+#: True after a failed Kami sign-in: no silent sign-in at start-up until the user signs in by hand again.
+SETTING_KAMI_LAST_SIGN_IN_FAILED = "kami_last_sign_in_failed"
 _APP_DIR_NAME = "TapoDesktop"
 _CAMERA_FIELDS = {f.name: f for f in dataclasses.fields(CameraConfig)}
 _ENUM_FIELDS: dict[str, type[enum.Enum]] = {"grid_quality": StreamQuality, "fullscreen_quality": StreamQuality}
@@ -51,6 +55,8 @@ def _camera_to_dict(cam: CameraConfig) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for name in _CAMERA_FIELDS:
         value = getattr(cam, name)
+        if name == "vendor_data" and not value:
+            continue  # Tapo cameras keep their config entries byte-identical to older builds
         out[name] = value.value if isinstance(value, enum.Enum) else value
     return out
 
