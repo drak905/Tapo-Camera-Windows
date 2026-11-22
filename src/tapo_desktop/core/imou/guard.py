@@ -2,7 +2,7 @@
 
 * Quota codes (FL1002/FL1004/FL1005, OP1013/OP1014): all iMou calls stop until the next UTC midnight, with the text
   "free quota used". The state can be saved (``save``) so a restart does not forget it.
-* Signature / App ID errors (SN1001...): no silent retry; calls stop for 120 s (the Kami pattern) and the user has
+* Signature / App ID errors (SN1001...): no silent retry; calls stop for 120 s and the user has
   to click Test again.
 Pure Python; the services layer plugs in ``load`` / ``save`` (a settings key).
 """
