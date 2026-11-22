@@ -73,7 +73,8 @@ class ImouStreamSupervisor(StreamSupervisor):
 
     def _attempt(self, exe: str, target: _Target) -> _Outcome:
         outcome = super()._attempt(exe, target)
-        if not self._stopping.is_set() and not outcome.switched:
+        retry_in_software = outcome.hw_unusable and not self._hw_disabled  # the base class retries once, at once
+        if not self._stopping.is_set() and not outcome.switched and not retry_in_software:
             outcome.fatal = True  # one attempt: whatever ended it, the tile asks for a click
             outcome.reason = outcome.reason or "the stream ended"
         return outcome
