@@ -1,7 +1,7 @@
 """Kami Home reply parsers, session record and errors (no network, no vendor secret).
 
-Shapes come from the app's parsers, not from real replies [spec:kami.auth.login_response, kami.cloud.device_list,
-kami.cloud.device_fields]. Per-camera passwords and P2P parameters in the device list are ignored on purpose.
+Shapes come from the app's parsers [spec:kami.auth.login_response, kami.cloud.device_list, kami.cloud.device_fields],
+corrected by the real sign-in reply: ``code`` is a string of digits and ``data.userid`` is a number. Per-camera passwords and P2P parameters in the device list are ignored on purpose.
 """
 from __future__ import annotations
 
@@ -93,8 +93,18 @@ class KamiSession:
 
 
 def _code(reply: dict[str, Any]) -> int | None:
+    """The result code. The real server sends it as a string of digits ("20000"); a number is accepted too."""
     code = reply.get("code")
+    if isinstance(code, str) and code.isascii() and code.isdigit():
+        return int(code)
     return code if isinstance(code, int) and not isinstance(code, bool) else None
+
+
+def _userid(value: Any) -> str | None:
+    """The user id as text. The real server sends a JSON number; text is accepted too."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value) if value > 0 else None
+    return value if isinstance(value, str) and value else None
 
 
 def parse_login(reply: dict[str, Any], *, region: str, country: str, email: str) -> KamiSession:
@@ -109,7 +119,8 @@ def parse_login(reply: dict[str, Any], *, region: str, country: str, email: str)
     data = reply.get("data")
     if not isinstance(data, dict):
         raise KamiProtocolError("sign-in reply has no data")
-    fields = {k: data.get(k) for k in ("userid", "token", "token_secret")}
+    fields = {"userid": _userid(data.get("userid")), "token": data.get("token"),
+              "token_secret": data.get("token_secret")}
     if not all(isinstance(v, str) and v for v in fields.values()):
         raise KamiProtocolError("sign-in reply lacks userid, token or token_secret")
     return KamiSession(**fields, email=email, region=region, country=country)
