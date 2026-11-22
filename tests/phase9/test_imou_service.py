@@ -552,3 +552,21 @@ def test_service_module_has_no_kami_import_and_no_iMou_import_in_kami_files():
         assert "kami" not in path.read_text(encoding="utf-8").lower(), path.name
     for path in list(root.glob("**/*kami*.py")) + list((root / "core" / "kami").glob("**/*.py")):
         assert "imou" not in path.read_text(encoding="utf-8").lower(), path.name
+
+
+def test_supervisor_still_falls_back_to_software_decode_once_then_ends_after_one_attempt(monkeypatch):
+    """Full screen asks for hardware decoding; if that fails before the first frame the base class retries in
+    software at once. That is the same attempt budget (no extra cloud call): every other end is final."""
+    from tapo_desktop.core.imou.stream import ImouStreamSupervisor
+    from tapo_desktop.core.media_engine.supervisor import StreamSupervisor, _Outcome
+
+    sup = ImouStreamSupervisor("rtsp://203.0.113.7/x?token=A", "rtsp", 1280, 720, on_frame=lambda f: None,
+                               hwaccel="auto")
+    monkeypatch.setattr(StreamSupervisor, "_attempt",
+                        lambda self, exe, target: _Outcome(reason="hw failed", hw_unusable=True))
+    assert sup._attempt("ffmpeg", sup._target).fatal is False  # hardware decoding not tried in software yet
+    sup._hw_disabled = True
+    assert sup._attempt("ffmpeg", sup._target).fatal is True
+    monkeypatch.setattr(StreamSupervisor, "_attempt", lambda self, exe, target: _Outcome(reason="", played=True))
+    outcome = sup._attempt("ffmpeg", sup._target)
+    assert outcome.fatal is True and outcome.reason == "the stream ended"
