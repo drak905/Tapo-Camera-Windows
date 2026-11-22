@@ -48,18 +48,26 @@ class KamiClient:
     # ------------------------------------------------------------------ API
     def login(self, email: str, password: str) -> KamiSession:
         """One sign-in request. Raises ``KamiKeyMissingError`` before any network call if the key is absent."""
+        reply = self._get("/v4/users/login", self._login_pairs(email, password))
+        session = parse_login(reply, region=self._region, country=self._country, email=email)
+        log.info("kami sign-in accepted (region %s)", self._region)
+        return session
+
+    def login_raw(self, email: str, password: str) -> tuple[list[tuple[str, str]], int, list[tuple[str, str]], bytes]:
+        """One sign-in request, unparsed: ``(sent pairs, HTTP status, reply headers, body)``. For the owner capture tool."""
+        pairs = self._login_pairs(email, password)
+        status, headers, body = self._fetch("/v4/users/login", pairs)
+        return pairs, status, headers, body
+
+    def _login_pairs(self, email: str, password: str) -> list[tuple[str, str]]:
         if not self._app_key:
             raise KamiKeyMissingError("the Kami password key is not installed")
         if self._region == "cn":  # the China build sends email= or mobile= [spec:kami.auth.login_request]
             who = ("email", email) if "@" in email else ("mobile", email)
         else:
             who = ("account", email)
-        pairs = [("seq", "1"), who, ("password", password_hash(password, self._app_key)),
-                 ("dev_name", "Tapo Desktop"), ("dev_type", "Windows PC"), ("dev_os_version", "Windows")]
-        reply = self._get("/v4/users/login", pairs)
-        session = parse_login(reply, region=self._region, country=self._country, email=email)
-        log.info("kami sign-in accepted (region %s)", self._region)
-        return session
+        return [("seq", "1"), who, ("password", password_hash(password, self._app_key)),
+                ("dev_name", "Tapo Desktop"), ("dev_type", "Windows PC"), ("dev_os_version", "Windows")]
 
     def list_devices(self, session: KamiSession) -> list[KamiDevice]:
         """One signed request for the account's cameras (owned and shared)."""
@@ -70,24 +78,7 @@ class KamiClient:
 
     # ------------------------------------------------------------------ transport
     def _get(self, path: str, pairs: list[tuple[str, str]], *, signed: bool = False) -> dict[str, Any]:
-        base = urlsplit(self._base)
-        headers = {"x-kamihome-appType": "ANDROID", "x-kamihome-packageType": "RELEASE", "User-Agent": USER_AGENT,
-                   "x-xiaoyi-appCountryCode": self._country, "x-xiaoyi-appVersion": APP_VERSION}
-        try:
-            if base.scheme == "https":
-                conn: http.client.HTTPConnection = http.client.HTTPSConnection(
-                    base.hostname, base.port or 443, timeout=self._timeout, context=ssl.create_default_context())
-            else:
-                conn = http.client.HTTPConnection(base.hostname, base.port or 80, timeout=self._timeout)
-            try:
-                conn.request("GET", f"{path}?{encode_query(pairs)}", headers=headers)
-                response = conn.getresponse()
-                status, body = response.status, response.read(_MAX_BODY + 1)
-            finally:
-                conn.close()
-        except (OSError, http.client.HTTPException):
-            # no ``from exc``: the original message may carry the host name
-            raise KamiConnectionError("Cannot reach the Kami servers.") from None
+        status, _headers, body = self._fetch(path, pairs)
         if status != 200:
             if signed and status in (401, 403):
                 raise KamiSessionExpired("the Kami session is no longer valid")
@@ -101,3 +92,24 @@ class KamiClient:
         if not isinstance(reply, dict):
             raise KamiProtocolError("Kami reply is not a JSON object")
         return reply
+
+    def _fetch(self, path: str, pairs: list[tuple[str, str]]) -> tuple[int, list[tuple[str, str]], bytes]:
+        base = urlsplit(self._base)
+        headers = {"x-kamihome-appType": "ANDROID", "x-kamihome-packageType": "RELEASE", "User-Agent": USER_AGENT,
+                   "x-xiaoyi-appCountryCode": self._country, "x-xiaoyi-appVersion": APP_VERSION}
+        try:
+            if base.scheme == "https":
+                conn: http.client.HTTPConnection = http.client.HTTPSConnection(
+                    base.hostname, base.port or 443, timeout=self._timeout, context=ssl.create_default_context())
+            else:
+                conn = http.client.HTTPConnection(base.hostname, base.port or 80, timeout=self._timeout)
+            try:
+                conn.request("GET", f"{path}?{encode_query(pairs)}", headers=headers)
+                response = conn.getresponse()
+                status, headers, body = response.status, response.getheaders(), response.read(_MAX_BODY + 1)
+            finally:
+                conn.close()
+        except (OSError, http.client.HTTPException):
+            # no ``from exc``: the original message may carry the host name
+            raise KamiConnectionError("Cannot reach the Kami servers.") from None
+        return status, headers, body
