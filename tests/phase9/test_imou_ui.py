@@ -133,6 +133,9 @@ class FakeImouManager(QObject):
     def data_center(self):
         return "sg"
 
+    def usage_minutes_today(self):
+        return 12.5
+
 
 def make_window(qtbot, env, **kw):
     from tapo_desktop.ui.main_window import MainWindow
@@ -193,6 +196,12 @@ def test_dialog_fields_are_a_fixed_dropdown_and_a_masked_secret(qtbot):
     assert child(dlg, QSpinBox, "imouMaxLiveSpin").value() == 2
     note = child(dlg, QLabel, "imouNoteLabel").text().lower()
     assert "quota" in note and "my resources" in note and "own" in note
+
+
+def test_dialog_shows_the_local_minute_estimate_and_points_to_my_resources(qtbot):
+    dlg = make_dialog(qtbot, FakeImouManager())
+    text = child(dlg, QLabel, "imouUsageLabel").text()
+    assert "12.5" in text and "estimate" in text.lower() and "My Resources" in text
 
 
 def test_dialog_preselects_the_saved_data_center(qtbot):

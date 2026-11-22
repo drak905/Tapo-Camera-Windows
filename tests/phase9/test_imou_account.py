@@ -323,3 +323,17 @@ def test_a_click_after_connect_starts_a_stream_through_the_real_service_and_coun
     assert rt.meter.used("imou:MOCKSERIAL0001") == 60
     assert env.store.get_setting("imou_usage", None)["seconds"]["imou:MOCKSERIAL0001"] == 60
     assert cloud.count("accessToken") == 1  # the token of the Test is reused
+
+
+def test_the_minute_estimate_is_the_sum_over_all_cameras_for_today(imou_env, qtbot, clock):
+    from tapo_desktop.services import imou_camera_service
+
+    env = imou_env()
+    assert env.manager.usage_minutes_today() == 0
+    connect(env, qtbot)
+    meter = imou_camera_service.get_runtime().meter
+    meter.add("imou:MOCKSERIAL0001", 90)
+    meter.add("imou:MOCKSERIAL0002", 30)
+    assert env.manager.usage_minutes_today() == 2.0
+    clock.advance(86_400)
+    assert env.manager.usage_minutes_today() == 0
