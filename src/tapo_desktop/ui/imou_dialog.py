@@ -55,7 +55,10 @@ class ImouConnectDialog(QDialog):
         note.setObjectName("imouNoteLabel")
         note.setWordWrap(True)
         root.addWidget(note)
-
+        self._usage = QLabel(self._usage_text(manager), self)
+        self._usage.setObjectName("imouUsageLabel")
+        self._usage.setWordWrap(True)
+        root.addWidget(self._usage)
         form = QFormLayout()
         self._app_id = QLineEdit(self)
         self._app_id.setObjectName("imouAppIdEdit")
@@ -119,6 +122,15 @@ class ImouConnectDialog(QDialog):
         self._timer.timeout.connect(self.refresh_block_state)
         self.refresh_block_state()
         self._app_id.setFocus()
+
+    @staticmethod
+    def _usage_text(manager) -> str:
+        try:
+            minutes = float(manager.usage_minutes_today())
+        except Exception:
+            minutes = 0.0
+        return (f"Live time today (estimate, counted by this app): {minutes:.1f} min. The real numbers are under "
+                "My Resources in the Open Platform console.")
 
     @staticmethod
     def _current(manager, name: str, default: int) -> int:

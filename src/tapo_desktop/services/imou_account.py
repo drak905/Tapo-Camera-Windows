@@ -152,6 +152,10 @@ class ImouAccountManager(QObject):
         self._store.set_setting(SETTING_DAILY_MINUTES, _clamped(daily_minutes, 1, 1, MAX_DAILY_MINUTES))
         self._store.set_setting(SETTING_MAX_LIVE, _clamped(max_live, 1, 1, MAX_LIVE_CAP))
 
+    def usage_minutes_today(self) -> float:
+        """Live minutes of all iMou cameras today (UTC day): a local estimate, not the vendor's own meter."""
+        return round(self._meter.total() / 60.0, 1)
+
     def limits(self) -> ImouLimits:
         return dataclasses.replace(ImouLimits(), daily_seconds=float(self.daily_minutes() * 60),
                                    max_live=self.max_live())

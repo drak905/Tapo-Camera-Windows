@@ -60,6 +60,12 @@ class UsageMeter:
     def remaining(self, camera_id: str, limit_seconds: float) -> float:
         return max(0.0, limit_seconds - self.used(camera_id))
 
+    def total(self) -> float:
+        """Live seconds of all cameras today (the local estimate shown in the connection window)."""
+        with self._lock:
+            self._roll_locked()
+            return sum(self._seconds.values())
+
     def add(self, camera_id: str, seconds: float) -> None:
         if not (isinstance(seconds, (int, float)) and math.isfinite(seconds) and seconds > 0):
             return
