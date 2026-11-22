@@ -1,0 +1,289 @@
+{
+  "spec_id": "kami_cloud_spec",
+  "apk": {
+    "package": "com.yitechnology.kamihome",
+    "version_name": "5.0.2_20261110110712",
+    "version_code": "252",
+    "bundle": "apkmirror .apkm (base + 33 splits), arm64-v8a + armeabi-v7a"
+  },
+  "summary": "Kami Home 5.0.2 cloud: device list (/v5/devices/list), online state, per-camera password, TNP device info (InitString/License), sharing, cloud clips.",
+  "items": [
+    {
+      "id": "kami.cloud.device_list",
+      "kind": "endpoint",
+      "description": "GET {gateway}/v5/devices/list?seq=1&userid=<id>&hmac=<signed>. Response data[] has one object per camera (owned and shared, see 'share'/'accessRight').",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 2286,
+          "snippet": "return x(e9.c.b(\"/v5/devices/list\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2221,
+          "snippet": "yo.m<JSONObject> mVarZ = e9.d.s0(com.ants360.yicamera.base.e1.z().B().t()).z(Schedulers.io());"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.device_fields",
+      "kind": "response",
+      "description": "Per-device JSON fields read by the app: uid (also used as DID and P2P id), name, model, did, flag, share, category, count, type, interVersion, accessRight, state, online (bool), password (encrypted), relayFlag, groupBindable, webPairStatus, and ipcParam (a JSON string with p2p_encrypt, ssid, mac, ip, rssi, battery, wakeup, signal_quality).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1376,
+          "snippet": "deviceInfo.online = jSONObject.optBoolean(androidx.browser.customtabs.c.ONLINE_EXTRAS_KEY);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1413,
+          "snippet": "deviceInfo.isMediaEncrypted = jSONObject2.optBoolean(\"p2p_encrypt\", true);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1406,
+          "snippet": "deviceInfo.forceRelay = jSONObject.optInt(\"relayFlag\", 0) == 1;"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.online_state",
+      "kind": "state_machine",
+      "description": "Online state has two sources: (1) the list's 'online' boolean (cheap, REST); (2) for P2P cameras the app also asks over the P2P layer (PPPP_CheckDevOnline for TNP, getOnlineStatus command). The REST flag is enough for a camera list.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1376,
+          "snippet": "deviceInfo.online = jSONObject.optBoolean(androidx.browser.customtabs.c.ONLINE_EXTRAS_KEY);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/tnp/TnpCamera.java",
+          "line": 422,
+          "snippet": "iPPPP_CheckDevOnline = PPPP_APIs.PPPP_CheckDevOnline(TnpCamera.this.p2pid, TnpCamera.this.serverString, 2, iArr);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 590,
+          "snippet": "antsCameraTnp.getCommandHelper().getOnlineStatus(new g(deviceInfo, u1Var, atomicInteger, subscribe));"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.camera_password",
+      "kind": "algorithm",
+      "description": "Each camera has its own P2P view password. Server field 'password' is AES-128-ECB/PKCS7 encrypted with key = first 16 chars of the UID; the plaintext is the camera password used for all P2P commands. If the field is empty the app uses the default '888888'. The account name is always 'admin'. No app-wide secret is involved (the key is the UID).",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1388,
+          "snippet": "strA = ra.k.a(strSubstring, strOptString5);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1386,
+          "snippet": "String strSubstring = UID.substring(0, 16);"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/a.java",
+          "line": 15,
+          "snippet": "private String f104256b = \"AES/ECB/PKCS7Padding\";"
+        },
+        {
+          "source": "jadx",
+          "file": "ra/k.java",
+          "line": 62,
+          "snippet": "return \"888888\";"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.tnp_device_info",
+      "kind": "endpoint",
+      "description": "For TNP cameras: GET /v4/tnp/device_info (uid + signed) returns data.DID (a string like TNP-xxx-yyy that also fixes the transport type), data.InitString (the P2P server list for the native library) and data.License (per-device license key, 'x:y' where the second part is the device key). These three feed PPPP_Initialize/PPPP_Connect. Cached in prefs as TNP_DID_/TNP_SEV_/TNP_KEY_<uid>.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 655,
+          "snippet": "return t(e9.c.b(\"/v4/tnp/device_info\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2916,
+          "snippet": "final String strOptString2 = jSONObjectOptJSONObject.optString(\"InitString\", \"\");"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2900,
+          "snippet": "kl.r.f().u(\"TNP_SEV_PREFIX_\" + str, str3);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 97,
+          "snippet": "private static boolean isTnpDeviceType(String str) {"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.transport_by_uid",
+      "kind": "algorithm",
+      "description": "Transport per camera: P2PDevice.type 0 = TUTK (UID is upper/mixed case), 1 = Langtao (all-lowercase id), 2 = TNP (DID matching TNP-a-b), 3 = TX (declared, no factory branch). AntsCameraManage builds AntsCameraTutk / AntsCameraLangtao / AntsCameraTnp from it. Which model uses which cannot be read from the APK; it is server data per device.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/P2PDevice.java",
+          "line": 90,
+          "snippet": "return str.toLowerCase().equals(str) ? 1 : 0;"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraManage.java",
+          "line": 106,
+          "snippet": "antsCameraTnp = new AntsCameraTutk(p2PDevice);"
+        },
+        {
+          "source": "jadx",
+          "file": "com/xiaoyi/camera/sdk/AntsCameraManage.java",
+          "line": 110,
+          "snippet": "antsCameraTnp = new AntsCameraTnp(p2PDevice);"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.shared_devices",
+      "kind": "endpoint",
+      "description": "Sharing is server side: /v5/deviceshare/{invite,accept,friends,shareddetail,record,invitee/invitations,invitor/invitations}. A shared camera appears in the same devices/list with share=true and an accessRight value.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "d9/i.java",
+          "line": 152,
+          "snippet": "e.f88301c.m(i(\"/v5/deviceshare/shareddetail\", bVar), cVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/i.java",
+          "line": 75,
+          "snippet": "e.f88301c.m(i(\"/v5/deviceshare/accept\", bVar), cVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 1371,
+          "snippet": "deviceInfo.accessRight = jSONObject.optInt(\"accessRight\");"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.rename",
+      "kind": "endpoint",
+      "description": "Rename/edit uses /v2/devices/edit (userid, uid, name, message + signature).",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 702,
+          "snippet": "return t(e9.c.b(\"/v2/devices/edit\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "n8/u1.java",
+          "line": 2329,
+          "snippet": "yo.m<JSONObject> mVarC1 = e9.d.C1(e0VarB.t(), deviceInfo.UID, nickname, deviceInfo.description, e0VarB.A(), e0VarB.B());"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.video_api",
+      "kind": "endpoint",
+      "description": "Cloud-stored clips (paid Kami Cloud) are plain HTTPS: GET /vas/v8/cloud/videos (returns a map of URLs), /vas/v8/cloud/videos/quickview (per-day index), /vas/v8/cloud/ts/metadata (segment list), /vas/v8/cloud/images (thumbnails), /vas/v8/cloud/service (plan state), DELETE /vas/v8/cloud/videos. The app parses HLS playlists locally. Gated by a Cloud plan.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "hm/a.java",
+          "line": 95,
+          "snippet": "@f(\"/vas/v8/cloud/videos/quickview\")"
+        },
+        {
+          "source": "jadx",
+          "file": "hm/a.java",
+          "line": 128,
+          "snippet": "@f(\"/vas/v8/cloud/ts/metadata\")"
+        },
+        {
+          "source": "jadx",
+          "file": "hm/a.java",
+          "line": 110,
+          "snippet": "@f(\"/vas/v8/cloud/service\")"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.alert_events",
+      "kind": "endpoint",
+      "description": "Motion/AI alert list: /v5/alert/events (and /v4/alert/events, /v5/alert/events/top), push settings /v5/alert/push_prop. Plain REST with the same signature.",
+      "confidence": "inferred",
+      "evidence": [
+        {
+          "source": "jadx",
+          "file": "e9/d.java",
+          "line": 1328,
+          "snippet": "return t(e9.c.b(\"/v5/alert/events/top\"), f89105b, bVar);"
+        },
+        {
+          "source": "jadx",
+          "file": "d9/h.java",
+          "line": 268,
+          "snippet": "e.f88301c.m(i(\"/v4/alert/app_push_prop\", bVar), cVar);"
+        }
+      ]
+    },
+    {
+      "id": "kami.cloud.reverse_direction_api",
+      "kind": "endpoint",
+      "description": "libkami_core.so (the 'phone as camera' feature) talks to the same cloud with hmac-signed URLs (/v6/ipc/on_line, /v4/alert/event, /vas/v8/ipc/ball/STSToken). Not needed for a viewer client, listed so nobody mistakes it for the viewer path.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "source": "apktool",
+          "file": "lib/arm64-v8a/libkami_core.so",
+          "snippet": "strings: kami_cloud_api_report_online, \"/v6/ipc/on_line?hmac=%s&seq=9&uid=%s\""
+        }
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "Sub-account / hub devices",
+      "detail": "d9/i also has /v5/users/ipc/state and group binding; not analysed."
+    },
+    {
+      "topic": "Cloud clip encryption",
+      "detail": "CloudVideoParser parses HLS with an EncryptionMethod model; whether clips are AES-128 with a key URL was not traced."
+    }
+  ]
+}

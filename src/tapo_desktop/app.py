@@ -118,6 +118,7 @@ def _build(app, store, data_dir, *, interactive: bool):
     from tapo_desktop.core.auth.vault import CredentialVault
     from tapo_desktop.services.account import AccountManager
     from tapo_desktop.services.controller import AppController
+    from tapo_desktop.services.kami_account import KamiAccountManager
     from tapo_desktop.ui import _theme
     from tapo_desktop.ui.main_window import MainWindow
 
@@ -129,7 +130,8 @@ def _build(app, store, data_dir, *, interactive: bool):
         app.setQuitOnLastWindowClosed(False)  # the tray keeps the app alive
     controller = AppController(store, CredentialVault(data_dir / "vault.json"))
     accounts = AccountManager(controller, parent=controller)
-    window = MainWindow(controller, tray_enabled=interactive, accounts=accounts)
+    kami_accounts = KamiAccountManager(controller, controller.vault, store, parent=controller)
+    window = MainWindow(controller, tray_enabled=interactive, accounts=accounts, kami_accounts=kami_accounts)
     return window, controller, accounts
 
 
@@ -137,7 +139,16 @@ def _start_account(window, accounts) -> None:
     """Phase 2 startup, like the Tapo app: silent sign-in with the stored TP-Link ID, otherwise the
     sign-in dialog. "Use without account" keeps the manual cameras only and is remembered (setting
     ``"sign_in_skipped"``), so the dialog is not forced on every start; the account button still
-    offers "Sign in...". Never used by --selftest."""
+    offers "Sign in...". Never used by --selftest.
+
+    A stored Kami session is restored first, with its token and never a password. The Kami manager itself
+    refuses after a failed attempt (setting ``kami_last_sign_in_failed``), so nothing is sent then."""
+    kami = getattr(window, "kami_accounts", None)
+    if kami is not None:
+        try:
+            kami.restore_session()
+        except Exception:  # a broken vault/config must not keep the app from starting
+            log.exception("restoring the Kami session failed")
     try:
         if accounts.restore_session():
             return

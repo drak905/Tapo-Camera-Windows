@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import QGridLayout, QMenu, QWidget
 from tapo_desktop.models import CameraConfig, StreamQuality
 from tapo_desktop.services.stream_policy import StreamRequest, plan_streams, view_size
 from tapo_desktop.services.view_layout import MAX_SLOTS, SETTING_KEY, ViewLayout
+from tapo_desktop.ui.kami_status import LIVE_VIEW_UNSUPPORTED_TEXT, capability_service, control_enabled
 from tapo_desktop.ui.video_tile import EmptySlotTile, VideoTile, camera_id_from_mime
 
 log = logging.getLogger(__name__)
@@ -336,7 +337,15 @@ class CameraGrid(QWidget):
         tile.double_clicked.connect(self._on_double_click)
         tile.camera_dropped.connect(lambda cid, t=tile: self._on_tile_dropped(cid, t))
         tile.customContextMenuRequested.connect(lambda pos, t=tile: self._show_menu(t, pos))
+        if self._no_live_view(cfg):
+            tile.set_stream_state("FAILED", LIVE_VIEW_UNSUPPORTED_TEXT)
         return tile
+
+    @staticmethod
+    def _no_live_view(cfg: CameraConfig) -> bool:
+        """True for a camera whose service cannot show live video (Kami): its tile shows a fixed text and
+        never requests a stream (plan-review finding 8). Tapo cameras have no flag, so always False."""
+        return not control_enabled(capability_service(cfg), "live_view")
 
     def _empty_tile(self, index: int) -> EmptySlotTile:
         tile = self._empty.get(index)
@@ -399,7 +408,8 @@ class CameraGrid(QWidget):
                 tile = self._tiles.get(cid) if cid is not None else None
                 widgets.append((index, tile if tile is not None else self._empty_tile(index)))
             self._relayout(widgets, self._n)
-        visible = [cid if cid in self._tiles else None for cid in self.visible_slots()]
+        visible = [cid if cid in self._tiles and not self._no_live_view(self._configs[cid]) else None
+                   for cid in self.visible_slots()]
         self._sync_streams(plan_streams(visible, self._configs, self._fullscreen))
         self.view_changed.emit()
 
