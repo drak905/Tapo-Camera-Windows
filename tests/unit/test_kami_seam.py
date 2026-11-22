@@ -137,7 +137,8 @@ def test_kami_vault_kind_is_separate_from_cloud():
 
     assert CredentialKind.KAMI_ACCOUNT.value == "kami_account"
     assert CredentialKind.KAMI_ACCOUNT is not CredentialKind.CLOUD
-    assert {k.name: k.value for k in CredentialKind if k.name != "KAMI_ACCOUNT"} == {
+    # requirement change (iMou): IMOU_APP is the one other vendor kind; the Tapo kinds below must stay exactly these
+    assert {k.name: k.value for k in CredentialKind if k.name not in ("KAMI_ACCOUNT", "IMOU_APP")} == {
         "CLOUD": "cloud", "CAMERA_ACCOUNT": "camera_account", "LOCAL_TOKEN": "local_token"}
     assert KAMI_ACCOUNT_VAULT_ID == "__kami_account__" and KAMI_ACCOUNT_VAULT_ID != ACCOUNT_VAULT_ID
 
@@ -256,8 +257,10 @@ def test_tapo_modules_do_not_import_kami_except_the_one_factory_seam():
                 hits.append((path.relative_to(SRC).as_posix(), line, name))
     # Integration step (requirement change, see commit message): the app wiring and the UI files may import
     # the Kami UI helpers, the Kami account manager and the region table. Nothing else may.
+    # iMou step (requirement change): ui/vendor_status.py is the one place that picks the capability helper of a
+    # camera type, so it imports the Kami UI helper lazily like the other UI wiring files.
     wiring = {"app.py", "ui/main_window.py", "ui/grid.py", "ui/controls_panel.py", "ui/playback_panel.py",
-              "ui/video_tile.py"}
+              "ui/video_tile.py", "ui/vendor_status.py"}
     outside = [(f, l, n) for f, l, n in hits if f not in wiring]
     assert {(f, n) for f, _l, n in outside} <= {("services/controller.py", "tapo_desktop.services.kami_camera_service"),
                                                  ("services/controller.py",
