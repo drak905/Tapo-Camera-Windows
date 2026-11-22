@@ -176,8 +176,10 @@ def test_account_menu_keeps_its_tapo_entries_and_only_adds_kami_ones(make_env, q
     window = make_window(qtbot, env)
     menu = window.findChild(QObject, "accountMenu")
     texts = [a.text() for a in menu.actions()]
-    assert texts[:4] == ["Sign in\u2026", "", "Refresh cameras", "Sign out"]
-    assert [a.objectName() for a in menu.actions()[4:] if a.objectName()] == ["kamiSignInAction",
+    # requirement changed: the menu is a Tapo section, then a Kami section, each with a text header
+    assert texts == ["Tapo", "Sign in\u2026", "Refresh cameras", "Sign out", "Kami", "Kami account\u2026",
+                     "Sign out of Kami"]
+    assert [a.objectName() for a in menu.actions()[5:] if a.objectName()] == ["kamiSignInAction",
                                                                               "kamiSignOutAction"]
     assert window.findChild(QObject, "accountButton").text() == "Sign in"
     sign_in = next(a for a in menu.actions() if a.objectName() == "kamiSignInAction")
