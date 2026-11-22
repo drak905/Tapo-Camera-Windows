@@ -146,6 +146,7 @@ def test_shortcuts_toggle_when_the_window_is_active(app_env, qtbot):
     env = app_env(1)
     w = _window(env, qtbot)
     w.activateWindow()
+    qtbot.waitUntil(w.isActiveWindow, timeout=3000)
     qtbot.keyClick(w, Qt.Key.Key_B, Qt.KeyboardModifier.ControlModifier)
     qtbot.keyClick(w, Qt.Key.Key_J, Qt.KeyboardModifier.ControlModifier)
     assert not w.camera_list_visible() and not w.controls_panel_visible()
