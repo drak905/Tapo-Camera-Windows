@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 
 from PyQt6.QtCore import QEvent, QMimeData, QPoint, QSignalBlocker, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QKeyEvent
+from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -85,6 +85,10 @@ from tapo_desktop.ui.ptz_pad import PTZ_UNIT
 from tapo_desktop.ui.video_tile import camera_mime_data
 
 log = logging.getLogger(__name__)
+
+#: Settings (bool, default True = shown) remembering the hidden side panels.
+SETTING_SHOW_CAMERA_LIST = "show_camera_list"
+SETTING_SHOW_CONTROLS_PANEL = "show_controls_panel"
 
 #: Keyboard PTZ: key -> (dx, dy) with dx > 0 right, dy > 0 up.
 PTZ_KEYS: dict[Qt.Key, tuple[int, int]] = {
@@ -169,6 +173,7 @@ class MainWindow(QMainWindow):
         self._build_account_toolbar()
         self._build_camera_dock()
         self._build_side_dock()
+        self._build_view_menu()
         self.statusBar().showMessage("Ready")
 
         self._tray = None
@@ -220,6 +225,23 @@ class MainWindow(QMainWindow):
 
     def selected_camera_id(self) -> str | None:
         return self._selected
+
+    # ---------------------------------------------------------- side panels
+    def camera_list_visible(self) -> bool:
+        """True while the camera list (left dock) is shown."""
+        return self._panel_actions[SETTING_SHOW_CAMERA_LIST].isChecked()
+
+    def set_camera_list_visible(self, visible: bool) -> None:
+        """Show or hide the camera list and keep the choice (setting ``show_camera_list``)."""
+        self._panel_actions[SETTING_SHOW_CAMERA_LIST].setChecked(bool(visible))
+
+    def controls_panel_visible(self) -> bool:
+        """True while the controls / playback panel (right dock) is shown."""
+        return self._panel_actions[SETTING_SHOW_CONTROLS_PANEL].isChecked()
+
+    def set_controls_panel_visible(self, visible: bool) -> None:
+        """Show or hide the controls panel and keep the choice (setting ``show_controls_panel``)."""
+        self._panel_actions[SETTING_SHOW_CONTROLS_PANEL].setChecked(bool(visible))
 
     # ---------------------------------------------------------- Phase 7: sorting and renaming
     def camera_sort(self) -> str:
@@ -331,15 +353,16 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, bar)
         menu = QMenu(self)
         menu.setObjectName("accountMenu")
+        # Two sections, Tapo first. A section header is a separator with text: it can not be clicked.
+        menu.addSection("Tapo").setObjectName("accountTapoHeader")
         self._sign_in_action = menu.addAction("Sign in\u2026")
         self._sign_in_action.triggered.connect(lambda _checked=False: self.show_sign_in())
-        menu.addSeparator()
         self._refresh_action = menu.addAction("Refresh cameras")
         self._refresh_action.setToolTip("Reload the camera list and find the cameras on this network")
         self._refresh_action.triggered.connect(lambda _checked=False: self._refresh_cameras())
         self._sign_out_action = menu.addAction("Sign out")
         self._sign_out_action.triggered.connect(lambda _checked=False: self._sign_out())
-        menu.addSeparator()
+        menu.addSection("Kami").setObjectName("accountKamiHeader")
         self._kami_sign_in_action = menu.addAction("Kami account\u2026")
         self._kami_sign_in_action.setObjectName("kamiSignInAction")
         self._kami_sign_in_action.triggered.connect(lambda _checked=False: self.show_kami_sign_in())
@@ -435,6 +458,33 @@ class MainWindow(QMainWindow):
         dock.setWidget(tabs)
         dock.setMinimumWidth(300)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+    def _build_view_menu(self) -> None:
+        """``viewMenu``: one checkable entry per side dock. Hiding a dock only gives its width to the grid
+        (decode sizes are fixed per quality, so no stream is started, stopped or restarted)."""
+        menu = self.menuBar().addMenu("&View")
+        menu.setObjectName("viewMenu")
+        self._panel_actions: dict[str, QAction] = {}
+        for key, dock_name, action_name, text, shortcut in (
+                (SETTING_SHOW_CAMERA_LIST, "cameraDock", "toggleCameraListAction", "Camera &list", "Ctrl+B"),
+                (SETTING_SHOW_CONTROLS_PANEL, "sideDock", "toggleControlsPanelAction", "&Controls panel",
+                 "Ctrl+J")):
+            dock = self.findChild(QDockWidget, dock_name)
+            action = menu.addAction(text)
+            action.setObjectName(action_name)
+            action.setCheckable(True)
+            action.setShortcut(QKeySequence(shortcut))
+            action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            action.setToolTip(f"Show or hide the {text.replace('&', '').lower()} ({shortcut})")
+            shown = self._store.get_setting(key, True) is not False  # unset or damaged value = shown
+            action.setChecked(shown)
+            dock.setVisible(shown)
+            action.toggled.connect(lambda checked, d=dock, k=key: self._set_panel(d, k, checked))
+            self._panel_actions[key] = action
+
+    def _set_panel(self, dock: QDockWidget, key: str, shown: bool) -> None:
+        dock.setVisible(shown)
+        self._store.set_setting(key, shown)
 
     @staticmethod
     def _button(parent: QWidget, name: str, text: str, tip: str, slot) -> QPushButton:
