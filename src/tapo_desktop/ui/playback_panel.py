@@ -32,8 +32,9 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.models import RecordingClip
-from tapo_desktop.ui.kami_status import capability_service, control_enabled
+from tapo_desktop.ui.kami_status import control_enabled
 from tapo_desktop.ui.player_window import PlayerWindow
+from tapo_desktop.ui.vendor_status import capability_service, recordings_unsupported_text
 
 PLAYBACK_UNSUPPORTED_TEXT = "Recordings are not supported for this Kami camera"
 
@@ -165,7 +166,8 @@ class PlaybackPanel(QWidget):
             self._status.setText("")
             return
         if not self._playback_supported():
-            self._status.setText(PLAYBACK_UNSUPPORTED_TEXT)
+            cfg = next((c for c in self._ctrl.cameras() if c.id == self._camera_id), None)
+            self._status.setText(recordings_unsupported_text(cfg, PLAYBACK_UNSUPPORTED_TEXT))
             return
         self._status.setText("Loading recordings...")
         self._ctrl.load_recordings(self._camera_id, self._selected_day())

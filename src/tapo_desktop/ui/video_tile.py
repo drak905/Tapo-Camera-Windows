@@ -44,7 +44,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QApplication, QSizePolicy, QWidget
 
 from tapo_desktop.services.remote import REMOTE_CLICK_TO_VIEW
-from tapo_desktop.ui import _theme
+from tapo_desktop.ui import _theme, imou_status
 from tapo_desktop.ui.kami_status import LIVE_VIEW_UNSUPPORTED_TEXT
 
 OVERLAY_TEXT: dict[str, str] = {
@@ -233,6 +233,10 @@ class VideoTile(_SlotWidget):
     def status_text(self) -> str:
         if self._state == "FAILED" and self._reason in REASON_HEADLINES:
             return REASON_HEADLINES[self._reason]
+        if self._state == "FAILED":  # iMou texts ("click to start" / "click to retry"); None for every other reason
+            headline = imou_status.headline_for(self._reason)
+            if headline is not None:
+                return headline
         return OVERLAY_TEXT[self._state]
 
     def waiting_for_click(self) -> bool:

@@ -77,7 +77,10 @@ from PyQt6.QtWidgets import (
 from tapo_desktop.services import camera_names
 from tapo_desktop.services.camera_service import NOT_ON_NETWORK
 from tapo_desktop.services.remote import REMOTE
-from tapo_desktop.ui import _theme, camera_dialog, kami_sign_in_dialog, kami_status, rename_dialog, sign_in_dialog
+from tapo_desktop.ui import (
+    _theme, camera_dialog, imou_dialog, imou_status, kami_sign_in_dialog, kami_status, rename_dialog, sign_in_dialog,
+    vendor_status,
+)
 from tapo_desktop.ui.controls_panel import ControlsPanel
 from tapo_desktop.ui.grid import GRID_SIZES, CameraGrid, validate_grid_size
 from tapo_desktop.ui.playback_panel import PlaybackPanel
@@ -111,7 +114,7 @@ _HIDDEN_TIP = "Not in the current view (right-click or drag it onto a tile to sh
 def camera_row_status(cfg, remote: bool = False) -> str:
     """Status suffix of a camera row: "Offline" (cloud says offline), "Remote" (not on this LAN but
     viewable through the cloud relay: ``remote``), NOT_ON_NETWORK, or ""."""
-    if cfg.source == kami_status.KAMI_SOURCE:  # a Kami camera has no host and is never "on this network"
+    if cfg.source in (kami_status.KAMI_SOURCE, imou_status.IMOU_SOURCE):  # no host: never "on this network"
         return "" if cfg.online else "Offline"
     if not cfg.online:
         return "Offline"
@@ -151,11 +154,12 @@ class CameraListWidget(QListWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller, tray_enabled: bool = True, accounts=None, kami_accounts=None):
+    def __init__(self, controller, tray_enabled: bool = True, accounts=None, kami_accounts=None, imou_accounts=None):
         super().__init__()
         self._ctrl = controller
         self._accounts = accounts
         self._kami = kami_accounts
+        self._imou = imou_accounts
         self._kami_dialog = None
         self._store = controller.config_store
         self._selected: str | None = None
@@ -369,6 +373,8 @@ class MainWindow(QMainWindow):
         self._kami_sign_out_action = menu.addAction("Sign out of Kami")
         self._kami_sign_out_action.setObjectName("kamiSignOutAction")
         self._kami_sign_out_action.triggered.connect(lambda _checked=False: self._kami_sign_out())
+        if self._imou is not None:  # a third section, only when an iMou manager is given
+            self._imou_menu = imou_dialog.ImouMenuSection(self, menu, self._imou, self._store)
         self._account_menu = menu
         button = QToolButton(bar)
         button.setObjectName("accountButton")
@@ -544,7 +550,9 @@ class MainWindow(QMainWindow):
                                    else "No address on this network")
                 if kami_status.is_kami(cfg):  # no host: say what it is and whether the Kami cloud sees it
                     tip = f"{kami_status.list_tooltip(cfg)}, {kami_status.online_label(cfg.online)}"
-                if cfg.model and not kami_status.is_kami(cfg):  # a Kami model is a server code, not a name
+                if imou_status.is_imou(cfg):  # no host: say what it is and whether the iMou cloud sees it
+                    tip = f"{imou_status.list_tooltip(cfg)}, {imou_status.online_label(cfg.online)}"
+                if cfg.model and not kami_status.is_kami(cfg) and not imou_status.is_imou(cfg):  # server codes, not names
                     tip = f"{cfg.model} - {tip}"
                 if cfg.source == "cloud":
                     uses = getattr(self._ctrl, "uses_local_token", None)
@@ -635,6 +643,9 @@ class MainWindow(QMainWindow):
         cfg = next((c for c in self._ctrl.cameras() if c.id == self._selected), None)
         if cfg is None:
             return
+        if imou_status.is_imou(cfg):  # nothing to edit: the list comes from the iMou connection
+            self.statusBar().showMessage(imou_status.EDIT_TEXT, _STATUS_MS)
+            return
         dialog = camera_dialog.CameraDialog(self, cfg)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             config, cloud, camera = dialog.result_values()
@@ -722,8 +733,13 @@ class MainWindow(QMainWindow):
         """The KamiAccountManager given to ``__init__`` (None = no Kami entries enabled)."""
         return self._kami
 
+    @property
+    def imou_accounts(self):
+        """The ImouAccountManager given to ``__init__`` (None = no iMou entries)."""
+        return self._imou
+
     def _ptz_supported(self, camera_id: str) -> bool:
-        return kami_status.control_enabled(kami_status.capability_service(self._config(camera_id)), "ptz")
+        return kami_status.control_enabled(vendor_status.capability_service(self._config(camera_id)), "ptz")
 
     def show_kami_sign_in(self) -> bool:
         """Run the KamiSignInDialog modally; True when the user signed in. The chosen country is remembered."""
