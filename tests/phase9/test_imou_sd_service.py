@@ -500,7 +500,7 @@ def test_playback_at_the_cap_is_refused_and_no_other_camera_is_displaced(cloud, 
     live_sup = FakeSup.instances[0]
     with pytest.raises(ImouError) as err:
         play(service(), Rec(), wall(8))
-    assert "already running" in str(err.value)
+    assert "at once (limit)" in str(err.value)  # requirement change: the cap text no longer says "Stop one first"
     assert live_sup.stopped == 0 and rt.owner("imou:MOCKSERIAL0002") == "live" and rt.owner(CID) is None
     assert not [p for p in urls_asked(cloud) if p["businessType"] == "localRecord"]
 
