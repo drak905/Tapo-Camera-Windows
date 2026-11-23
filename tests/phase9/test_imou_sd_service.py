@@ -395,7 +395,7 @@ def test_pause_stops_the_stream_and_resume_asks_for_a_new_url_at_the_position(cl
     assert len(urls_asked(cloud)) == 1
     svc.resume_playback()
     assert wait_for(lambda: len(FakeSup.instances) == 2, 3)
-    assert urls_asked(cloud)[-1]["beginTime"] == wall(8, 0, 4) and FakeSup.instances[1].started
+    assert urls_asked(cloud)[-1]["beginTime"] == wall(8, 0, 4) and wait_for(lambda: FakeSup.instances[1].started, 3)
     assert rt.owner(CID) == "playback"
 
 
