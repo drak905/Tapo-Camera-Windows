@@ -72,9 +72,22 @@ class ImouLiveExistsError(ImouVendorError):
     """LV1001: a live address already exists for this camera."""
 
 
+class ImouNoCardError(ImouVendorError):
+    """DV1049, LD1001, DV2132: no memory card in the camera (or the card has an error)."""
+
+
+class ImouRateError(ImouVendorError):
+    """OP1039: too many requests in this minute (the guard blocks until the next minute only)."""
+
+
 #: Codes after which the RTSP call counts as "refused" (the HLS live address is tried instead).
 RTSP_REFUSED_CODES = frozenset({"OP1005", "OP1012", "OP1015", "DV1019", "DV1026"})
-QUOTA_CODES = frozenset({"FL1002", "FL1004", "FL1005", "OP1013", "OP1014"})
+QUOTA_CODES = frozenset({"FL1002", "FL1004", "FL1005", "OP1013", "OP1014", "OP1040"})
+NO_CARD_CODES = frozenset({"DV1049", "LD1001", "DV2132"})
+NO_LIST_CODES = frozenset({"DV2003", "DV2001", "DV2116"})  # the camera does not offer record.file.list
+NO_ANSWER_CODES = frozenset({"DV2102", "DV2103", "DV2104"})
+NO_CARD_TEXT = "the camera has no memory card (or the card has an error)"
+RATE_MESSAGE = "too many requests this minute. Try again in a minute."
 AUTH_CODES = frozenset({"SN1001", "SN1003", "SN1004"})
 
 
@@ -93,6 +106,23 @@ def error_for(code: str, msg: str = "") -> ImouError:
         return ImouTokenExpiredError("the access token is no longer valid (TK1002).", code)
     if code == "DV1007":
         return ImouOfflineError("the camera is offline (DV1007).", code)
+    if code in NO_CARD_CODES:
+        return ImouNoCardError(f"{NO_CARD_TEXT} ({code}).", code)
+    if code in NO_LIST_CODES:
+        return ImouVendorError(f"this camera cannot list its recordings through the iMou cloud ({code}).", code)
+    if code in NO_ANSWER_CODES:
+        return ImouVendorError(f"the camera did not answer ({code}).", code)
+    if code == "DV1009":
+        return ImouVendorError("the camera is busy. Try again in a moment (DV1009).", code)
+    if code == "OP1019":
+        return ImouVendorError("no recording at that time (OP1019).", code)
+    if code == "OP1039":
+        return ImouRateError(f"{RATE_MESSAGE} (OP1039)", code)
     if code == "LV1001":
         return ImouLiveExistsError(f"a live address already exists (LV1001). {text}".strip(), code)
     return ImouVendorError(f"{text or 'the request was refused'} ({code})", code)
+
+
+def is_no_card_text(message: str) -> bool:
+    """True when `message` is the "no memory card" text of :class:`ImouNoCardError` (a Refresh is needed to change it)."""
+    return NO_CARD_TEXT in str(message)

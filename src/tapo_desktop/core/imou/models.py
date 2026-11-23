@@ -25,3 +25,11 @@ class ImouLive:
     hls: str = field(repr=False)
     device: str = ""
     channel: str = "0"
+
+
+@dataclass(frozen=True)
+class ImouRecordList:
+    """Files of one day's listing; `truncated` = the page cap or the deadline ended it before the day was complete."""
+
+    files: list
+    truncated: bool = False

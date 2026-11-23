@@ -104,7 +104,7 @@ class ImouCameraService(CameraService):
                 remaining = rt.meter.remaining(cid, limits.daily_seconds)
                 if remaining <= 0:
                     raise ImouError(texts.budget_used(limits.daily_seconds))
-                if not rt.try_acquire(cid, limits.max_live):
+                if not rt.try_acquire(cid, limits.max_live, "live"):
                     raise ImouError(texts.cap_reached(limits.max_live))
                 gen = self._gen
                 self._on_state = on_state
@@ -213,7 +213,7 @@ class ImouCameraService(CameraService):
             except Exception as exc:  # best effort: the address expires by itself; never block a stop
                 log.info("imou: could not delete a live address (%s)", type(exc).__name__)
         if release:
-            rt.release(self.config.id)
+            rt.release(self.config.id, "live")
 
     def _cancel_timer(self) -> None:
         timer, self._timer = self._timer, None

@@ -225,7 +225,7 @@ def test_the_page_cap_and_the_total_deadline_set_the_truncated_flag(cloud, clock
     capped = client.list_local_records(SERIAL, "0", wall(0), wall(23, 59, 59), max_pages=2)
     assert capped.truncated and len(capped.files) == 200 and cloud.count("device.service.invoke") == 2
     cloud.calls.clear()
-    ticks = iter([0.0, 1.0, 100.0, 101.0, 102.0])
+    ticks = iter([0.0, 100.0, 101.0, 102.0])
     late = client.list_local_records(SERIAL, "0", wall(0), wall(23, 59, 59), deadline_s=45.0, now=lambda: next(ticks))
     assert late.truncated and cloud.count("device.service.invoke") == 1
 

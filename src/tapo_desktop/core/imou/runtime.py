@@ -5,7 +5,7 @@
   first-frame timeout);
 * ``meter``: the local "estimate" of live seconds per camera per UTC day (the vendor's own meter is "My Resources" in
   the Open Platform console);
-* the live-slot set: iMou's own cap, separate from every other camera type;
+* the slot map (camera id -> live or playback): iMou's own cap, separate from every other camera type, one stream per camera;
 * ``supervisor_factory``: creates the stream supervisor (a fake in tests).
 Pure Python, thread-safe.
 """
@@ -92,22 +92,39 @@ class ImouRuntime:
             supervisor_factory = make_supervisor
         self.supervisor_factory = supervisor_factory
         self._lock = threading.Lock()
-        self._live: set[str] = set()
+        self._slots: dict[str, str] = {}  # camera id -> "live" | "playback": one stream per camera
 
     def live_ids(self) -> set[str]:
+        """Every camera that holds a slot (live or playback)."""
         with self._lock:
-            return set(self._live)
+            return set(self._slots)
 
-    def try_acquire(self, camera_id: str, cap: int) -> bool:
-        """Take a live slot for ``camera_id`` (idempotent for a camera that already has one)."""
+    def owner(self, camera_id: str) -> str | None:
         with self._lock:
-            if camera_id in self._live:
-                return True
-            if len(self._live) >= max(1, int(cap)):
+            return self._slots.get(camera_id)
+
+    def try_acquire(self, camera_id: str, cap: int, kind: str = "live") -> bool:
+        """Take a slot of ``kind`` for ``camera_id``. Idempotent for the same kind; a camera that holds the other
+        kind is refused (use :meth:`transfer`). One cap counts live and playback together."""
+        with self._lock:
+            held = self._slots.get(camera_id)
+            if held is not None:
+                return held == kind
+            if len(self._slots) >= max(1, int(cap)):
                 return False
-            self._live.add(camera_id)
+            self._slots[camera_id] = kind
             return True
 
-    def release(self, camera_id: str) -> None:
+    def transfer(self, camera_id: str, from_kind: str, to_kind: str) -> bool:
+        """Change the owner of a slot in one step (playback displaces live); False if ``from_kind`` does not hold it."""
         with self._lock:
-            self._live.discard(camera_id)
+            if self._slots.get(camera_id) != from_kind:
+                return False
+            self._slots[camera_id] = to_kind
+            return True
+
+    def release(self, camera_id: str, kind: str | None = None) -> None:
+        """Free the slot; with ``kind`` only when that kind holds it (a late stop of one stream cannot free the other)."""
+        with self._lock:
+            if kind is None or self._slots.get(camera_id) == kind:
+                self._slots.pop(camera_id, None)

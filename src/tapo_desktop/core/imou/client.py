@@ -26,13 +26,15 @@ from collections.abc import Callable
 from typing import Any
 
 from tapo_desktop.core.imou import regions, signing
+from tapo_desktop.core.imou.clock import parse_wall
 from tapo_desktop.core.imou.crypto import decrypt_stream_url
 from tapo_desktop.core.imou.errors import (
     ImouBlockedError, ImouConnectionError, ImouError, ImouNotAllowedError, ImouProtocolError, ImouTokenExpiredError,
     error_for,
 )
 from tapo_desktop.core.imou.guard import ImouGuard
-from tapo_desktop.core.imou.models import ImouDevice, ImouLive
+from tapo_desktop.core.imou.models import ImouDevice, ImouLive, ImouRecordList
+from tapo_desktop.core.imou.records import parse_files
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +44,15 @@ _STREAM_URL = "/openapi/createVideoDownloadStreamUrl"
 _BIND_LIVE = "/openapi/bindDeviceLive"
 _LIVE_LIST = "/openapi/liveList"
 _UNBIND_LIVE = "/openapi/unbindLive"
-ALLOWED_PATHS = frozenset({_TOKEN, _LIST, _STREAM_URL, _BIND_LIVE, _LIVE_LIST, _UNBIND_LIVE})
+#: One path that runs any device capability: it is only allowed together with a ``serviceId`` in ``ALLOWED_SERVICES``.
+_INVOKE = "/openapi/v2/device.service.invoke"
+ALLOWED_PATHS = frozenset({_TOKEN, _LIST, _STREAM_URL, _BIND_LIVE, _LIVE_LIST, _UNBIND_LIVE, _INVOKE})
+ALLOWED_SERVICES = frozenset({"record.file.list"})
+#: ``createVideoDownloadStreamUrl`` is only ever used for live view and memory-card playback, never cloud recordings.
+ALLOWED_BUSINESS_TYPES = frozenset({"real", "localRecord"})
+LIST_LIMIT = 100        # rows per page (the vendor allows 30..100)
+MAX_LIST_PAGES = 30     # shortcut: 3000 files per day at most; raise it if a camera records more files than that
+LIST_DEADLINE_S = 45.0
 
 PAGE_SIZE = 50
 MAX_PAGES = 4  # shortcut: at most 200 devices in v1; raise it if someone has more cameras than that
@@ -143,6 +153,48 @@ class ImouClient:
         """Delete a live address that this app created."""
         self._authed(_UNBIND_LIVE, {"liveToken": live_token})
 
+    def list_local_records(self, serial: str, channel: str, begin: str, end: str, *,
+                           deadline_s: float = LIST_DEADLINE_S, max_pages: int = MAX_LIST_PAGES,
+                           now: Callable[[], float] = time.monotonic) -> ImouRecordList:
+        """The memory-card files between two vendor time texts (``record.file.list``). The window slides forward while
+        a page is full; no retry. ``truncated`` is set when the page cap or the total deadline ended the listing."""
+        if parse_wall(begin) is None or parse_wall(end) is None:
+            raise ValueError("begin and end must be YYYY-MM-DD HH:mm:ss")
+        started, pages, current, truncated = now(), 0, begin, False
+        files: list = []
+        while True:
+            if pages and (pages >= max_pages or now() - started > deadline_s):
+                truncated = True
+                break
+            pages += 1
+            data = self._authed(_INVOKE, {"deviceId": serial, "channelId": str(channel), "serviceId": "record.file.list",
+                                          "inputData": {"type": "0", "beginTime": current, "endTime": end,
+                                                        "limit": LIST_LIMIT}})
+            out = data.get("outputData")
+            rows = out.get("records") if isinstance(out, dict) else None
+            if not isinstance(out, dict) or not (rows is None or isinstance(rows, list)):
+                raise ImouProtocolError("the recording list has an unexpected shape")
+            rows = rows or []
+            page = parse_files(rows)
+            files.extend(page)
+            latest = max((f.end for f in page), default="")
+            if len(rows) < LIST_LIMIT or latest <= current or latest >= end:
+                break
+            current = latest
+        log.info("imou recording list: %d page(s), %d file(s)%s", pages, len(files), ", cut short" if truncated else "")
+        return ImouRecordList(files=sorted(set(files), key=lambda f: (f.begin, f.end, f.stream_type)), truncated=truncated)
+
+    def create_playback_url(self, serial: str, channel: str, begin: str, end: str, stream_type: str = "0") -> str:
+        """Temporary RTSP address of a memory-card recording between two vendor time texts. A secret. No fallback."""
+        if parse_wall(begin) is None or parse_wall(end) is None:
+            raise ValueError("begin and end must be YYYY-MM-DD HH:mm:ss")
+        data = self._authed(_STREAM_URL, {"deviceId": serial, "channelId": str(channel), "businessType": "localRecord",
+                                          "streamType": str(stream_type), "beginTime": begin, "endTime": end})
+        url = data.get("url")
+        if not isinstance(url, str) or not url:
+            raise ImouProtocolError("the playback address reply has an unexpected shape")
+        return decrypt_stream_url(url, self.access_token())
+
     # ================================================================== plumbing
     def _fetch_token(self) -> None:
         data = self._call(_TOKEN, {})
@@ -165,6 +217,12 @@ class ImouClient:
     def _call(self, path: str, params: dict) -> dict:
         if path not in ALLOWED_PATHS:
             raise ImouNotAllowedError("this request is not allowed")
+        service = params.get("serviceId")
+        if path == _INVOKE and not (isinstance(service, str) and service in ALLOWED_SERVICES):
+            raise ImouNotAllowedError("this device service is not allowed")
+        kind = params.get("businessType")
+        if path == _STREAM_URL and not (isinstance(kind, str) and kind in ALLOWED_BUSINESS_TYPES):
+            raise ImouNotAllowedError("this stream type is not allowed")
         if self._guard is not None:
             self._guard.check()
         url = self._base + path

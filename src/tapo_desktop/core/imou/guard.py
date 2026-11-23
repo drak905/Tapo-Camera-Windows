@@ -2,6 +2,7 @@
 
 * Quota codes (FL1002/FL1004/FL1005, OP1013/OP1014): all iMou calls stop until the next UTC midnight, with the text
   "free quota used". The state can be saved (``save``) so a restart does not forget it.
+* OP1039 (too many requests this minute): calls stop until the next minute only.
 * Signature / App ID errors (SN1001...): no silent retry; calls stop for 120 s and the user has
   to click Test again.
 Pure Python; the services layer plugs in ``load`` / ``save`` (a settings key).
@@ -14,7 +15,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 from tapo_desktop.core.imou.errors import (
-    AUTH_CODES, AUTH_MESSAGE, QUOTA_CODES, QUOTA_MESSAGE, ImouAuthError, ImouBlockedError, ImouError, ImouQuotaError,
+    AUTH_CODES, AUTH_MESSAGE, QUOTA_CODES, QUOTA_MESSAGE, RATE_MESSAGE, ImouAuthError, ImouBlockedError, ImouError,
+    ImouQuotaError, ImouRateError,
 )
 
 AUTH_BLOCK_SECONDS = 120.0
@@ -62,6 +64,8 @@ class ImouGuard:
             return
         if isinstance(exc, ImouQuotaError) or exc.code in QUOTA_CODES:
             self._set(next_utc_midnight(self._clock()), QUOTA_MESSAGE)
+        elif isinstance(exc, ImouRateError):  # OP1039: a per-minute limit, not a day block
+            self._set((int(self._clock() // 60) + 1) * 60.0, RATE_MESSAGE)
         elif isinstance(exc, ImouAuthError) and exc.code in AUTH_CODES:
             self._set(self._clock() + AUTH_BLOCK_SECONDS, AUTH_MESSAGE)
 
