@@ -489,8 +489,9 @@ def test_imou_selection_disables_controls_and_calls_no_service(make_env, qtbot):
     assert not any(g.isEnabled() for g in panel.findChildren(QGroupBox))
     assert not playback.findChild(QObject, "playButton").isEnabled()
     assert not playback.findChild(QObject, "downloadButton").isEnabled()
+    # requirement change: iMou recordings are built; the panel shows the Refresh hint, not "not supported"
     text = playback.findChild(QObject, "downloadStatus").text().lower()
-    assert "not supported" in text and "imou" in text and "kami" not in text
+    assert "press refresh" in text and "imou" in text and "kami" not in text and "not supported" not in text
     window._select("lan0", force=True)
     qtbot.wait(100)
     assert all(g.isEnabled() for g in panel.findChildren(QGroupBox))
