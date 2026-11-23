@@ -311,7 +311,8 @@ def test_own_cap_of_two_live_streams(cloud, clock):
         start(c, Rec())
     assert "2" in str(err.value) and len(cloud.calls) == calls  # refused before any cloud call
     a.stop_stream()
-    start(c, Rec())
+    # requirement change: nothing queues for a free slot; the tile that got the cap text starts on a click
+    c.start_stream(StreamQuality.SD, 640, 360, lambda f: None, lambda s, r=None: None, preempt=True)
     assert rt.live_ids() == {"imou:MOCKSERIAL0002", "imou:MOCKSERIAL0003"}
 
 
