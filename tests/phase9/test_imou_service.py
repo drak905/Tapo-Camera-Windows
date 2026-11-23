@@ -442,7 +442,6 @@ def test_no_log_record_holds_a_live_url_or_secret(cloud, clock, caplog):
     start(svc, Rec())
     FakeSup.instances[0].emit("FAILED", f"boom {FakeSup.instances[0].kw['url']}")
     cloud.fail("createVideoDownloadStreamUrl", "DV1019")
-    start(svc, rec)
     # requirement change: the tile asks for a click after a lost stream or a refusal, so this second start is a click
     svc.start_stream(StreamQuality.SD, 640, 360, lambda f: None, lambda s, r=None: None, preempt=True)
     FakeSup.instances[1].emit("FAILED", "x")
