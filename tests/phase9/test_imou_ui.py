@@ -400,14 +400,14 @@ def test_an_imou_tile_that_leaves_the_view_stops_and_starts_again_when_it_comes_
     assert env.called("start_view")[-1][1] == "imou:A"
 
 
-def test_tapo_tiles_still_start_by_themselves_next_to_an_imou_tile(make_env, qtbot):
+def test_tapo_tiles_start_by_themselves_and_so_does_the_imou_tile_next_to_them(make_env, qtbot):
+    # requirement change: the iMou tile in the middle starts too; the Tapo calls are exactly as before
     env = make_env([lan_cfg(0), imou_cfg("A", "iMou A"), lan_cfg(1)])
     window = make_window(qtbot, env)
-    qtbot.waitUntil(lambda: len(env.called("start_view")) >= 2, timeout=3000)
+    qtbot.waitUntil(lambda: len(env.called("start_view")) >= 3, timeout=3000)
     qtbot.wait(200)
-    assert sorted(c[1] for c in env.called("start_view")) == ["lan0", "lan1"]
+    assert sorted(c[1] for c in env.called("start_view")) == ["imou:A", "lan0", "lan1"]
     assert {c[2:] for c in env.called("start_view")} == {(StreamQuality.SD, 640, 360)}
-    assert "imou:A" not in env.built
 
 
 def test_plan_streams_for_a_tapo_only_config_is_unchanged():
