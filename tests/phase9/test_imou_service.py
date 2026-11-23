@@ -105,11 +105,11 @@ def wait_for(cond, timeout=5.0):
 
 
 # ------------------------------------------------------------------------------------------ not supported
-def test_capability_flags_only_live_view_is_on():
+def test_capability_flags_only_live_view_and_playback_are_on():
     from tapo_desktop.services.imou_camera_service import ImouCameraService as S
 
-    assert S.supports_live_view is True
-    for flag in ("supports_ptz", "supports_controls", "supports_playback", "supports_events", "supports_rename"):
+    assert S.supports_live_view is True and S.supports_playback is True  # memory-card playback (requirement change)
+    for flag in ("supports_ptz", "supports_controls", "supports_events", "supports_rename"):
         assert getattr(S, flag) is False, flag
 
 
@@ -128,13 +128,13 @@ def test_every_other_action_says_not_supported_for_imou():
         "set_day_night": lambda: svc.set_day_night(DayNightMode.AUTO), "set_led": lambda: svc.set_led(True),
         "set_alarm": lambda: svc.set_alarm(True), "set_motion_detection": lambda: svc.set_motion_detection(True),
         "days_with_recordings": lambda: svc.days_with_recordings(date(2024, 1, 1), date(2024, 1, 2)),
-        "recordings_for_day": lambda: svc.recordings_for_day(date(2024, 1, 1)),
         "download_recording": lambda: svc.download_recording(
             RecordingClip(None, None), __import__("pathlib").Path("x.mp4")),
-        "start_playback": lambda: svc.start_playback(0, 1, 640, 360, None, None, None),
         "rename": lambda: svc.rename("x"),
     }
-    handled = set(calls) | {"connect", "start_stream", "stop_stream", "start_events", "stop_events", "close"}
+    # recordings_for_day and start_playback are built now (test_imou_sd_service.py): requirement change
+    handled = set(calls) | {"connect", "start_stream", "stop_stream", "start_events", "stop_events", "close",
+                            "recordings_for_day"}
     assert set(CameraService.__abstractmethods__) <= handled  # no abstract method is left out
     for name, call in calls.items():
         with pytest.raises(ImouUnsupportedError) as err:
