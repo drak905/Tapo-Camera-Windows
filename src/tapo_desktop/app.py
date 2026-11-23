@@ -118,6 +118,7 @@ def _build(app, store, data_dir, *, interactive: bool):
     from tapo_desktop.core.auth.vault import CredentialVault
     from tapo_desktop.services.account import AccountManager
     from tapo_desktop.services.controller import AppController
+    from tapo_desktop.services.imou_account import ImouAccountManager
     from tapo_desktop.services.kami_account import KamiAccountManager
     from tapo_desktop.ui import _theme
     from tapo_desktop.ui.main_window import MainWindow
@@ -131,7 +132,14 @@ def _build(app, store, data_dir, *, interactive: bool):
     controller = AppController(store, CredentialVault(data_dir / "vault.json"))
     accounts = AccountManager(controller, parent=controller)
     kami_accounts = KamiAccountManager(controller, controller.vault, store, parent=controller)
-    window = MainWindow(controller, tray_enabled=interactive, accounts=accounts, kami_accounts=kami_accounts)
+    imou_accounts = ImouAccountManager(controller, controller.vault, store, parent=controller)
+    if interactive:  # the iMou tiles start with the window, so the connection (from the vault, no network call) comes first
+        try:
+            imou_accounts.restore()
+        except Exception:
+            log.exception("restoring the iMou connection failed")
+    window = MainWindow(controller, tray_enabled=interactive, accounts=accounts, kami_accounts=kami_accounts,
+                        imou_accounts=imou_accounts)
     return window, controller, accounts
 
 
@@ -149,6 +157,12 @@ def _start_account(window, accounts) -> None:
             kami.restore_session()
         except Exception:  # a broken vault/config must not keep the app from starting
             log.exception("restoring the Kami session failed")
+    imou = getattr(window, "imou_accounts", None)
+    if imou is not None:  # rebuilds the iMou connection from the vault in memory: no network call at start-up
+        try:
+            imou.restore()
+        except Exception:
+            log.exception("restoring the iMou connection failed")
     try:
         if accounts.restore_session():
             return

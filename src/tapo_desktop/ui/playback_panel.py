@@ -32,8 +32,9 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.models import RecordingClip
-from tapo_desktop.ui.kami_status import capability_service, control_enabled
+from tapo_desktop.ui.kami_status import control_enabled
 from tapo_desktop.ui.player_window import PlayerWindow
+from tapo_desktop.ui.vendor_status import capability_service, playback_profile, recordings_unsupported_text
 
 PLAYBACK_UNSUPPORTED_TEXT = "Recordings are not supported for this Kami camera"
 
@@ -53,6 +54,7 @@ class PlaybackPanel(QWidget):
         self._ctrl = controller
         self._camera_id: str | None = None
         self._download_camera: str | None = None
+        self._from_cache = False  # a list shown from the profile's cache must not renew the cache
         self._players: dict[str, PlayerWindow] = {}  # open playback windows, one per camera
 
         root = QVBoxLayout(self)
@@ -66,11 +68,11 @@ class PlaybackPanel(QWidget):
         self._date.setDisplayFormat("yyyy-MM-dd")
         self._date.setDate(QDate.currentDate())
         self._date.setMaximumDate(QDate.currentDate().addDays(1))
-        self._date.dateChanged.connect(self._reload)
+        self._date.dateChanged.connect(self._on_day_changed)
         row.addWidget(self._date, 1)
         self._refresh = QPushButton("Refresh", self)
         self._refresh.setObjectName("refreshRecordingsButton")
-        self._refresh.clicked.connect(self._reload)
+        self._refresh.clicked.connect(self._on_refresh_clicked)
         row.addWidget(self._refresh)
         root.addLayout(row)
 
@@ -158,17 +160,50 @@ class PlaybackPanel(QWidget):
     def _selected_day(self) -> date:
         return self._date.date().toPyDate()
 
-    def _reload(self) -> None:
+    def _on_day_changed(self, *_args) -> None:
+        self._reload()
+
+    def _on_refresh_clicked(self, *_args) -> None:
+        self._reload(refresh=True)
+
+    def _reload(self, refresh: bool = False) -> None:
         self._list.clear()
         self._update_buttons()
         if self._camera_id is None:
             self._status.setText("")
             return
         if not self._playback_supported():
-            self._status.setText(PLAYBACK_UNSUPPORTED_TEXT)
+            cfg = next((c for c in self._ctrl.cameras() if c.id == self._camera_id), None)
+            self._status.setText(recordings_unsupported_text(cfg, PLAYBACK_UNSUPPORTED_TEXT))
+            return
+        profile = self._profile(self._camera_id)
+        if profile is not None and profile.on_demand_list and self._profile_idle(profile, refresh):
             return
         self._status.setText("Loading recordings...")
         self._ctrl.load_recordings(self._camera_id, self._selected_day())
+
+    def _profile(self, camera_id: str | None):
+        """The playback profile of a camera that is read on demand (iMou), else None (Tapo and Kami: unchanged)."""
+        return playback_profile(next((c for c in self._ctrl.cameras() if c.id == camera_id), None))
+
+    def _profile_idle(self, profile, refresh: bool) -> bool:
+        """True = the cached answer, or the hint, is shown instead of asking the camera (only Refresh asks)."""
+        if refresh:
+            profile.cache.forget(self._camera_id)
+            return False
+        day = self._selected_day()
+        hit = profile.cache.get(self._camera_id, day)
+        if hit is None:
+            self._status.setText(profile.hint_text)
+        elif hit.error:
+            self._status.setText(f"Could not load recordings: {hit.error}")
+        else:
+            self._from_cache = True
+            try:
+                self._on_recordings(self._camera_id, day, hit.clips)
+            finally:
+                self._from_cache = False
+        return True
 
     def _download(self) -> None:
         item = self._list.currentItem()
@@ -186,6 +221,9 @@ class PlaybackPanel(QWidget):
 
     # ------------------------------------------------------------------ controller signals
     def _on_recordings(self, camera_id: str, day: object, clips: list) -> None:
+        profile = self._profile(camera_id)
+        if profile is not None and not self._from_cache:
+            profile.cache.put_clips(camera_id, day, clips)  # type: ignore[arg-type]
         if camera_id != self._camera_id or day != self._selected_day():
             return  # stale answer for another camera/day
         self._list.clear()
@@ -197,10 +235,16 @@ class PlaybackPanel(QWidget):
             self._list.addItem(item)
         if self._download_camera is None:
             self._status.setText(f"{len(clips)} recording(s)" if clips else "No recordings on this day")
+            note = profile.note(camera_id) if profile is not None else ""
+            if note and clips:
+                self._status.setText(f"{self._status.text()}. {note}")
         self._update_buttons()
 
     def _on_failed(self, camera_id: str, action: str, message: str) -> None:
         if camera_id == self._camera_id and action == "load_recordings":
+            profile = self._profile(camera_id)
+            if profile is not None and profile.is_no_card(message):
+                profile.cache.put_no_card(camera_id, message)  # remembered until Refresh
             self._status.setText(f"Could not load recordings: {message}")
 
     def _on_progress(self, camera_id: str, value: float) -> None:
@@ -234,6 +278,9 @@ class PlaybackPanel(QWidget):
     def _update_buttons(self) -> None:
         busy = self._download_camera is not None
         selected = self._camera_id is not None and self._list.currentItem() is not None
-        self._button.setEnabled(not busy and selected)
+        profile = self._profile(self._camera_id)
+        allow_download = profile is None or profile.allow_download
+        self._button.setEnabled(not busy and selected and allow_download)
+        self._button.setToolTip("" if allow_download else profile.no_download_text)
         self._play_button.setEnabled(selected)
         self._refresh.setEnabled(self._camera_id is not None and self._playback_supported())

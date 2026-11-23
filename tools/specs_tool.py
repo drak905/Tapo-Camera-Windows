@@ -4,6 +4,7 @@ Usage:
     python tools/specs_tool.py merge     # writes specs/tapo_protocol_spec.json
     python tools/specs_tool.py verify    # Gate 1; exit code 0 = pass
     python tools/specs_tool.py merge-kami  # writes specs/kami_protocol_spec.json only (Tapo file untouched)
+    python tools/specs_tool.py merge-imou  # writes specs/imou_protocol_spec.json only (other files untouched)
 
 Gate 1 rules
   * every item has id, kind, description, confidence in {verified, inferred, external}
@@ -52,6 +53,11 @@ KAMI_LANES = {
 }
 KAMI_MERGED = SPECS / "kami_protocol_spec.json"
 KAMI_PREFIX = "kami."
+# iMou Open Platform (official public API, route A): documentation evidence only, no app decompile
+IMOU_LANES = {"api": "imou_spec.json"}
+IMOU_MERGED = SPECS / "imou_protocol_spec.json"
+IMOU_PREFIX = "imou."
+IMOU_NO_JADX = ROOT / "artifacts" / "jadx_imou" / "sources"  # never exists: iMou items cite documentation, not a decompile
 CONFIDENCE = {"verified", "inferred", "external"}
 
 
@@ -94,6 +100,10 @@ def merge_kami() -> dict:
     return _merge(KAMI_LANES, "kami_protocol_spec", KAMI_MERGED)
 
 
+def merge_imou() -> dict:
+    return _merge(IMOU_LANES, "imou_protocol_spec", IMOU_MERGED)
+
+
 def _check(data: dict, jadx: Path, prefix: str | None = None) -> list[str]:
     """Gate 1 for one vendor. prefix=KAMI_PREFIX: ids must start with it; None: ids must not."""
     errors: list[str] = []
@@ -104,8 +114,8 @@ def _check(data: dict, jadx: Path, prefix: str | None = None) -> list[str]:
         iid = it.get("id", "<missing id>")
         if prefix is not None and not str(iid).startswith(prefix):
             errors.append(f"{iid}: id must start with {prefix!r}")
-        if prefix is None and str(iid).startswith(KAMI_PREFIX):
-            errors.append(f"{iid}: Tapo lane id must not use the {KAMI_PREFIX!r} prefix")
+        if prefix is None and str(iid).startswith((KAMI_PREFIX, IMOU_PREFIX)):
+            errors.append(f"{iid}: Tapo lane id must not use a vendor prefix ({KAMI_PREFIX!r}, {IMOU_PREFIX!r})")
         for key in ("id", "kind", "description", "confidence"):
             if not it.get(key):
                 errors.append(f"{iid}: missing {key}")
@@ -144,6 +154,8 @@ def verify() -> list[str]:
     errors = _check(json.loads(MERGED.read_text(encoding="utf-8")), JADX)
     if KAMI_MERGED.is_file():  # Kami lanes are optional; absent file = Tapo-only output, unchanged
         errors += _check(json.loads(KAMI_MERGED.read_text(encoding="utf-8")), kami_jadx(), KAMI_PREFIX)
+    if IMOU_MERGED.is_file():  # iMou lane is optional too; its evidence is documentation, so no JADX tree is read
+        errors += _check(json.loads(IMOU_MERGED.read_text(encoding="utf-8")), IMOU_NO_JADX, IMOU_PREFIX)
     return errors
 
 
@@ -155,6 +167,9 @@ if __name__ == "__main__":
     if cmd in ("merge", "merge-kami") and all((SPECS / n).is_file() for n in KAMI_LANES.values()):
         mk = merge_kami()
         print(f"merged {len(mk['items'])} items -> {KAMI_MERGED.relative_to(ROOT)}")
+    if cmd in ("merge", "merge-imou") and all((SPECS / n).is_file() for n in IMOU_LANES.values()):
+        mi = merge_imou()
+        print(f"merged {len(mi['items'])} items -> {IMOU_MERGED.relative_to(ROOT)}")
     errs = verify()
     if errs:
         print(f"GATE 1 FAIL: {len(errs)} problem(s)")

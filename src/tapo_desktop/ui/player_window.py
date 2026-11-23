@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tapo_desktop.models import RecordingClip
+from tapo_desktop.ui.vendor_status import playback_profile
 
 __all__ = ["PlaybackTimeline", "PlayerWindow", "SPEED_ITEMS", "local_day_range"]
 
@@ -240,6 +241,9 @@ class PlayerWindow(QWidget):
         self._position: float | None = None
         self._image: QImage | None = None
         self._download_busy = False
+        # a camera whose recordings are read on demand (iMou) plays at 1x, has no download and keeps a short list cache
+        self._profile = playback_profile(controller.camera(camera_id) if hasattr(controller, "camera") else None)
+        self._from_cache = False
         self.snapshot_folder: pathlib.Path | None = None  # None = the default snapshot folder
         self._build()
         self.setWindowTitle(f"Playback - {self._camera_name()}")
@@ -309,7 +313,11 @@ class PlayerWindow(QWidget):
         self._speed.setObjectName("speedCombo")
         self._speed.setToolTip("Playback speed")
         for label, scale in SPEED_ITEMS:
-            self._speed.addItem(label, scale)
+            if self._profile is None or scale in self._profile.speeds:
+                self._speed.addItem(label, scale)
+        if self._profile is not None:
+            self._speed.setEnabled(False)
+            self._speed.setToolTip(self._profile.speed_tip)
         self._speed.currentIndexChanged.connect(self._on_speed)
         row.addWidget(self._speed)
         row.addSpacing(12)
@@ -323,6 +331,8 @@ class PlayerWindow(QWidget):
         row.addStretch(1)
         self._snap = self._button("Snapshot", "snapshotButton", self._snapshot, row)
         self._download = self._button("Download clip...", "downloadClipButton", self._download_clip, row)
+        if self._profile is not None and not self._profile.allow_download:
+            self._download.setToolTip(self._profile.no_download_text)
         root.addLayout(row)
 
     def _button(self, text: str, name: str, slot, row: QHBoxLayout) -> QPushButton:
@@ -507,7 +517,27 @@ class PlayerWindow(QWidget):
         self._awaiting_clips = True
         self._set_clips([])
         self._set_status("Loading recordings...")
+        if self._profile_cached():
+            return
         self._ctrl.load_recordings(self._camera_id, self._day)
+
+    def _profile_cached(self) -> bool:
+        """A fresh list for this day (60 s), or the remembered "no memory card", is used without asking the camera."""
+        if self._profile is None:
+            return False
+        hit = self._profile.cache.get(self._camera_id, self._day)
+        if hit is None:
+            return False
+        if hit.error:
+            self._awaiting_clips = False
+            self._set_status(f"Could not load recordings: {hit.error}")
+        else:
+            self._from_cache = True
+            try:
+                self._on_recordings(self._camera_id, self._day, hit.clips)
+            finally:
+                self._from_cache = False
+        return True
 
     def _on_date_changed(self, qdate: QDate) -> None:
         day = qdate.toPyDate()
@@ -527,6 +557,8 @@ class PlayerWindow(QWidget):
         self._load_day()
 
     def _on_recordings(self, camera_id: str, day: object, clips: list) -> None:
+        if self._profile is not None and not self._from_cache and camera_id == self._camera_id:
+            self._profile.cache.put_clips(camera_id, day, clips)  # type: ignore[arg-type]
         if camera_id != self._camera_id or day != self._day:
             return
         self._set_clips(list(clips))
@@ -539,11 +571,17 @@ class PlayerWindow(QWidget):
             self._video.set_message("No recordings on this day")
             self._update_controls()
             return
+        if self._profile is not None and start is None:  # a day picked in the window: no stream before a click
+            self._set_status(f"{len(self._clips)} recording(s). Press Play.")
+            self._update_controls()
+            return
         self._play_at(start if start is not None else self._clips[0].start.timestamp())
 
     def _on_command_failed(self, camera_id: str, action: str, message: str) -> None:
         if camera_id != self._camera_id:
             return
+        if self._profile is not None and action == "load_recordings" and self._profile.is_no_card(message):
+            self._profile.cache.put_no_card(camera_id, message)  # remembered until Refresh
         if action == "load_recordings" and self._awaiting_clips:
             self._awaiting_clips = False
             self._set_status(f"Could not load recordings: {message}")
@@ -621,7 +659,8 @@ class PlayerWindow(QWidget):
         self._play.setEnabled(has_clips or self._active)
         self._prev.setEnabled(has_clips)
         self._next.setEnabled(has_clips)
-        self._download.setEnabled(has_clips and not self._download_busy)
+        self._download.setEnabled(has_clips and not self._download_busy
+                                  and (self._profile is None or self._profile.allow_download))
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Closing the window ends the playback session."""

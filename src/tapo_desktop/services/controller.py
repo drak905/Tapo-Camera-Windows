@@ -694,6 +694,10 @@ class AppController(QObject):
             from tapo_desktop.services.kami_camera_service import KamiCameraService
 
             return KamiCameraService(config, self._vault)
+        if config.source == "imou":  # the one iMou seam (route A, watch only); everything else is a Tapo camera
+            from tapo_desktop.services.imou_camera_service import ImouCameraService
+
+            return ImouCameraService(config, self._vault)
         from tapo_desktop.services.camera_service import TapoCameraService
 
         with self._factory_lock:

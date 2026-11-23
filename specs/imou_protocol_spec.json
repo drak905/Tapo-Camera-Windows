@@ -1,0 +1,400 @@
+{
+  "spec_id": "imou_protocol_spec",
+  "spec_version": 1,
+  "apk": null,
+  "lanes": {
+    "api": {
+      "source_file": "specs/imou_spec.json",
+      "summary": "iMou Open Platform (official, public HTTP API; route A of the iMou study). Every item cites a public documentation page of open.imoulife.com (international) or open.imou.com (mainland China docs of the same API), not an app decompile. Nothing here comes from the Imou Life app. Items marked 'inferred' name a call whose own page could not be fetched.",
+      "item_count": 20
+    }
+  },
+  "items": [
+    {
+      "id": "imou.sign.algorithm",
+      "kind": "signing",
+      "description": "Request signature: password = lowercase hex SHA-256(appSecret); sign = Base64(HMAC-SHA256(key = password, msg = 'time:<time>,nonce:<nonce>,appSecret:<appSecret>')). time = Unix seconds within 5 minutes of the server (SN1002); nonce unique for 5 minutes (SN1005).",
+      "value": {
+        "hash": "HMAC-SHA256",
+        "key": "SHA256-hex-lower(appSecret)",
+        "template": "time:{time},nonce:{nonce},appSecret:{appSecret}",
+        "encoding": "Base64"
+      },
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/03.apiExample.html",
+          "snippet": "calc_sign: password = sha256(app_secret).hexdigest().lower(); hmac.new(password, sign_template, sha256)"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.sign.vector",
+      "kind": "test_vector",
+      "description": "The vendor's own verification sample: time 1706511734, nonce f5a1ae2d-c09c-4d39-a744-83a5c2c653c2, appSecret test123456789test123456789 gives sign xjhCQBoJ9hRDsCjyDcHjtDNzRZ3ZJezcawsfWeiaoxU=. Used as a unit test.",
+      "value": {
+        "time": 1706511734,
+        "nonce": "f5a1ae2d-c09c-4d39-a744-83a5c2c653c2",
+        "appSecret": "test123456789test123456789",
+        "sign": "xjhCQBoJ9hRDsCjyDcHjtDNzRZ3ZJezcawsfWeiaoxU="
+      },
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/03.apiExample.html",
+          "snippet": "Official verification sample ... expected sign=xjhCQBoJ9hRDsCjyDcHjtDNzRZ3ZJezcawsfWeiaoxU="
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.request.envelope",
+      "kind": "request",
+      "description": "POST https://openapi-<dc>.easy4ip.com/openapi/<method>, Content-Type application/json;charset=UTF-8, body {system:{ver:'1.0', appId, sign, time, nonce}, id:<uuid>, params:{...}}. The accessToken goes inside params.token. Replies are {result:{code:'0'|<vendor code>, msg, data}, id}; HTTP 200 can carry a non-zero code.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/03.apiExample.html",
+          "snippet": "body_obj = {system: {ver, appId, sign, time, nonce}, id: request_id, params: {}}"
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/04.codes.html",
+          "snippet": "HTTP 200 can still carry a non-zero business code; trust result.code in the body."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.hosts",
+      "kind": "endpoint",
+      "description": "Overseas data centers: Singapore openapi-sg.easy4ip.com, Frankfurt openapi-fk.easy4ip.com, Oregon openapi-or.easy4ip.com (the data center is shown in the console under My information and must match the portal where the app was made). The client allows only these three hosts.",
+      "value": {
+        "sg": "openapi-sg.easy4ip.com",
+        "fk": "openapi-fk.easy4ip.com",
+        "or": "openapi-or.easy4ip.com"
+      },
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://skillhub.360.com/skills/imou-openplatform/imou-device-video",
+          "snippet": "East Asia https://openapi-sg.easy4ip.com:443; Central Europe ...-fk...; Western America ...-or..."
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/01.index.html",
+          "snippet": "Server-side calls use the data-center host https://openapi-[DataCenter].easy4ip.com."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.token.access",
+      "kind": "request",
+      "description": "accessToken: params {} returns {accessToken:'At_...', expireTime:<seconds left>}; valid 3 days; refresh when about to expire or on TK1002; do not call often. Needs appId + appSecret only.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/02.accessToken.html",
+          "snippet": "The obtained accessToken is valid for 3 days ... or the interface error TK1002 is reported."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.devices.list",
+      "kind": "request",
+      "description": "listDeviceDetailsByPage: params {token, pageSize 1..50, page >= 1}; reply data {count, deviceList[{deviceId, deviceName, deviceStatus online|offline|sleep|upgrading, deviceModel, channelList[{channelId, channelStatus}]}]}. Only devices bound to the developer account are listed.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imou.com/document/pages/683248/",
+          "snippet": "pageSize int 1-50; deviceList[].deviceStatus online/offline/sleep/upgrading"
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/03-guides/02.device-access/01.integrate-camera.html",
+          "snippet": "A device that only shows up in the consumer app is invisible to OpenAPI."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.live.rtsp",
+      "kind": "request",
+      "description": "createVideoDownloadStreamUrl: params {token (administrator), deviceId, channelId, businessType 'real', streamType '0' main | '1' sub}; reply data.url is the RTSP address, AES-256-GCM encrypted and Base64 encoded. The address expires by itself; there is no delete call.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/06.live/16.createVideoDownloadStreamUrl.html",
+          "snippet": "Create a temporary RTSP pull URL ... when it expires you do not call a delete API."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.live.rtsp.decrypt",
+      "kind": "crypto",
+      "description": "key = SHA-256(UTF-8(params.token + 'ENCRYPTKEY')); Base64-decode url; first 12 bytes = IV; the rest = ciphertext + 16 byte GCM tag; AES/GCM/NoPadding; plaintext UTF-8 = the RTSP URL (a secret).",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/06.live/16.createVideoDownloadStreamUrl.html",
+          "snippet": "key = SHA-256(UTF-8(params.token + 'ENCRYPTKEY')) (32-byte AES-256 key). first 12 bytes are the IV"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.live.hls.bind",
+      "kind": "request",
+      "description": "bindDeviceLive: params {token (administrator), deviceId, channelId, streamId 0 HD | 1 SD, liveMode optional}; reply data {liveToken, liveStatus, streams[{streamId, hls}]}. The HLS address is a secret. LV1001 = a live already exists for this camera.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imou.com/document/pages/1bc396/",
+          "snippet": "bindDeviceLive ... streams[].hls ... liveToken; LV1001 live already exists"
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/readme/liveguide/videoMonitoringWithImou.html",
+          "snippet": "Treat the URL as sensitive. Anyone who has it can view the video."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.live.list",
+      "kind": "request",
+      "description": "liveList: params {token, queryRange '1-100'}; reply data {count, lives[{liveToken, deviceId, channelId, streams[{streamId, hls}]}]}. Used to find the address of an existing live (LV1001).",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imou.com/document/pages/b0e047/",
+          "snippet": "liveList ... queryRange ... lives[].liveToken, lives[].streams[].hls"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.live.delete",
+      "kind": "request",
+      "description": "unbindLive: params {token, liveToken} deletes a live address created by bindDeviceLive. Called when a cloud live stream stops or fails so no address (and no pulled flow) is left behind.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/readme/liveguide/videoMonitoringWithImou.html",
+          "snippet": "Addresses expire. Create them again when you need a new one. Query and delete are in Device live."
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "api"
+    },
+    {
+      "id": "imou.errors.map",
+      "kind": "errors",
+      "description": "Codes the client reacts to: TK1002 token expired (one refresh, one retry); SN1001 signature (stop, check App ID/secret); SN1002 clock; SN1005 duplicate nonce; DV1007 camera offline (no retry); FL1002/FL1004/FL1005 no traffic or bandwidth left and OP1013/OP1014 call limits (stop all calls until the next UTC day); LV1008 real-name check and OP1009 permission (vendor text shown); LV1001 live exists.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/04.codes.html",
+          "snippet": "FL1002 Developer currently has no available bandwidth; OP1013/OP1014 call limits; LV1008 real-name authentication"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.quota.free_tier",
+      "kind": "limits",
+      "description": "Free per developer and month: 30,000 API requests and 2 GB of media flow (live preview counts); beyond that the balance is charged. The client has no polling, starts live for visible tiles by itself (at most 12 automatic starts per camera per UTC day, 3 retries 30 s apart for network failures and lost streams), has no run limit for live view and counts minutes per camera per day locally.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/price",
+          "snippet": "30,000 requests, 30,000 pushes and 2 GB media flow free per month; $0.25 per GB above"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.record.list",
+      "kind": "request",
+      "hardware": "unverified",
+      "description": "record.file.list (memory-card files of one channel) through POST /openapi/v2/device.service.invoke: params {token, deviceId, channelId '0', serviceId 'record.file.list', inputData {type '0' = all, beginTime, endTime 'YYYY-MM-DD HH:mm:ss', limit 30..100}}; reply data.outputData.records[{fileName, fileLength, type, streamType 0 main | 1.. sub, beginTime, endTime, localBeginTime, localEndTime, ...}] (at most 100). The client sends limit 100, no productId, no sessionId, and uses no other serviceId (second allowlist). Not verified on a real F22P: whether the camera answers this service.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/04-capabilities/record/file/list/invoke.html",
+          "snippet": "Input beginTime, endTime, type, and limit (30-100). Returns up to 100 records."
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/04-capabilities/methods/invoke.html",
+          "snippet": "POST https://openapi-[DataCenter].easy4ip.com/openapi/v2/device.service.invoke"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.record.paging",
+      "kind": "behavior",
+      "hardware": "unverified",
+      "description": "No cursor: 'paginate with beginTime, endTime and limit by sliding the time window'; sessionId is only a speed hint. The client slides the window to the latest end of a full page, stops on a short page, on a window that does not advance, after 30 pages or 45 s, and never retries.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/04-capabilities/record/file/list/invoke.html",
+          "snippet": "sessionId ... is not a pagination token. Paginate with beginTime, endTime, and limit by sliding the time window."
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.playback.localrecord",
+      "kind": "request",
+      "hardware": "unverified",
+      "description": "createVideoDownloadStreamUrl with businessType 'localRecord': params {token (administrator), deviceId, channelId, businessType, streamType '0' | '1', beginTime, endTime 'yyyy-MM-dd HH:mm:ss'}; the reply url is AES-256-GCM encrypted like the live address and expires by itself (no delete). Never used with 'cloudRecord'. No fallback to the HLS live address. Not verified: maximum range, URL lifetime, pacing, behavior across a gap.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/06.live/16.createVideoDownloadStreamUrl.html",
+          "snippet": "businessType real live view; localRecord device storage; cloudRecord cloud storage"
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/06.live/16.createVideoDownloadStreamUrl.html",
+          "snippet": "Required when businessType is localRecord or cloudRecord; segment start ... end must not be before beginTime"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.time.wallclock",
+      "kind": "behavior",
+      "hardware": "unverified",
+      "description": "All recording times are 'wall-clock' texts with no time zone. Which clock beginTime means (device, UTC or cloud) is not stated; localBeginTime is 'device time'. The client keeps the vendor's own texts, sends them back unchanged, adds whole seconds to them for a position inside a recording, and reads them in the PC's zone by default (a pinned offset per camera overrides). The owner checks one playback against the time burned into the picture.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/04-capabilities/record/file/list/invoke.html",
+          "snippet": "beginTime Start time. Wall-clock, format YYYY-MM-DD HH:mm:ss."
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/04-capabilities/record/file/list/invoke.html",
+          "snippet": "localBeginTime Device start time. Wall-clock, format YYYY-MM-DD HH:mm:ss."
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "api"
+    },
+    {
+      "id": "imou.playback.flow",
+      "kind": "billing",
+      "hardware": "unverified",
+      "description": "Playback is media flow: the flow error codes name 'video playback' and the price page counts 'video playback' in the free 2 GB a month. The app counts playback minutes with the live minutes of the same camera (shared daily limit, shared stream cap) and stops a playback run after the idle limit. The real MB per minute is unmeasured.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/04.codes.html",
+          "snippet": "During audio and video preview (real-time preview, video playback), the system detects that the developer has no remaining traffic"
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/price",
+          "snippet": "Media flow ... real-time device preview, video playback, and cloud live broadcast"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    },
+    {
+      "id": "imou.playback.pacing",
+      "kind": "behavior",
+      "hardware": "unverified",
+      "description": "Whether the localRecord RTSP stream is sent at 1x or as fast as it is read is not documented (the method is named 'download'). The client reads it at its own rate (ffmpeg -re) and writes frames at a fixed 10 per second; the position is begin + frame index / 10. Unverified: that the cloud keeps the session open while it is read at 1x.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/06.live/16.createVideoDownloadStreamUrl.html",
+          "snippet": "Create a temporary RTSP pull URL for a device channel: real-time preview, local recording playback, or cloud recording playback."
+        }
+      ],
+      "confidence": "inferred",
+      "lane": "api"
+    },
+    {
+      "id": "imou.errors.playback",
+      "kind": "errors",
+      "hardware": "unverified",
+      "description": "Codes handled for recordings: OP1019 no video in that period, OP1021 playback address failed, DV1049 / LD1001 no storage medium and DV2132 storage error (one 'no memory card' text, remembered until Refresh), DV1009 device busy, DV2003 / DV2001 / DV2116 the camera has no record.file.list (clear text, no legacy call), DV2102-2104 device did not answer, OP1039 per-minute limit (blocks calls until the next minute only), OP1040 call quota (blocks until UTC midnight). None is retried.",
+      "evidence": [
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/05-api/04.codes.html",
+          "snippet": "OP1019 No video generated during this time period; DV1049 The device has no storage medium"
+        },
+        {
+          "source": "doc",
+          "url": "https://open.imoulife.com/book/04-capabilities/capability-errors.html",
+          "snippet": "OP1039 retry next minute; DV2003 Capability not on device"
+        }
+      ],
+      "confidence": "external",
+      "lane": "api"
+    }
+  ],
+  "unresolved": [
+    {
+      "topic": "record.file.list on the F22P",
+      "detail": "Whether the camera lists its card through the iMou cloud (DV2003 if not). The legacy queryLocalRecords call is NOT built: its page was unreadable and the docs contradict each other.",
+      "lane": "api"
+    },
+    {
+      "topic": "recording time zone",
+      "detail": "The zone of beginTime / localBeginTime is not documented. Check one playback against the time burned into the picture; pin an offset per camera if it differs by whole hours.",
+      "lane": "api"
+    },
+    {
+      "topic": "playback range, pacing and gaps",
+      "detail": "Maximum range of one localRecord request (the client uses 1 hour), whether the stream is sent at 1x, how it behaves across a gap and at the end of the last file, URL lifetime.",
+      "lane": "api"
+    },
+    {
+      "topic": "playback flow per minute and live plus playback together",
+      "detail": "Read 'My Resources' before and after one minute. Whether one camera may stream live and playback together is not stated; the app allows only one.",
+      "lane": "api"
+    },
+    {
+      "topic": "unbindLive method page",
+      "detail": "The delete call is named in the live guide ('query and delete are in Device live') but its own request page was not read; the name unbindLive and its params {token, liveToken} come from the public Home Assistant / vendor libraries and the live item layout. Verify on the first real use.",
+      "lane": "api"
+    },
+    {
+      "topic": "device.detail.page",
+      "detail": "The international docs recommend the v2 device.detail.page for new work; v1 listDeviceDetailsByPage (documented on open.imou.com) is used because its request and reply tables were readable. Switch if the vendor removes it.",
+      "lane": "api"
+    },
+    {
+      "topic": "live URL lifetime and flow billing after the viewer leaves",
+      "detail": "Not stated in the pages read. The client deletes HLS addresses on stop. A live stream has no run limit (only the daily minutes); a clean end after 60 s of play restarts once, so an address that expires early costs one request.",
+      "lane": "api"
+    }
+  ]
+}

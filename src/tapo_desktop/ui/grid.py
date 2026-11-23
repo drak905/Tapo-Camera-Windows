@@ -39,10 +39,13 @@ from PyQt6.QtCore import QMimeData, QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QImage
 from PyQt6.QtWidgets import QGridLayout, QMenu, QWidget
 
+from tapo_desktop.core.imou.texts import CLICK_TEXT
 from tapo_desktop.models import CameraConfig, StreamQuality
 from tapo_desktop.services.stream_policy import StreamRequest, plan_streams, view_size
 from tapo_desktop.services.view_layout import MAX_SLOTS, SETTING_KEY, ViewLayout
-from tapo_desktop.ui.kami_status import LIVE_VIEW_UNSUPPORTED_TEXT, capability_service, control_enabled
+from tapo_desktop.ui import imou_status
+from tapo_desktop.ui.kami_status import LIVE_VIEW_UNSUPPORTED_TEXT, control_enabled
+from tapo_desktop.ui.vendor_status import capability_service
 from tapo_desktop.ui.video_tile import EmptySlotTile, VideoTile, camera_id_from_mime
 
 log = logging.getLogger(__name__)
@@ -75,6 +78,7 @@ class CameraGrid(QWidget):
         self._active_slot: int | None = None  # slot of the last selected visible tile ("Add to view" target)
         self._fullscreen: str | None = None
         self._requested: dict[str, tuple[StreamQuality, int, int]] = {}
+        self._manual: set[str] = set()  # click-to-start cameras (iMou) the user started: only these stream
         self._empty: dict[int, EmptySlotTile] = {}
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(4, 4, 4, 4)
@@ -132,6 +136,7 @@ class CameraGrid(QWidget):
             self._fullscreen = None
         elif camera_id in self._visible_cameras():
             self._fullscreen = camera_id
+            self._start_on_click(camera_id)  # full screen of an idle iMou tile is a click
         else:
             return
         self._apply()
@@ -246,6 +251,7 @@ class CameraGrid(QWidget):
     # ------------------------------------------------------------------ tile events
     def _on_tile_clicked(self, camera_id: str) -> None:
         self._promote(camera_id)
+        self._start_on_click(camera_id)
         self.select_camera(camera_id)
 
     def _on_double_click(self, camera_id: str) -> None:
@@ -280,6 +286,15 @@ class CameraGrid(QWidget):
             return index if index is not None and index < self._n * self._n else None
         return None
 
+    def _start_on_click(self, camera_id: str) -> None:
+        """A click on a tile of a click-to-start camera (iMou) starts its stream; nothing else ever does."""
+        cfg = self._configs.get(camera_id)
+        if cfg is None or not imou_status.click_to_start(cfg) or camera_id in self._manual:
+            return
+        if camera_id in self._visible_cameras():
+            self._manual.add(camera_id)
+            self._apply()
+
     def _promote(self, camera_id: str) -> None:
         """Start a remote tile showing "Remote - click to view" now (the controller hands it the relay
         slot of the remote stream that has been running longest)."""
@@ -300,6 +315,10 @@ class CameraGrid(QWidget):
         tile = self._tiles.get(camera_id)
         if tile is not None:
             tile.set_stream_state(state, reason)
+        if state in ("FAILED", "STOPPED") and camera_id in self._manual:  # an iMou stream ended: ask for a click
+            self._manual.discard(camera_id)
+            self._requested.pop(camera_id, None)
+            self._ctrl.stop_view(camera_id)
 
     def _rebuild(self) -> None:
         cams = self._ctrl.cameras()
@@ -339,6 +358,8 @@ class CameraGrid(QWidget):
         tile.customContextMenuRequested.connect(lambda pos, t=tile: self._show_menu(t, pos))
         if self._no_live_view(cfg):
             tile.set_stream_state("FAILED", LIVE_VIEW_UNSUPPORTED_TEXT)
+        elif imou_status.click_to_start(cfg):
+            tile.set_stream_state("FAILED", CLICK_TEXT)
         return tile
 
     @staticmethod
@@ -408,10 +429,23 @@ class CameraGrid(QWidget):
                 tile = self._tiles.get(cid) if cid is not None else None
                 widgets.append((index, tile if tile is not None else self._empty_tile(index)))
             self._relayout(widgets, self._n)
-        visible = [cid if cid in self._tiles and not self._no_live_view(self._configs[cid]) else None
-                   for cid in self.visible_slots()]
+        self._forget_idle_manual()
+        visible = [cid if cid in self._tiles and not self._no_live_view(self._configs[cid])
+                   and self._may_stream(cid) else None for cid in self.visible_slots()]
         self._sync_streams(plan_streams(visible, self._configs, self._fullscreen))
         self.view_changed.emit()
+
+    def _may_stream(self, camera_id: str) -> bool:
+        """Every camera streams in view, except an iMou camera while the main window is hidden or minimized."""
+        return camera_id in self._manual or imou_status.may_stream(self._configs[camera_id])
+
+    def _forget_idle_manual(self) -> None:
+        """A click-started camera that left the view starts again only on a new click."""
+        for cid in self._manual - set(self._visible_cameras()):
+            self._manual.discard(cid)
+            tile = self._tiles.get(cid)
+            if tile is not None:
+                tile.set_stream_state("FAILED", CLICK_TEXT)
 
     def _relayout(self, widgets: list[tuple[int, QWidget]], cols: int) -> None:
         while self._layout.count():
@@ -438,9 +472,17 @@ class CameraGrid(QWidget):
             if want is None:
                 del self._requested[cid]
                 self._ctrl.stop_view(cid)
+                if cid in self._manual:  # an iMou stream the view no longer shows: a new click starts it again
+                    self._manual.discard(cid)
+                    tile.set_stream_state("FAILED", CLICK_TEXT)
             else:
                 if cid not in self._requested:  # fresh start (a quality switch keeps the picture)
                     tile.set_stream_state("CONNECTING")
                 self._requested[cid] = want
                 self._ctrl.start_view(cid, *want)
 
+    def set_window_shown(self, shown: bool) -> None:
+        """The main window was shown (True) or hidden / minimized (False): iMou tiles stop and start with it."""
+        if imou_status.window_shown() != bool(shown):
+            imou_status.set_window_shown(shown)
+            self._apply()

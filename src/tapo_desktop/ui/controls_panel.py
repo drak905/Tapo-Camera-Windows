@@ -37,7 +37,8 @@ from PyQt6.QtWidgets import (
 
 from tapo_desktop.models import DayNightMode
 from tapo_desktop.ui import snapshot
-from tapo_desktop.ui.kami_status import capability_service, control_enabled
+from tapo_desktop.ui.kami_status import control_enabled
+from tapo_desktop.ui.vendor_status import capability_service
 from tapo_desktop.ui.ptz_pad import PtzPad
 
 log = logging.getLogger(__name__)
