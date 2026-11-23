@@ -592,14 +592,16 @@ def test_a_click_on_the_tile_during_playback_contacts_nothing(cloud, rt):
     assert rt.owner(CID) == "playback"
 
 
-def test_the_end_of_playback_does_not_start_live_again(cloud, rt):
+def test_the_end_of_playback_does_not_start_live_again_but_asks_for_a_click(cloud, rt):
+    from tapo_desktop.core.imou import texts
+
+    # requirement change: the tile no longer keeps the stale "Playing a recording" text; it says "click to start" once
     card(cloud)
     svc, live_rec = service(), Rec()
     start_live(svc, live_rec)
     play(svc, Rec(), wall(9))
-    states_before = list(live_rec.states)
     FakeSup.instances[1].clip_end()
-    assert rt.live_ids() == set() and len(FakeSup.instances) == 2 and live_rec.states == states_before
+    assert rt.live_ids() == set() and len(FakeSup.instances) == 2 and live_rec.states[-1] == ("FAILED", texts.CLICK_TEXT)
     assert [p["businessType"] for p in urls_asked(cloud)] == ["real", "localRecord"]
 
 
