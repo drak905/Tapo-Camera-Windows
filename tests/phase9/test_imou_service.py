@@ -344,7 +344,8 @@ def test_a_failed_supervisor_frees_the_slot_and_reports_failed(cloud, clock):
     FakeSup.instances[0].emit("FAILED", "no first frame for 30.0 s (stalled)")
     assert rt.live_ids() == set()
     assert rec.names()[-1] == "FAILED" and rec.reasons("FAILED")[-1].startswith("iMou: ")
-    start(svc, rec)  # a new click starts again
+    # requirement change: a lost stream now waits for its retry, so only a click (preempt) starts it again at once
+    svc.start_stream(StreamQuality.SD, 640, 360, rec.on_frame, rec.on_state, preempt=True)
     assert len(FakeSup.instances) == 2
 
 
