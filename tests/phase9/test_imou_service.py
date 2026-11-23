@@ -360,16 +360,15 @@ def test_the_failure_text_never_carries_a_live_url(cloud, clock):
 
 
 # ------------------------------------------------------------------------------------------ idle stop and budget
-def test_idle_stop_after_the_limit_asks_for_a_click_and_frees_everything(cloud, clock):
+def test_the_idle_limit_no_longer_stops_a_running_live_stream(cloud, clock):
+    # requirement change: live view starts by itself, so only the daily minutes guard it (the limit stays for playback)
     from tapo_desktop.core.imou.runtime import ImouLimits
 
     rt = make_runtime(cloud, clock, limits=ImouLimits(idle_seconds=0.2), real_clock=True)
     svc, rec = service(), Rec()
     start(svc, rec)
-    assert wait_for(lambda: "FAILED" in rec.names(), 3)
-    assert "click" in rec.reasons("FAILED")[-1].lower() and rec.reasons("FAILED")[-1].startswith("iMou: ")
-    assert FakeSup.instances[0].stopped == 1 and rt.live_ids() == set()
-    assert rt.meter.used("imou:MOCKSERIAL0001") >= 0.15
+    time.sleep(0.7)
+    assert "FAILED" not in rec.names() and FakeSup.instances[0].stopped == 0 and rt.live_ids() == {"imou:MOCKSERIAL0001"}
 
 
 def test_the_default_idle_limit_is_ten_minutes():
