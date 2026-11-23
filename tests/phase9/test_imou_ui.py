@@ -335,13 +335,14 @@ def test_imou_tiles_start_by_themselves_in_view(make_env, qtbot):
         assert grid.tile(cid).status_text() != CLICK_HEADLINE
 
 
-def test_a_click_starts_one_sd_stream_and_a_second_click_does_not_restart_it(make_env, qtbot):
+def test_a_click_on_a_running_imou_tile_does_not_restart_it(make_env, qtbot):
+    # requirement change: the plan starts the stream, a click on a connecting or playing tile asks for nothing more
     env = make_env([imou_cfg("A", "iMou A")])
     window = make_window(qtbot, env)
     grid = grid_of(window)
-    grid._on_tile_clicked("imou:A")
+    qtbot.waitUntil(lambda: len(env.called("start_view")) == 1, timeout=3000)
     assert env.called("start_view") == [("start_view", "imou:A", StreamQuality.SD, 640, 360)]
-    assert grid.tile("imou:A").stream_state() == "CONNECTING"
+    grid._on_tile_clicked("imou:A")
     grid._on_tile_clicked("imou:A")
     assert len(env.called("start_view")) == 1
 
