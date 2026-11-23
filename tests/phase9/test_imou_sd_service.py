@@ -660,3 +660,24 @@ def test_no_log_record_holds_a_token_secret_url_or_file_name(cloud, rt, caplog):
     text = "\n".join(rr.getMessage() for rr in caplog.records) + repr(r.states)
     for secret in (MOCK_APP_SECRET, MOCK_RTSP_QUERY, "secret-card-file-name", cloud.last_issued_token(), "starttime="):
         assert secret not in text, secret
+
+
+def test_removing_the_camera_through_the_controller_stops_playback_and_frees_the_slot(cloud, rt, tmp_path, qtbot):
+    """The real controller wiring: start_playback on its playback strand, remove_cameras (disconnect, sign-out)."""
+    from tapo_desktop.services.config_store import ConfigStore
+    from tapo_desktop.services.controller import AppController
+    from tests.e2e.fakes import FakeVault
+
+    card(cloud)
+    store = ConfigStore(tmp_path / "config.json")
+    store.save([imou_cfg()])
+    controller = AppController(store, FakeVault())
+    try:
+        clips = service().recordings_for_day(DAYD)
+        controller.start_playback(CID, epoch(wall(8)), epoch(wall(23, 59, 59)), clips=clips)
+        assert wait_for(lambda: bool(FakeSup.instances) and FakeSup.instances[0].started, 5)
+        assert rt.owner(CID) == "playback"
+        controller.remove_cameras([CID])
+        assert wait_for(lambda: FakeSup.instances[0].stopped >= 1 and rt.live_ids() == set(), 5)
+    finally:
+        controller.stop_all()
