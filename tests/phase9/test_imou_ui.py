@@ -323,14 +323,16 @@ def test_a_failure_with_no_dialog_open_reaches_the_status_bar(make_env, qtbot):
 
 
 # ============================================================================== tiles: click to start
-def test_imou_tiles_start_nothing_and_say_click(make_env, qtbot):
+def test_imou_tiles_start_by_themselves_in_view(make_env, qtbot):
+    # requirement change: visible iMou tiles start through the normal view plan; nothing says "click to start" any more
     env = make_env([imou_cfg("A", "iMou A"), imou_cfg("B", "iMou B")])
     window = make_window(qtbot, env)
-    qtbot.wait(300)
-    assert env.called("start_view") == [] and env.built == []
+    qtbot.waitUntil(lambda: len(env.called("start_view")) == 2, timeout=3000)
+    assert sorted(c[1:] for c in env.called("start_view")) == [
+        ("imou:A", StreamQuality.SD, 640, 360), ("imou:B", StreamQuality.SD, 640, 360)]
     grid = grid_of(window)
     for cid in ("imou:A", "imou:B"):
-        assert grid.tile(cid).status_text() == CLICK_HEADLINE
+        assert grid.tile(cid).status_text() != CLICK_HEADLINE
 
 
 def test_a_click_starts_one_sd_stream_and_a_second_click_does_not_restart_it(make_env, qtbot):
