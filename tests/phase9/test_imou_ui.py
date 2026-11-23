@@ -358,12 +358,15 @@ def test_full_screen_asks_for_hd_and_leaving_it_goes_back_to_sd(make_env, qtbot)
     assert env.called("start_view")[-1][1:] == ("imou:A", StreamQuality.SD, 640, 360)
 
 
-def test_full_screen_from_the_menu_of_an_idle_imou_tile_starts_it_in_hd(make_env, qtbot):
+def test_full_screen_from_the_menu_of_an_imou_tile_asks_for_hd_after_the_sd_start(make_env, qtbot):
+    # requirement change: the tile is already streaming in SD from the plan, so full screen is the second call
     env = make_env([imou_cfg("A", "iMou A")])
     window = make_window(qtbot, env)
     grid = grid_of(window)
+    qtbot.waitUntil(lambda: len(env.called("start_view")) == 1, timeout=3000)
     grid.toggle_fullscreen("imou:A")
-    assert env.called("start_view") == [("start_view", "imou:A", StreamQuality.HD, 1280, 720)]
+    assert [c[1:] for c in env.called("start_view")] == [
+        ("imou:A", StreamQuality.SD, 640, 360), ("imou:A", StreamQuality.HD, 1280, 720)]
 
 
 def test_a_failed_stream_asks_for_a_click_and_the_next_click_starts_again(make_env, qtbot):
