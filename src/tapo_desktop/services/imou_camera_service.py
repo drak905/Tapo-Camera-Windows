@@ -17,21 +17,24 @@ import logging
 import pathlib
 import threading
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from tapo_desktop.core.errors import TapoError
-from tapo_desktop.core.imou import texts
+from tapo_desktop.core.imou import notes, texts
+from tapo_desktop.core.imou.clock import clock_for, pc_day_bounds
 from tapo_desktop.core.imou.errors import (
     PREFIX, RTSP_REFUSED_CODES, ImouError, ImouLiveExistsError, ImouOfflineError, ImouProtocolError, ImouVendorError,
     clean,
 )
+from tapo_desktop.core.imou.records import build_runs, two_clocks
 from tapo_desktop.core.imou.runtime import ImouRuntime
 from tapo_desktop.core.media_engine.supervisor import StreamState
 from tapo_desktop.models import (
     CameraConfig, DayNightMode, DeviceInfo, MotionEvent, Preset, RecordingClip, StreamQuality,
 )
 from tapo_desktop.services.camera_service import CameraService
+from tapo_desktop.services.imou_playback import ImouPlayback
 from tapo_desktop.services.stream_policy import decoder_for
 
 log = logging.getLogger(__name__)
@@ -67,7 +70,7 @@ class ImouCameraService(CameraService):
     supports_live_view = True
     supports_ptz = False
     supports_controls = False  # privacy, day/night, LED, alarm, motion detection, presets
-    supports_playback = False  # recordings, downloads, playback
+    supports_playback = True   # memory-card recordings: a list per day and playback (no downloads, 1x only)
     supports_events = False
     supports_rename = False    # a local name only; nothing is written to the camera or the iMou account
 
@@ -81,9 +84,29 @@ class ImouCameraService(CameraService):
         self._started_at = 0.0
         self._timer: threading.Timer | None = None
         self._on_state: Callable[[StreamState, str | None], None] | None = None
+        self._pb = ImouPlayback(self)
+        self._runs_by_day: dict[date, list] = {}  # vendor runs of the days listed so far (their own time texts)
+        self.stream_type = "0"                    # stream type of the listed recordings (main stream when present)
 
     def __repr__(self) -> str:
         return f"ImouCameraService(id={self.config.id!r})"
+
+    @property
+    def serial(self) -> str:
+        return str(self.config.vendor_data.get("serial") or self.config.device_id)
+
+    @property
+    def channel(self) -> str:
+        return str(self.config.vendor_data.get("channel") or "0")
+
+    def runtime(self) -> ImouRuntime | None:
+        return get_runtime()
+
+    def runtime_or_raise(self) -> ImouRuntime:
+        rt = get_runtime()
+        if rt is None:
+            raise ImouError(texts.NOT_CONNECTED)
+        return rt
 
     # ================================================================== connect / live view
     def connect(self) -> DeviceInfo:
@@ -95,6 +118,8 @@ class ImouCameraService(CameraService):
             raise ImouError(texts.NOT_CONNECTED)
         cid = self.config.id
         with self._lock:
+            if self._pb.active:  # one stream per camera, playback wins: nothing is contacted
+                raise TapoError(texts.PLAYING_TEXT)
             self._stop_locked(release=False)  # a quality switch keeps the slot and starts a fresh address
             try:
                 limits = rt.limits()
@@ -127,6 +152,7 @@ class ImouCameraService(CameraService):
 
     def close(self) -> None:
         self.stop_stream()
+        self.stop_playback()
 
     # ================================================================== internals
     def _resolve(self, rt: ImouRuntime, quality: StreamQuality) -> tuple[str, str]:
@@ -262,9 +288,6 @@ class ImouCameraService(CameraService):
     def days_with_recordings(self, start: date, end: date) -> list[date]:
         _no("Recordings")
 
-    def recordings_for_day(self, day: date) -> list[RecordingClip]:
-        _no("Recordings")
-
     def download_recording(self, clip: RecordingClip, out_path: pathlib.Path,
                            progress: Callable[[float], None] | None = None) -> pathlib.Path:
         _no("Downloads")
@@ -275,9 +298,92 @@ class ImouCameraService(CameraService):
     def stop_events(self) -> None:
         pass
 
-    def start_playback(self, start_utc: float, end_utc: float, width: int, height: int, on_frame, on_state,
-                       on_position, *, segments: list | None = None) -> None:
-        _no("Playback")
-
     def rename(self, name: str) -> None:
         _no("Renaming on the camera")
+
+    # ================================================================== memory-card recordings (SD)
+    def recordings_for_day(self, day: date) -> list[RecordingClip]:
+        """The recordings of the PC's calendar ``day`` (one list call per 100 files). No lock is held during the call."""
+        rt = self.runtime_or_raise()
+        if not self.config.online:
+            raise ImouOfflineError(texts.OFFLINE_IN_LIST)
+        rt.guard.check()
+        clock = clock_for(self.config)
+        begin, end = clock.day_range(day)
+        found = rt.client.list_local_records(self.serial, self.channel, begin, end)
+        runs = build_runs(found.files, clock)
+        self._runs_by_day[day] = runs
+        if runs:
+            self.stream_type = runs[0].stream_type
+        notes.set(self.config.id, _list_note(found, two_clocks(found.files)))
+        day_start, day_end = pc_day_bounds(day)
+        clips = []
+        for run in runs:
+            start, stop = max(run.start_utc, day_start), min(run.end_utc, day_end)
+            if stop > start:
+                clips.append(RecordingClip(start=datetime.fromtimestamp(start, timezone.utc),
+                                           end=datetime.fromtimestamp(stop, timezone.utc), event_type=1))
+        return clips
+
+    def find_run(self, utc: float):
+        """The listed run that holds ``utc`` (1 s slack), with the vendor's own time texts, or ``None``."""
+        for runs in list(self._runs_by_day.values()):
+            for run in runs:
+                if run.start_utc - 1 <= utc <= run.end_utc + 1:
+                    return run
+        return None
+
+    def start_playback(self, start_utc: float, end_utc: float, width: int, height: int, on_frame, on_state,
+                       on_position, *, segments: list | None = None) -> None:
+        self._pb.start(start_utc, end_utc, width, height, on_frame, on_state, on_position, segments)
+
+    def pause_playback(self) -> None:
+        self._pb.pause()
+
+    def resume_playback(self) -> None:
+        self._pb.resume()
+
+    def seek_playback(self, utc: float) -> None:
+        self._pb.seek(utc)
+
+    def set_playback_speed(self, scale: str) -> None:
+        if scale != "1/1":
+            raise ValueError("iMou recordings play at 1x only")
+
+    def stop_playback(self) -> None:
+        self._pb.stop()
+
+    def claim_slot_for_playback(self, rt: ImouRuntime, cap: int) -> None:
+        """Playback of this camera takes its slot; a slot held by this camera's live view is taken over later (after
+        the playback address exists), so a refused address leaves the live view alone."""
+        with self._lock:
+            if rt.owner(self.config.id) is None and not rt.try_acquire(self.config.id, cap, "playback"):
+                raise ImouError(texts.cap_reached(cap))
+
+    def take_over_live_for_playback(self, rt: ImouRuntime) -> None:
+        """Stop this camera's live view (its tile gets a fixed text, no auto return) and move its slot to playback."""
+        with self._lock:
+            cid = self.config.id
+            owner = rt.owner(cid)
+            if owner == "playback":
+                return
+            if owner is None:
+                cap = rt.limits().max_live
+                if not rt.try_acquire(cid, cap, "playback"):
+                    raise ImouError(texts.cap_reached(cap))
+                return
+            on_state = self._on_state
+            self._gen += 1  # callbacks of the stopped live stream are dropped
+            self._finish_locked(rt, delete_live=True, release=False)
+            rt.transfer(cid, "live", "playback")
+        if on_state is not None:
+            on_state(StreamState.FAILED, texts.PLAYING_TEXT)
+
+
+def _list_note(found, two_clocks_seen: bool) -> str:
+    parts = []
+    if found.truncated:
+        parts.append("iMou: showing only the first recordings of this day.")
+    if two_clocks_seen:
+        parts.append("iMou: the camera reports two clocks. Check the time of day against the picture.")
+    return " ".join(parts)

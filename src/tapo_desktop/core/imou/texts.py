@@ -30,3 +30,13 @@ def budget_used(daily_seconds: float) -> str:
 
 def cap_reached(max_live: int) -> str:
     return f"{PREFIX}{max_live} live stream{'s are' if max_live != 1 else ' is'} already running. Stop one first."
+
+#: Shown on the live tile while a recording of the same camera plays (no "iMou: " prefix: no retry headline).
+PLAYING_TEXT = "Playing a recording in the player window"
+NO_RUN_AT = PREFIX + "no recording at that time"
+#: The text PlayerWindow waits for at the end of the last recording.
+END_OF_RECORDINGS = "end of recordings"
+
+
+def run_limit(idle_seconds: float) -> str:
+    return f"{PREFIX}playback stopped after {span(idle_seconds)}. Press Play to continue."

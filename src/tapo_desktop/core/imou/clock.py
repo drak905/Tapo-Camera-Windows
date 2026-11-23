@@ -66,10 +66,16 @@ class ImouClock:
 
     def day_range(self, day: date) -> tuple[str, str]:
         """The PC's calendar ``day`` as ``(begin, end)`` texts on the camera's clock (end = last second of the day)."""
-        start = datetime(day.year, day.month, day.day).astimezone()
-        nxt = day + timedelta(days=1)
-        end = datetime(nxt.year, nxt.month, nxt.day).astimezone()
-        return self.from_utc(start.timestamp()), self.from_utc(end.timestamp() - 1)
+        start, end = pc_day_bounds(day)
+        return self.from_utc(start), self.from_utc(end - 1)
+
+
+def pc_day_bounds(day: date) -> tuple[float, float]:
+    """Epoch seconds of the PC's local midnight of ``day`` and of the next day (23 or 25 h on daylight-saving days)."""
+    start = datetime(day.year, day.month, day.day).astimezone()
+    nxt = day + timedelta(days=1)
+    end = datetime(nxt.year, nxt.month, nxt.day).astimezone()
+    return start.timestamp(), end.timestamp()
 
 
 def clock_for(config: Any) -> ImouClock:
