@@ -33,6 +33,9 @@ MOCK_APP_SECRET = "mock-app-secret-0000000000000001"
 MOCK_RTSP_QUERY = "token=MOCKRTSPSECRET0123456789abcdef"
 #: URL handed out for live view (TEST-NET-3 address: nothing listens, nothing is contacted).
 MOCK_RTSP_URL = "rtsp://203.0.113.7:554/cam/realmonitor?channel=1&subtype={streamType}&" + MOCK_RTSP_QUERY
+#: URL handed out for memory-card playback (``businessType=localRecord``); same secret query as live.
+MOCK_PLAYBACK_URL = ("rtsp://203.0.113.7:554/cam/playback?channel=1&subtype={streamType}&starttime={begin}"
+                     "&endtime={end}&" + MOCK_RTSP_QUERY)
 MOCK_HLS_QUERY = "source=open&proto=https&sig=MOCKHLSSECRET0123456789"
 TOKEN_TTL_S = 259176
 WINDOW_S = 300
@@ -42,6 +45,14 @@ def make_device(serial: str, name: str = "", status: str = "online", model: str 
     return {"deviceId": serial, "deviceName": name or serial, "deviceStatus": status, "deviceModel": model,
             "catalog": "IPC", "source": "bind",
             "channelList": [{"channelId": 0, "channelName": name or serial, "channelStatus": status}]}
+
+
+def make_record(begin: str, end: str, *, local_begin: str | None = None, local_end: str | None = None,
+                stream_type: str = "0", kind: str = "1", name: str | None = None) -> dict:
+    """One ``record.file.list`` row (documented fields, made-up values). Times are ``YYYY-MM-DD HH:mm:ss``."""
+    return {"fileName": name or f"rec-{begin}", "fileLength": 1024, "type": kind, "streamType": stream_type,
+            "beginTime": begin, "endTime": end, "localBeginTime": local_begin or begin,
+            "localEndTime": local_end or end, "objectType": "", "xseq": 1, "multiType": "", "picId": 0}
 
 
 @dataclass
@@ -69,6 +80,10 @@ class MockImouCloud:
     rtsp_url: str = MOCK_RTSP_URL
     hls_host: str = "https://cmgw-online-mock.invalid:8890"
     calls: list = field(default_factory=list)
+    #: memory-card recordings per serial (rows from :func:`make_record`); serials in ``no_card`` answer "no storage medium"
+    records: dict = field(default_factory=dict)
+    no_card: set = field(default_factory=set)
+    playback_url: str = MOCK_PLAYBACK_URL
 
     def __post_init__(self):
         self._lock = threading.Lock()
@@ -160,7 +175,7 @@ class MockImouCloud:
         token = params.get("token")
         if token not in self._tokens or self._tokens[token] <= now:
             return self._err("TK1002", "Token has expired or does not exist")
-        handler = getattr(self, f"_do_{path}", None)
+        handler = self._do_invoke if path == "device.service.invoke" else getattr(self, f"_do_{path}", None)
         if handler is None:
             return self._err("OP1005", "Invalid request URL")
         return handler(token, params)
@@ -180,9 +195,51 @@ class MockImouCloud:
         if dev["deviceStatus"] != "online":
             return self._err("DV1007", "Device offline")
         self._url_n += 1
+        if params.get("businessType") == "localRecord":
+            return self._playback_url(token, params, dev)
         url = self.rtsp_url.replace("{streamType}", str(params.get("streamType", "1"))) \
             .replace("{serial}", params["deviceId"]).replace("{n}", str(self._url_n))
         return {"code": "0", "msg": "Operation succeeded.", "data": {"url": encrypt_stream_url(url, token)}}
+
+    def _playback_url(self, token: str, params: dict, dev: dict) -> dict:
+        begin, end = str(params.get("beginTime", "")), str(params.get("endTime", ""))
+        if not (_valid_wall(begin) and _valid_wall(end)) or end < begin:
+            return self._err("OP1003", "The parameter value is illegal")
+        serial = params["deviceId"]
+        if serial in self.no_card:
+            return self._err("DV1049", "The device has no storage medium")
+        rows = self.records.get(serial) or []
+        if not any(r["beginTime"] <= end and r["endTime"] >= begin for r in rows):
+            return self._err("OP1019", "No video generated during this time period")
+        url = self.playback_url.replace("{streamType}", str(params.get("streamType", "0"))) \
+            .replace("{begin}", begin.replace(" ", "T")).replace("{end}", end.replace(" ", "T"))
+        return {"code": "0", "msg": "Operation succeeded.", "data": {"url": encrypt_stream_url(url, token)}}
+
+    def _do_invoke(self, token: str, params: dict) -> dict:
+        """``/openapi/v2/device.service.invoke``: only the ``record.file.list`` service exists here."""
+        dev = self._device(params.get("deviceId", ""))
+        if dev is None:
+            return self._err("DV1028", "not bound")
+        if dev["deviceStatus"] != "online":
+            return self._err("DV1007", "Device offline")
+        if params.get("serviceId") != "record.file.list":
+            return self._err("DV2003", "Capability not on device")
+        if "channelId" not in params:
+            return self._err("DV2007", "channelId vs scope mismatch")
+        data = params.get("inputData")
+        if not isinstance(data, dict):
+            return self._err("OP1002", "Missing required parameter")
+        begin, end, limit = str(data.get("beginTime", "")), str(data.get("endTime", "")), data.get("limit")
+        if not (_valid_wall(begin) and _valid_wall(end)) or not isinstance(limit, int) or isinstance(limit, bool) \
+                or not 30 <= limit <= 100 or not isinstance(data.get("type"), str):
+            return self._err("OP1003", "The parameter value is illegal")
+        serial = params["deviceId"]
+        if serial in self.no_card:
+            return self._err("DV1049", "The device has no storage medium")
+        rows = sorted((r for r in self.records.get(serial, []) if begin <= r["beginTime"] <= end),
+                      key=lambda r: r["beginTime"])[:limit]
+        return {"code": "0", "msg": "Operation is successful",
+                "data": {"outputData": {"sessionId": "s-1", "records": rows}}}
 
     def _live_entry(self, serial: str, channel: str, stream_id: int, live_token: str) -> dict:
         base = f"{self.hls_host}/LCO/{serial}/{channel}/{stream_id}/{live_token}.m3u8"
@@ -212,6 +269,15 @@ class MockImouCloud:
         if self._lives.pop(params.get("liveToken", ""), None) is None:
             return self._err("LV1002", "The live video does not exist")
         return {"code": "0", "msg": "Operation succeeded.", "data": {}}
+
+
+def _valid_wall(text: str) -> bool:
+    """``YYYY-MM-DD HH:mm:ss`` (the one time format of the recording calls)."""
+    try:
+        time.strptime(text, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return False
+    return len(text) == 19
 
 
 # ---------------------------------------------------------------------- independent crypto (not the app's code)
