@@ -21,8 +21,10 @@ DOC_SECRET, DOC_SIGN = "test123456789test123456789", "xjhCQBoJ9hRDsCjyDcHjtDNzRZ
 EXPECTED_PATHS = frozenset({
     "/openapi/accessToken", "/openapi/listDeviceDetailsByPage", "/openapi/createVideoDownloadStreamUrl",
     "/openapi/bindDeviceLive", "/openapi/liveList", "/openapi/unbindLive",
+    "/openapi/v2/device.service.invoke",  # SD playback: the one service id record.file.list is checked separately
 })
-EXPECTED_PUBLIC_METHODS = {"access_token", "list_devices", "create_rtsp_url", "bind_live", "find_live", "unbind_live"}
+EXPECTED_PUBLIC_METHODS = {"access_token", "list_devices", "create_rtsp_url", "bind_live", "find_live", "unbind_live",
+                           "list_local_records", "create_playback_url"}
 
 
 def make_client(cloud, clock, *, dc="sg", guard=None, secret=MOCK_APP_SECRET, app_id=MOCK_APP_ID):
