@@ -160,7 +160,7 @@ def test_the_note_of_the_list_is_added_to_the_status_line(ctrl, qtbot):
         panel.set_camera(IMOU_ID)
         pick_day(panel, DAY)
         refresh(panel)
-        qtbot.waitUntil(lambda: "recording" in status(panel), timeout=3000)
+        qtbot.waitUntil(lambda: "2 recording" in status(panel), timeout=3000)
         assert "two clocks" in status(panel)
     finally:
         notes.set(IMOU_ID, "")

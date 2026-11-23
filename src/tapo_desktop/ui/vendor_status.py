@@ -26,6 +26,12 @@ def capability_service(config: Any) -> Any:
     return other_vendors(config)
 
 
+def playback_profile(config: Any) -> imou_status.PlaybackProfile | None:
+    """How the Playback tab and the player window treat this camera's recordings: ``None`` for a Tapo or Kami camera
+    (their own code paths run, unchanged), a profile (read on Refresh, 1x, no download) for an iMou camera."""
+    return imou_status.PLAYBACK_PROFILE if imou_status.is_imou(config) else None
+
+
 def recordings_unsupported_text(config: Any, default: str) -> str:
     """The "no recordings" text for ``config``: iMou says iMou, everything else keeps ``default``."""
     return IMOU_RECORDINGS_TEXT if imou_status.is_imou(config) else default

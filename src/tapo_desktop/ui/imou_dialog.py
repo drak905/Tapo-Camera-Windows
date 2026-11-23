@@ -84,7 +84,7 @@ class ImouConnectDialog(QDialog):
         form.addRow("App ID", self._app_id)
         form.addRow("App secret", self._secret)
         form.addRow("Data center", self._combo)
-        form.addRow("Live minutes per camera and day", self._minutes)
+        form.addRow("Live and playback minutes per camera and day", self._minutes)
         form.addRow("Live streams at once", self._live)
         root.addLayout(form)
 
@@ -129,7 +129,7 @@ class ImouConnectDialog(QDialog):
             minutes = float(manager.usage_minutes_today())
         except Exception:
             minutes = 0.0
-        return (f"Live time today (estimate, counted by this app): {minutes:.1f} min. The real numbers are under "
+        return (f"Live and playback time today (estimate, counted by this app): {minutes:.1f} min. The real numbers are under "
                 "My Resources in the Open Platform console.")
 
     @staticmethod
