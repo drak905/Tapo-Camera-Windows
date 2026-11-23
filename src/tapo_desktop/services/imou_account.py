@@ -301,6 +301,7 @@ class ImouAccountManager(QObject):
         self._runtime = ImouRuntime(client=client, guard=self._guard, clock=self._clock, limits=self.limits,
                                     meter=self._meter, **kwargs)
         self._label = label
+        self._runtime.on_auth_error = lambda: self._store.set_setting(SETTING_LAST_FAILED, True)  # next launch: no reconnect
         imou_camera_service.set_runtime(self._runtime)
 
     def _test_failed(self, gen: int, exc: BaseException) -> None:
@@ -340,6 +341,11 @@ class ImouAccountManager(QObject):
         if gen != self._gen:
             return
         existing = {c.id: c for c in self._ctrl.cameras() if c.source == "imou"}
+        rt = self._runtime
+        was_online = {cid: rt.online_of(cid, old.online) if rt is not None else old.online for cid, old in existing.items()}
+        if rt is not None:  # the services read the online state here, so a Refresh reaches cameras that already run
+            rt.set_online({f"imou:{d.serial}": d.online for d in devices})
+        back_online = [f"imou:{d.serial}" for d in devices if d.online and was_online.get(f"imou:{d.serial}") is False]
         changed: list[CameraConfig] = []
         for dev in devices:
             cid = f"imou:{dev.serial}"
@@ -364,3 +370,5 @@ class ImouAccountManager(QObject):
             self._ctrl.remove_cameras(gone)
         if changed or gone:
             self.cameras_changed.emit()
+        for cid in back_online:  # a camera that was offline and is online now starts its tile (ignored if it is not in view)
+            self._ctrl.view_remote_now(cid)

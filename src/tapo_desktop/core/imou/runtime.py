@@ -24,7 +24,7 @@ from typing import Any
 class ImouLimits:
     max_live: int = 2             # iMou live streams at once (own cap)
     daily_seconds: float = 1200.0  # per camera per UTC day (20 minutes)
-    idle_seconds: float = 600.0   # a tile stops after this long and asks for a click (10 minutes)
+    idle_seconds: float = 600.0   # the run limit of one memory-card playback (10 minutes); live view has none
     stall_timeout: float = 30.0   # first frame / frame gap before a stream counts as failed
 
 
@@ -93,6 +93,17 @@ class ImouRuntime:
         self.supervisor_factory = supervisor_factory
         self._lock = threading.Lock()
         self._slots: dict[str, str] = {}  # camera id -> "live" | "playback": one stream per camera
+        self._online: dict[str, bool] = {}
+        self.on_auth_error: Callable[[], None] | None = None
+
+    def set_online(self, states: dict[str, bool]) -> None:
+        """Replace the online map (camera id -> online) with what the last list call saw."""
+        with self._lock:
+            self._online = {str(k): bool(v) for k, v in states.items()}
+
+    def online_of(self, camera_id: str, default: bool = True) -> bool:
+        with self._lock:
+            return self._online.get(camera_id, default)
 
     def live_ids(self) -> set[str]:
         """Every camera that holds a slot (live or playback)."""

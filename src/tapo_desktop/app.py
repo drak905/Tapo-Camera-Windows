@@ -132,8 +132,14 @@ def _build(app, store, data_dir, *, interactive: bool):
     controller = AppController(store, CredentialVault(data_dir / "vault.json"))
     accounts = AccountManager(controller, parent=controller)
     kami_accounts = KamiAccountManager(controller, controller.vault, store, parent=controller)
+    imou_accounts = ImouAccountManager(controller, controller.vault, store, parent=controller)
+    if interactive:  # the iMou tiles start with the window, so the connection (from the vault, no network call) comes first
+        try:
+            imou_accounts.restore()
+        except Exception:
+            log.exception("restoring the iMou connection failed")
     window = MainWindow(controller, tray_enabled=interactive, accounts=accounts, kami_accounts=kami_accounts,
-                        imou_accounts=ImouAccountManager(controller, controller.vault, store, parent=controller))
+                        imou_accounts=imou_accounts)
     return window, controller, accounts
 
 

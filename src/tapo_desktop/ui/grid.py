@@ -436,8 +436,8 @@ class CameraGrid(QWidget):
         self.view_changed.emit()
 
     def _may_stream(self, camera_id: str) -> bool:
-        """Every camera streams in view except click-to-start ones (iMou), which need a click first."""
-        return camera_id in self._manual or not imou_status.click_to_start(self._configs[camera_id])
+        """Every camera streams in view, except an iMou camera while the main window is hidden or minimized."""
+        return camera_id in self._manual or imou_status.may_stream(self._configs[camera_id])
 
     def _forget_idle_manual(self) -> None:
         """A click-started camera that left the view starts again only on a new click."""
@@ -481,3 +481,8 @@ class CameraGrid(QWidget):
                 self._requested[cid] = want
                 self._ctrl.start_view(cid, *want)
 
+    def set_window_shown(self, shown: bool) -> None:
+        """The main window was shown (True) or hidden / minimized (False): iMou tiles stop and start with it."""
+        if imou_status.window_shown() != bool(shown):
+            imou_status.set_window_shown(shown)
+            self._apply()

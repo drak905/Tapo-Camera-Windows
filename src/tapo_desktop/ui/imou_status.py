@@ -1,8 +1,8 @@
 """Small helpers the camera tile, grid and camera list use for an iMou (Open Platform) camera.
 
-Nothing here draws or talks to a network. ``source == "imou"`` cameras are *click to start*: the grid never starts
-their stream by itself (every minute of live view uses the iMou free quota); a click starts it, and it stops by itself
-after the idle limit.
+Nothing here draws or talks to a network. ``source == "imou"`` tiles start by themselves like every other tile (the view
+plan), except while the main window is hidden or minimized (every minute of live view uses the iMou free quota). A tile that
+waits (a failed start, the day's minutes used) starts again on a click.
 """
 from __future__ import annotations
 
@@ -12,14 +12,17 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from tapo_desktop.core.imou import notes
+from tapo_desktop.core.imou import notes, texts
 from tapo_desktop.core.imou.errors import PREFIX, is_no_card_text
 from tapo_desktop.core.imou.texts import CLICK_TEXT
 
 IMOU_SOURCE = "imou"
 LIST_TOOLTIP = "iMou (Open Platform)"
-CLICK_HEADLINE = "iMou - click to start"
+CLICK_HEADLINE = "iMou - click to start"       # after a recording of the same camera
 RETRY_HEADLINE = "iMou - click to retry"
+TRYING_HEADLINE = "iMou - trying again"
+USED_HEADLINE = "iMou - daily time used"
+WAITING_HEADLINE = "iMou - waiting"
 #: Message shown instead of the Tapo camera dialog (a manual camera form makes no sense for an iMou camera).
 EDIT_TEXT = "iMou cameras come from the iMou connection (account button, iMou connection). Use Refresh iMou cameras."
 
@@ -30,17 +33,41 @@ def is_imou(config: Any) -> bool:
 
 
 def click_to_start(config: Any) -> bool:
-    """True for a camera whose live view starts only on a click (all iMou cameras)."""
-    return is_imou(config)
+    """True for a camera whose live view starts only on a click. None: every camera starts by itself in view."""
+    return False
+
+
+_window_shown = True
+
+
+def set_window_shown(shown: bool) -> None:
+    """The main window is shown (True) or hidden / minimized (False). iMou tiles stream only while it is shown."""
+    global _window_shown
+    _window_shown = bool(shown)
+
+
+def window_shown() -> bool:
+    return _window_shown
+
+
+def may_stream(config: Any) -> bool:
+    """False for an iMou camera while the main window is hidden or minimized; True for every other camera."""
+    return not is_imou(config) or _window_shown
 
 
 def headline_for(reason: str) -> str | None:
     """The tile headline for an iMou reason text, or ``None`` for any other text."""
     if reason == CLICK_TEXT:
         return CLICK_HEADLINE
-    if reason.startswith(PREFIX):
-        return RETRY_HEADLINE
-    return None
+    if not reason.startswith(PREFIX):
+        return None
+    if texts.TRY_MARK in reason:
+        return TRYING_HEADLINE
+    if texts.BUDGET_MARK in reason:
+        return USED_HEADLINE
+    if any(mark in reason for mark in texts.WAIT_MARKS):
+        return WAITING_HEADLINE
+    return RETRY_HEADLINE
 
 
 def online_label(online: bool) -> str:

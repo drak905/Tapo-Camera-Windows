@@ -827,7 +827,17 @@ class MainWindow(QMainWindow):
         if (event.type() == QEvent.Type.ActivationChange and not self.isActiveWindow()
                 and self._held_key is not None):
             self._release_ptz_key()
+        if event.type() == QEvent.Type.WindowStateChange:  # iMou tiles stream only while the window is not minimized
+            self._grid.set_window_shown(self.isVisible() and not self.isMinimized())
         super().changeEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._grid.set_window_shown(not self.isMinimized())  # shown again (from the tray or the task bar): iMou tiles start
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._grid.set_window_shown(False)  # hidden to the tray or minimized: iMou tiles stop (Tapo and Kami tiles keep streaming)
 
     # ================================================================== window lifecycle
     def closeEvent(self, event: QCloseEvent) -> None:

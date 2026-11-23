@@ -10,8 +10,8 @@ How it works (the vendor documents no pause, seek or speed for these streams):
 * **pause** stops the stream (no flow is spent), **resume** and **jump** ask for a new URL; the calls of one camera
   are at least :data:`SEEK_DEBOUNCE_S` apart and the last jump wins;
 * no HLS fallback, no live address: a refused playback address is a plain error;
-* one stream per camera: the slot of the camera moves from ``live`` to ``playback`` (the tile shows a fixed text and
-  does not come back by itself); the same cap and the same daily minutes as live view;
+* one stream per camera: the slot of the camera moves from ``live`` to ``playback`` (the tile shows a fixed text; when
+  the playback ends it gets one click text, live view does not come back by itself); the same cap and the same daily minutes as live view;
 * the recording stream is paced by the supervisor (``-re``, fixed 10 fps); the position is counted from frames.
 Nothing is logged but class names and vendor codes: never a URL, token, secret or file name.
 """
@@ -75,7 +75,7 @@ class ImouPlayback:
         svc = self._svc
         rt = svc.runtime_or_raise()
         cid = svc.config.id
-        if not svc.config.online:
+        if not svc.is_online(rt):
             raise ImouOfflineError(texts.OFFLINE_IN_LIST)
         rt.guard.check()
         limits = rt.limits()
@@ -104,6 +104,7 @@ class ImouPlayback:
                 if gen == self._gen:
                     self._gen += 1
                     self._finish_locked(release=True)
+            self._svc.playback_ended()
             raise
 
     def pause(self) -> None:
@@ -138,6 +139,7 @@ class ImouPlayback:
                 return
             self._gen += 1
             self._finish_locked(release=True)
+        self._svc.playback_ended()
 
     # ================================================================== requests
     def _snap(self, runs: list[tuple[float, float]], pos: float) -> float | None:
@@ -264,6 +266,7 @@ class ImouPlayback:
         if done:
             if cbs is not None:
                 cbs[1](StreamState.STOPPED, texts.END_OF_RECORDINGS)
+            self._svc.playback_ended()
             return
         try:
             self._launch(new_gen, next_pos)
@@ -280,6 +283,7 @@ class ImouPlayback:
             self._finish_locked(release=True)
         if cbs is not None:
             cbs[1](StreamState.FAILED, text)
+        self._svc.playback_ended()
 
     # ================================================================== timers and cleanup
     def _arm_timer(self, limits: Any, remaining: float, gen: int) -> None:

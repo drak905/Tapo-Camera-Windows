@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -96,6 +97,7 @@ class ImouClient:
         self._timeout = timeout
         self._token: str | None = None
         self._token_until = 0.0
+        self._token_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return f"ImouClient(data_center={self._base.split('-')[1].split('.')[0]!r})"
@@ -105,9 +107,10 @@ class ImouClient:
         """The administrator token; one ``accessToken`` call when none is held or it is about to expire."""
         if self._guard is not None:
             self._guard.check()
-        if self._token is None or self._clock() >= self._token_until:
-            self._fetch_token()
-        return self._token  # type: ignore[return-value]
+        with self._token_lock:  # two tiles starting together make one token call, not two
+            if self._token is None or self._clock() >= self._token_until:
+                self._fetch_token()
+            return self._token  # type: ignore[return-value]
 
     def list_devices(self) -> list[ImouDevice]:
         """All devices of the account with their state (one call per 50 devices, at most :data:`MAX_PAGES`)."""

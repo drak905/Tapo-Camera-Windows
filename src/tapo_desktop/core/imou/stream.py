@@ -1,7 +1,8 @@
 """Stream supervisor for iMou live view: one attempt, a secret URL that never reaches a log, RTSP or HLS input.
 
-* One attempt only. When the stream ends for any reason other than our own ``stop()``, the state goes to FAILED and
-  the tile asks for a click: nothing reconnects by itself (every start costs vendor quota).
+* One attempt only. When the stream ends for any reason other than our own ``stop()``, the state goes to FAILED; the
+  supervisor never reconnects (a retry needs a new address, every start costs vendor quota). The camera service decides
+  whether to start a new one (up to 3 automatic retries, see ``services/imou_camera_service.py``) or to wait for a click.
 * The live URL is a secret ("anyone who has it can watch"). The base class only ever sees an opaque stand-in
   ``imou-live://<kind>/<n>``; the real URL is put into the ffmpeg command line here, and every line ffmpeg prints is
   cleaned of it before the base class logs or reports it.

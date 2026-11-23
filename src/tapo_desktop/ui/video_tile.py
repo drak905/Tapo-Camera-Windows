@@ -240,8 +240,9 @@ class VideoTile(_SlotWidget):
         return OVERLAY_TEXT[self._state]
 
     def waiting_for_click(self) -> bool:
-        """True while the tile is a remote stream waiting for a free relay slot (click to start it)."""
-        return self._state == "FAILED" and self._reason == REMOTE_CLICK_TO_VIEW
+        """True while the tile is a remote stream waiting for a free relay slot, or an iMou tile waiting for a click."""
+        return self._state == "FAILED" and (self._reason == REMOTE_CLICK_TO_VIEW
+                                            or imou_status.headline_for(self._reason) is not None)
 
     def set_selected(self, selected: bool) -> None:
         if selected != self._selected:

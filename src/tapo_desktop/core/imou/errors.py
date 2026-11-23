@@ -64,6 +64,10 @@ class ImouQuotaError(ImouError):
     """FL1002/FL1004/FL1005, OP1013/OP1014: the free flow or call quota is used."""
 
 
+class ImouBudgetError(ImouError):
+    """The daily live time of this camera is used (not a cloud answer: nothing was sent)."""
+
+
 class ImouVendorError(ImouError):
     """LV1008 / OP1009 and other refusals: the vendor's own text is shown."""
 
