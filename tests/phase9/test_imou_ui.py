@@ -369,17 +369,21 @@ def test_full_screen_from_the_menu_of_an_imou_tile_asks_for_hd_after_the_sd_star
         ("imou:A", StreamQuality.SD, 640, 360), ("imou:A", StreamQuality.HD, 1280, 720)]
 
 
-def test_a_failed_stream_asks_for_a_click_and_the_next_click_starts_again(make_env, qtbot):
+def test_a_failed_stream_waits_and_the_next_click_starts_it_through_the_controller(make_env, qtbot):
+    # requirement change: the view is not stopped after a failure (the service retries or waits); a click asks the
+    # controller for an immediate start (view_remote_now, which passes preempt=True)
     env = make_env([imou_cfg("A", "iMou A")])
     window = make_window(qtbot, env)
     grid = grid_of(window)
-    grid._on_tile_clicked("imou:A")
-    env.controller.stream_state.emit("imou:A", "FAILED", "iMou: stopped after 10 minutes of live view. Click to start again.")
+    qtbot.waitUntil(lambda: len(env.called("start_view")) == 1, timeout=3000)
+    asked = []
+    real = env.controller.view_remote_now
+    env.controller.view_remote_now = lambda cid: (asked.append(cid), real(cid))[1]
+    env.controller.stream_state.emit("imou:A", "FAILED", "iMou: the camera is offline (DV1007).")
     tile = grid.tile("imou:A")
-    assert tile.status_text() == RETRY_HEADLINE and "10 minutes" in tile.toolTip()
-    assert env.called("stop_view") == [("stop_view", "imou:A")]
+    assert env.called("stop_view") == [] and "offline" in tile.toolTip()
     grid._on_tile_clicked("imou:A")
-    assert len(env.called("start_view")) == 2
+    assert asked == ["imou:A"] and tile.stream_state() == "CONNECTING"
 
 
 def test_leaving_the_view_stops_the_stream_and_coming_back_does_not_restart_it(make_env, qtbot):
