@@ -46,7 +46,7 @@ def test_click_to_start_is_off_for_every_camera():
     assert imou_status.click_to_start(imou_cfg("A")) is False and imou_status.click_to_start(lan_cfg(0)) is False
 
 
-def test_a_waiting_imou_tile_is_clickable_and_a_tapo_or_playing_tile_is_not():
+def test_a_waiting_imou_tile_is_clickable_and_a_tapo_or_playing_tile_is_not(qtbot):
     from tapo_desktop.core.imou import texts
     from tapo_desktop.ui.video_tile import VideoTile
 
@@ -110,7 +110,7 @@ def test_the_playing_a_recording_tile_is_not_clickable(make_env, qtbot):
 
 
 # ================================================================================================ headlines and texts
-def test_the_headlines():
+def test_the_headlines(qtbot):
     from tapo_desktop.core.imou import texts
     from tapo_desktop.ui import imou_status
     from tapo_desktop.ui.video_tile import VideoTile
