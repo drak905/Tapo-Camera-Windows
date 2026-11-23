@@ -442,7 +442,7 @@ def test_tile_headlines_of_tapo_and_the_unsupported_text_are_unchanged():
     tile.set_stream_state("FAILED", "Live view is not supported for this Kami camera")
     assert tile.status_text() == "Live view is not supported for this Kami camera"
     tile.set_stream_state("FAILED", "iMou: the camera is offline (DV1007).")
-    assert tile.status_text() == RETRY_HEADLINE
+    assert tile.status_text() == "iMou - waiting"  # requirement change: waiting texts get their own headline
 
 
 # ============================================================================== list, controls, playback
