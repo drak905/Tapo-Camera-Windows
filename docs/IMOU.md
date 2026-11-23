@@ -18,18 +18,35 @@ They are never written to `config.json`, to the log, or into a web address.
 
 ## Using it
 
-* An iMou tile shows "iMou - click to start". **Click the tile** to start live view. Nothing starts by itself and
-  nothing is polled. Live view starts with a delay (up to about 30 seconds).
-* Grid tiles use the small (SD) stream. Full screen uses the large (HD) stream.
-* A live view stops by itself after **10 minutes** and asks for a click again. Each camera has a daily budget (default
-  **20 minutes**, a local estimate); at most **2** iMou streams run at once. Both numbers are in the connection window.
+* **Live view starts by itself.** A visible iMou tile starts like a Tapo tile (the small SD stream in the grid, the large
+  HD stream in full screen). A tile that is hidden, or a window that is hidden to the tray or minimized, stops the iMou
+  streams (Tapo and Kami tiles keep their own rules). Live view starts with a delay (up to about 30 seconds). The device
+  list is never read by itself, and nothing is polled. At app start nothing is sent until an iMou tile is visible and the
+  saved connection is back (it is rebuilt from the vault in memory, no network call).
+* **Limits.** Each camera has a daily budget (default **20 minutes**, a local estimate, 00:00 UTC to 00:00 UTC); at most
+  **2** iMou streams run at once. Both numbers are in the connection window. There is **no 10-minute limit for live
+  view** any more; the daily minutes are the guard. When they are used up the tile says so, with the local time of the
+  next 00:00 UTC, and **waits for a click** (nothing wakes it by itself at midnight). A tile over the stream cap says so
+  too and starts on a click.
+* **When a stream fails.** A lost stream or a network failure is retried by itself up to 3 times, 30 seconds apart (the
+  tile says "trying again"). The count starts again only after the stream has played 60 seconds without a break. A clean
+  end after 60 seconds or more (the address probably expired) restarts once after about 2 seconds. A camera gets at most
+  12 automatic starts per UTC day; after that the tile says so and waits for a click. A click is never counted and is
+  never retried by itself. Quota, flow, rate, key, offline, cap and other vendor refusals are **never** retried by
+  themselves: the text stays until you click the tile (or, for "offline", until a Refresh finds the camera online, which
+  starts it).
+* **Costs to know.** A failed start still counts the seconds it ran against the daily minutes (a 30-second stall costs 30
+  seconds). Full screen of another camera, or a smaller grid, stops the tiles that leave the view and starts them again
+  later (one request each). Full screen of an iMou tile uses the HD stream, which costs more flow than the SD grid tile
+  for the same minutes. After a second **Test** with the same cameras, tiles that said "not connected" need one click;
+  new cameras start by themselves.
 * **Refresh iMou cameras** (account menu) reads the camera list and the online state again. **Disconnect iMou**
   removes the iMou cameras and the saved key.
 * **Recordings (memory card).** Playback tab: pick a day and press **Refresh** to read the list from the camera (nothing
   is read before that, nothing polls; the list is kept for 60 seconds). **Play** opens the player window: play from a
   clip, pause, click the timeline to jump. 1x only, no download. A jump or a resume asks the cloud for a new address
   (one request, at least 1.5 seconds apart). Pause stops the stream, so no flow is spent while paused. Playback and live
-  view of one camera never run together: Play stops that camera's live view, and the tile asks for a click afterwards.
+  view of one camera never run together: Play stops that camera's live view, and when the recording ends the tile says "click to start" once; live view does not come back by itself.
 * Playback counts in the **same daily minutes and the same stream cap** as live view (the connection window says "live
   and playback minutes"). One playback run stops after 10 minutes: press Play to continue.
 * Rename works locally in this app only. Nothing is written to the camera or to the iMou account.

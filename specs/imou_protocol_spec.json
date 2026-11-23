@@ -218,7 +218,7 @@
     {
       "id": "imou.quota.free_tier",
       "kind": "limits",
-      "description": "Free per developer and month: 30,000 API requests and 2 GB of media flow (live preview counts); beyond that the balance is charged. The client has no polling, starts live only on a click, ends it after 10 minutes and counts minutes per camera per day locally.",
+      "description": "Free per developer and month: 30,000 API requests and 2 GB of media flow (live preview counts); beyond that the balance is charged. The client has no polling, starts live for visible tiles by itself (at most 12 automatic starts per camera per UTC day, 3 retries 30 s apart for network failures and lost streams), has no run limit for live view and counts minutes per camera per day locally.",
       "evidence": [
         {
           "source": "doc",
@@ -393,7 +393,7 @@
     },
     {
       "topic": "live URL lifetime and flow billing after the viewer leaves",
-      "detail": "Not stated in the pages read. The client deletes HLS addresses on stop and ends RTSP streams after 10 minutes of idle.",
+      "detail": "Not stated in the pages read. The client deletes HLS addresses on stop. A live stream has no run limit (only the daily minutes); a clean end after 60 s of play restarts once, so an address that expires early costs one request.",
       "lane": "api"
     }
   ]
