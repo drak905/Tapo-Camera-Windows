@@ -386,17 +386,18 @@ def test_a_failed_stream_waits_and_the_next_click_starts_it_through_the_controll
     assert asked == ["imou:A"] and tile.stream_state() == "CONNECTING"
 
 
-def test_leaving_the_view_stops_the_stream_and_coming_back_does_not_restart_it(make_env, qtbot):
+def test_an_imou_tile_that_leaves_the_view_stops_and_starts_again_when_it_comes_back(make_env, qtbot):
+    # requirement change: coming back into the view starts the stream again (it is a visible tile like any other)
     env = make_env([imou_cfg("A", "iMou A"), lan_cfg(0)])
     window = make_window(qtbot, env)
     grid = grid_of(window)
-    grid._on_tile_clicked("imou:A")
+    qtbot.waitUntil(lambda: len(env.called("start_view")) == 2, timeout=3000)
     grid.remove_from_view("imou:A")
     assert ("stop_view", "imou:A") in env.called("stop_view")
     n = len(env.called("start_view"))
     grid.add_to_view("imou:A")
-    qtbot.wait(100)
-    assert len(env.called("start_view")) == n
+    qtbot.waitUntil(lambda: len(env.called("start_view")) == n + 1, timeout=3000)
+    assert env.called("start_view")[-1][1] == "imou:A"
 
 
 def test_tapo_tiles_still_start_by_themselves_next_to_an_imou_tile(make_env, qtbot):
