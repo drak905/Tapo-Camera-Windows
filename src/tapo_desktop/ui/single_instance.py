@@ -51,7 +51,7 @@ class SingleInstance(QObject):
             probe.flush()
             probe.waitForBytesWritten(_CONNECT_TIMEOUT_MS)
             probe.disconnectFromServer()
-            log.info("Tapo Desktop is already running; asked it to show its window")
+            log.info("Tepo Desktop is already running; asked it to show its window")
             return False
         probe.abort()
         QLocalServer.removeServer(self._name)  # stale pipe from a crashed instance

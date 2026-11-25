@@ -123,7 +123,7 @@ def _build(app, store, data_dir, *, interactive: bool):
     from tapo_desktop.ui import _theme
     from tapo_desktop.ui.main_window import MainWindow
 
-    app.setApplicationName("Tapo Desktop")
+    app.setApplicationName("Tepo Desktop")
     app.setOrganizationName("TapoDesktop")
     app.setWindowIcon(_theme.app_icon())
     if interactive:

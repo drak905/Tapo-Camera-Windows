@@ -36,7 +36,7 @@ class ImouConnectDialog(QDialog):
                  clock: Callable[[], float] = time.time):
         super().__init__(parent)
         self.setObjectName("imouConnectDialog")
-        self.setWindowTitle("iMou (Open Platform) - Tapo Desktop")
+        self.setWindowTitle("iMou (Open Platform) - Tepo Desktop")
         self.setModal(True)
         self.setMinimumWidth(440)
         self._manager = manager

@@ -57,7 +57,7 @@ class KamiSignInDialog(QDialog):
                  clock: Callable[[], float] = time.time):
         super().__init__(parent)
         self.setObjectName("kamiSignInDialog")
-        self.setWindowTitle("Sign in to Kami Home - Tapo Desktop")
+        self.setWindowTitle("Sign in to Kami Home - Tepo Desktop")
         self.setModal(True)
         self.setMinimumWidth(400)
         self._manager = manager

@@ -38,7 +38,7 @@ class TrayController(QObject):
         quit_action.triggered.connect(self._quit)
 
         self._icon = QSystemTrayIcon(_theme.app_icon(), self)
-        self._icon.setToolTip("Tapo Desktop")
+        self._icon.setToolTip("Tepo Desktop")
         self._icon.setContextMenu(self._menu)
         self._icon.activated.connect(self._on_activated)
         if QSystemTrayIcon.isSystemTrayAvailable():

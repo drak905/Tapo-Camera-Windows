@@ -166,7 +166,7 @@ class ControlsPanel(QWidget):
         layout.addLayout(form)
         self._snapshot = QPushButton("Snapshot", box)
         self._snapshot.setObjectName("snapshotButton")
-        self._snapshot.setToolTip("Save the current picture to Pictures\\Tapo Desktop")
+        self._snapshot.setToolTip("Save the current picture to Pictures\\Tepo Desktop")
         self._snapshot.clicked.connect(lambda _checked=False: self.take_snapshot())
         layout.addWidget(self._snapshot)
         return box
