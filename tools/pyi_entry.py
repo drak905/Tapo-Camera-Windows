@@ -1,4 +1,4 @@
-"""PyInstaller entry point for TapoDesktop.exe."""
+"""PyInstaller entry point for TepoDesktop.exe."""
 import sys
 
 from tapo_desktop.app import main
