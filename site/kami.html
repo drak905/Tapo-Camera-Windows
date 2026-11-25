@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in with a Kami Home account - Tepo Desktop</title>
+<meta name="description" content="What the Kami Home sign-in in Tepo Desktop does: sign in, camera list and online state. Live view is not supported.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="tapo.html">Tapo sign-in</a>
+      <a href="kami.html" aria-current="page">Kami sign-in</a>
+      <a href="imou.html">iMou sign-in</a>
+      <a href="usage.html">Using the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Sign in with a Kami Home account</h1>
+  <p class="lead">Tepo Desktop can sign in to a Kami Home account and list your Kami cameras with their online state. That is all it does with Kami.</p>
+
+  <div class="note">
+    <p><strong>Live view is not supported for Kami cameras.</strong> A Kami tile shows the text &ldquo;Live view is not supported for this Kami camera&rdquo;. Recordings, camera controls and motion notifications are not supported either.</p>
+    <p>This feature is unofficial and not affiliated with Kami. Kami and its logos are trademarks of their owners.</p>
+  </div>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Your Kami Home account: email, password and the country you chose when you made the account.</li>
+    <li>A key file that this project does not provide. Without it the app cannot sign in to Kami. If the file is missing, the sign-in window says &ldquo;The Kami password key is missing&rdquo; and names the place where the app looks for it.</li>
+  </ul>
+
+  <h2>Sign in</h2>
+  <ol>
+    <li>Open the account button in the top bar. Find the <em>Kami</em> section and choose <em>Kami account&hellip;</em>.</li>
+    <li>Enter your email and password.</li>
+    <li>Pick your <em>Country</em> from the list. You can type to search. The app remembers the last country you used.</li>
+    <li>Press <em>Sign in</em>.</li>
+  </ol>
+  <p>One click sends exactly one sign-in. The button stays off while the app waits for an answer. The app never tries a second time by itself.</p>
+
+  <h2>Things to know before you sign in</h2>
+  <ul>
+    <li><strong>Your phone may be signed out.</strong> Signing in here may sign you out of the Kami app on your phone.</li>
+    <li><strong>Google or Apple sign-in does not work directly.</strong> If you sign in to Kami with Google or Apple, first set a password for your account in the Kami app. Then use that password here.</li>
+    <li><strong>No extra steps.</strong> If Kami asks for an extra verification step, the app cannot do it and says so.</li>
+    <li><strong>A wrong sign-in blocks the button for two minutes.</strong> The button shows a countdown. Check email, password and country before you try again.</li>
+  </ul>
+
+  <h2>After you sign in</h2>
+  <ul>
+    <li>Your Kami cameras appear in the camera list. The list says <em>(Offline)</em> after the name of a camera that Kami reports as offline. The tooltip of a row shows &ldquo;Kami (unofficial)&rdquo; and the online state.</li>
+    <li>The list is read when you sign in and when the app starts.</li>
+    <li>The password is not saved. The session is saved with Windows data protection, so at the next start the app signs in again with that saved session and never sends your password. If the session has ended, the app tells you to sign in again.</li>
+    <li>You can give a Kami camera a new name. The name is kept only inside this app.</li>
+  </ul>
+
+  <h2>Sign out</h2>
+  <p>Open the account button and choose <em>Sign out of Kami</em>. The app forgets the session and removes the Kami cameras from the list. Your Tapo and iMou cameras are not changed.</p>
+
+  <p>Next: <a href="usage.html">Using the app</a>.</p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop is unofficial and not affiliated with TP-Link, Kami or iMou. All product names and trademarks belong to their owners.</p>
+  </div>
+</footer>
+</body>
+</html>

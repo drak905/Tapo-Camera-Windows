@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tepo Desktop: watch your cameras on Windows</title>
+<meta name="description" content="Tepo Desktop is an unofficial Windows desktop app that shows your Tapo, Kami and iMou cameras in one grid.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Main">
+      <a href="index.html" aria-current="page">Home</a>
+      <a href="tapo.html">Tapo sign-in</a>
+      <a href="kami.html">Kami sign-in</a>
+      <a href="imou.html">iMou sign-in</a>
+      <a href="usage.html">Using the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Tepo Desktop</h1>
+  <p class="lead">An unofficial Windows app that shows your security cameras in one window: a grid from 1&times;1 up to 5&times;5, a full-screen view, and a player for recordings.</p>
+
+  <div class="note">
+    <p><strong>Unofficial.</strong> Tepo Desktop is an independent project. It is not made, approved or supported by TP-Link, Kami or iMou. Tapo, TP-Link, Kami and iMou are trademarks of their owners. They are named here only to say which cameras and accounts the app can work with.</p>
+  </div>
+
+  <h2>What works with which account</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Account</th><th>What you get</th><th>Guide</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tapo (TP-Link ID)</td>
+          <td>Live view at home and away, camera controls, memory-card recordings (watch and download), snapshots, motion notifications.</td>
+          <td><a href="tapo.html">Tapo sign-in</a></td>
+        </tr>
+        <tr>
+          <td>Kami Home</td>
+          <td>Sign-in, the camera list and the online state only. Live view and recordings are not supported.</td>
+          <td><a href="kami.html">Kami sign-in</a></td>
+        </tr>
+        <tr>
+          <td>iMou (Open Platform)</td>
+          <td>Watch only: live view and memory-card playback at normal speed. No downloads and no camera controls.</td>
+          <td><a href="imou.html">iMou sign-in</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Install</h2>
+  <p>You need Windows 10 or 11 (64-bit). Get one of these files from the Releases page of the project&rsquo;s GitHub repository:</p>
+  <ul>
+    <li><code>TepoDesktop-0.1.0-setup.exe</code>: an installer. It installs for your Windows user only and needs no administrator rights. It can add a desktop shortcut and can start the app when you sign in to Windows.</li>
+    <li><code>TepoDesktop-0.1.0-win64.zip</code>: unzip it anywhere and run <code>TepoDesktop\TepoDesktop.exe</code>. No install step.</li>
+  </ul>
+  <p>The video decoder (FFmpeg) is included. The build is not code-signed, so Windows SmartScreen may show a warning the first time you run it.</p>
+
+  <div class="note">
+    <p><strong>Web filters and ad blockers.</strong> Filters such as AdGuard can intercept plain HTTP traffic from programs on your PC, even traffic to your own cameras. This can break live view and downloads from Tapo cameras on your network. In your filter&rsquo;s settings, exclude <code>TepoDesktop.exe</code> and <code>ffmpeg.exe</code>. An exclusion made for an older program name does not carry over to a new name.</p>
+  </div>
+
+  <h2>First start</h2>
+  <ol>
+    <li>Start the app. It asks you to sign in with your TP-Link ID. Choose <em>Use without account</em> if you only want to add cameras by IP address, or if you use Kami or iMou only.</li>
+    <li>Your Tapo cameras appear with the names you gave them in the Tapo app. Cameras on your home network start playing by themselves.</li>
+    <li>For Kami or iMou, open the account button in the top bar and follow the matching guide.</li>
+    <li>Read <a href="usage.html">Using the app</a> for the grid, full screen, recordings, renaming, the tray icon and notifications.</li>
+  </ol>
+
+  <h2>Your data</h2>
+  <p>Passwords and keys are stored with Windows data protection, so only your Windows user can read them. Settings and logs are in <code>%APPDATA%\TapoDesktop</code>. The folder keeps this name so that settings and sign-ins carry over from earlier versions. See <a href="usage.html#data-folder">the data folder</a>.</p>
+
+  <h2>What it does not do</h2>
+  <ul>
+    <li>Two-way talk and audio in live view are not built.</li>
+    <li>Kami live video and Kami recordings are not supported.</li>
+    <li>iMou downloads, faster playback speeds and camera controls are not supported.</li>
+  </ul>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop is unofficial and not affiliated with TP-Link, Kami or iMou. All product names and trademarks belong to their owners.</p>
+    <p>This site describes version 0.1.0.</p>
+  </div>
+</footer>
+</body>
+</html>
