@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Using Tepo Desktop</title>
+<meta name="description" content="How to use Tepo Desktop: the camera grid, assigning slots, full screen, the player and timeline, sorting, renaming, the tray icon, notifications, keyboard shortcuts, the data folder and signing out.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="tapo.html">Tapo sign-in</a>
+      <a href="kami.html">Kami sign-in</a>
+      <a href="imou.html">iMou sign-in</a>
+      <a href="usage.html" aria-current="page">Using the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Using the app</h1>
+  <p class="lead">A short tour of the main window. Sign in first: see the guides for <a href="tapo.html">Tapo</a>, <a href="kami.html">Kami</a> and <a href="imou.html">iMou</a>.</p>
+
+  <h2>On this page</h2>
+  <ul>
+    <li><a href="#grid">The grid</a></li>
+    <li><a href="#slots">Choosing which camera is where</a></li>
+    <li><a href="#fullscreen">Full screen</a></li>
+    <li><a href="#panels">Side panels and shortcuts</a></li>
+    <li><a href="#recordings">Recordings: the player and the timeline</a></li>
+    <li><a href="#sort-rename">Sorting and renaming</a></li>
+    <li><a href="#tray">Tray icon and notifications</a></li>
+    <li><a href="#data-folder">The data folder</a></li>
+    <li><a href="#sign-out">Signing out</a></li>
+    <li><a href="#trouble">If video or downloads fail</a></li>
+  </ul>
+
+  <h2 id="grid">The grid</h2>
+  <p>The buttons at the top (<strong>1&times;1</strong> to <strong>5&times;5</strong>) set how many tiles the grid shows: 1, 4, 9, 16 or 25. The app remembers your choice. The first time it uses 2&times;2.</p>
+  <p>Every camera that is visible in the grid plays at the same time. A camera that is not visible does not play. Tiles show these texts while there is no picture: <em>Connecting&hellip;</em>, <em>Reconnecting&hellip;</em> or <em>Offline</em>. The grid uses a smaller stream so many tiles can run at once.</p>
+  <p>Click a tile to select it. The side panels then show that camera.</p>
+
+  <h2 id="slots">Choosing which camera is where</h2>
+  <p>The grid has 25 places (slots). A 3&times;3 grid shows the first 9 of them. An empty slot shows <em>Empty</em> and the hint &ldquo;Right-click or drag a camera here&rdquo;. An empty slot never plays video.</p>
+  <ul>
+    <li><strong>Drag and drop:</strong> drag a camera from the camera list onto a tile. You can also drag one tile onto another. If the camera already has a slot, the two slots swap.</li>
+    <li><strong>Tile menu</strong> (right-click a tile): <em>Remove from view</em>, <em>Show camera</em> (a list of all cameras; the one you pick goes into this slot), <em>Full screen</em> and <em>Rename&hellip;</em>.</li>
+    <li><strong>List menu</strong> (right-click a camera in the list): <em>Add to view</em>, <em>Remove from view</em>, <em>Rename&hellip;</em> and <em>Reset to camera name</em>.</li>
+  </ul>
+  <p>Cameras that are not in the current view are shown in grey italics in the list. A new camera takes the first empty slot. A camera you removed from the view stays out until you add it again. The slots are remembered between starts.</p>
+
+  <h2 id="fullscreen">Full screen</h2>
+  <p>Double-click a tile, or choose <em>Full screen</em> in its menu. Only that camera plays, in a larger, sharper stream. Double-click again to go back to the grid.</p>
+
+  <h2 id="panels">Side panels and shortcuts</h2>
+  <p>The <strong>Cameras</strong> panel on the left lists your cameras. The <strong>Camera</strong> panel on the right has two tabs: <em>Controls</em> and <em>Playback</em>.</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Keys</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>Show or hide the camera list (also in the <em>View</em> menu).</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Show or hide the Controls / Playback panel (also in the <em>View</em> menu).</td></tr>
+        <tr><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrow keys</td><td>Move the selected camera up, left, down or right while you hold the key. Only for Tapo cameras that can pan and tilt.</td></tr>
+        <tr><td><kbd>F2</kbd></td><td>Rename the selected camera.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Hiding a panel gives its space to the grid. It does not start or stop any video. The app remembers which panels are hidden.</p>
+  <p>The <em>Controls</em> tab is for Tapo cameras: privacy mode, status LED, siren, motion detection, night vision (auto, IR on, IR off), the pan/tilt pad, saved positions (presets) and a <em>Snapshot</em> button. A snapshot is saved as a PNG file in a folder under your Pictures folder, and the status bar shows the exact path. Kami and iMou cameras have no controls.</p>
+
+  <h2 id="recordings">Recordings: the player and the timeline</h2>
+  <p>Open the <em>Playback</em> tab. Pick a day. For a Tapo camera the app reads the list of clips from the memory card; each row shows the start and end time in your local time. Press <em>Play</em> (or double-click a clip) to open the player window. Press <em>Download clip&hellip;</em> to save the selected clip as an MP4 file.</p>
+  <p>The <strong>player window</strong> opens one per camera. Closing it stops the playback. It has:</p>
+  <ul>
+    <li>A <strong>24-hour timeline</strong> for the day, with the recorded parts marked and a moving cursor. Click or drag on it to jump to a time.</li>
+    <li><em>Play</em> / pause, <em>Previous clip</em> and <em>Next clip</em>.</li>
+    <li>A speed box: 1x, 2x, 4x and 8x for Tapo cameras. The faster speeds have been tested less than normal speed. iMou recordings play at 1x only.</li>
+    <li>A date box. Changing the day stops playback and loads that day.</li>
+    <li><em>Snapshot</em> and <em>Download clip&hellip;</em>.</li>
+  </ul>
+  <p>Recordings work for Tapo cameras (at home and away) and, watch only, for iMou cameras (see <a href="imou.html">the iMou guide</a>). Kami cameras show &ldquo;Recordings are not supported for this Kami camera&rdquo;.</p>
+
+  <h2 id="sort-rename">Sorting and renaming</h2>
+  <p><strong>Sort.</strong> The <em>Sort</em> button above the camera list has three choices: <em>Name A&ndash;Z</em> (the default), <em>Name Z&ndash;A</em> and <em>Account order</em>. Numbers sort naturally, so &ldquo;Cam 2&rdquo; comes before &ldquo;Cam 10&rdquo;. Sorting changes only the list. The grid keeps its own layout.</p>
+  <p><strong>Rename.</strong> Select a camera and press <kbd>F2</kbd>, or use <em>Rename&hellip;</em> in a menu. A name must have 1 to 32 bytes, so letters with accents count as 2 or 3 bytes. The dialog tells you where the new name goes:</p>
+  <ul>
+    <li><strong>Your own Tapo camera:</strong> the name is saved on the camera. It also shows in the Tapo app and for everyone the camera is shared with. The cloud can take a while to show it.</li>
+    <li><strong>A shared Tapo camera, a camera added by IP address, a Kami camera or an iMou camera:</strong> the name is used only in this app. For a shared Tapo camera, <em>Reset to camera name</em> brings back the name from the cloud.</li>
+  </ul>
+
+  <h2 id="tray">Tray icon and notifications</h2>
+  <ul>
+    <li><strong>Closing the window</strong> hides it to the tray by default, and video keeps running for Tapo cameras. iMou tiles stop while the window is hidden or minimized, to save quota. Double-click or click the tray icon, or choose <em>Show</em> in its menu, to bring the window back.</li>
+    <li><strong>To quit</strong>, right-click the tray icon and choose <em>Quit</em>. This stops all streams. If your system has no tray, closing the window quits the app.</li>
+    <li><strong>Starting the app a second time</strong> does not open a second copy. It brings the first window forward.</li>
+    <li><strong>Motion notifications:</strong> when a Tapo camera reports motion, Windows shows a notification with the camera name and the time. There is at most one per camera every 10 seconds. The camera&rsquo;s <em>Motion detection</em> switch must be on. Kami and iMou cameras send no motion notifications.</li>
+  </ul>
+  <p>Hiding to the tray and notifications are on by default. The app has no switch for them. They are the settings <code>minimize_to_tray</code> and <code>notifications</code> in the settings block of <code>config.json</code> in the data folder. Close the app before you edit that file.</p>
+
+  <h2 id="data-folder">The data folder</h2>
+  <p>The app keeps its files in <code>%APPDATA%\TapoDesktop</code>. The name is unchanged from earlier versions so that your settings and sign-ins carry over. To open it, paste the path into the Windows Explorer address bar.</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>File</th><th>What is in it</th></tr></thead>
+      <tbody>
+        <tr><td><code>config.json</code></td><td>Settings, the list of cameras, the grid slots. No passwords.</td></tr>
+        <tr><td><code>vault.json</code></td><td>Saved passwords, sessions and keys, protected by Windows so that only your Windows user can read them.</td></tr>
+        <tr><td><code>pins.json</code></td><td>Remembered security certificates of your cameras.</td></tr>
+        <tr><td><code>tapo-desktop.log</code></td><td>The log. It does not contain passwords or tokens.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Do not copy <code>vault.json</code> to another PC or another Windows user. It cannot be read there.</p>
+
+  <h2 id="sign-out">Signing out</h2>
+  <p>Open the account button in the top bar. Each account type has its own entries and signing out of one does not touch the others:</p>
+  <ul>
+    <li><em>Tapo</em>: <em>Sign out</em>. Removes your cloud cameras and forgets your TP-Link ID password. Cameras added by IP address stay.</li>
+    <li><em>Kami</em>: <em>Sign out of Kami</em>. Removes the Kami cameras and forgets the session.</li>
+    <li><em>iMou (Open Platform)</em>: <em>Disconnect iMou</em>. Removes the iMou cameras and the saved App ID and secret.</li>
+  </ul>
+  <p>To forget everything, quit the app from the tray and delete the data folder. This cannot be undone: you will have to sign in again and add manual cameras again.</p>
+
+  <h2 id="trouble">If video or downloads fail</h2>
+  <ul>
+    <li>Web filters such as AdGuard can intercept plain HTTP traffic from programs on your PC, including traffic to your cameras. Exclude <code>TepoDesktop.exe</code> and <code>ffmpeg.exe</code> in the filter&rsquo;s settings.</li>
+    <li>Tapo cameras use a media port that speaks plain HTTP. A filter that blocks or rewrites it breaks live view and downloads.</li>
+    <li>A tile that says <em>Offline</em> means the app could not get video. Use <em>Refresh cameras</em> in the account menu and check the camera in its own app.</li>
+  </ul>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop is unofficial and not affiliated with TP-Link, Kami or iMou. All product names and trademarks belong to their owners.</p>
+  </div>
+</footer>
+</body>
+</html>

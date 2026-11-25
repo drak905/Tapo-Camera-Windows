@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in with a Tapo account - Tepo Desktop</title>
+<meta name="description" content="How to sign in to Tepo Desktop with your TP-Link ID, use two-step verification, and add a Tapo camera by IP address.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="tapo.html" aria-current="page">Tapo sign-in</a>
+      <a href="kami.html">Kami sign-in</a>
+      <a href="imou.html">iMou sign-in</a>
+      <a href="usage.html">Using the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Sign in with a Tapo account</h1>
+  <p class="lead">Use the same TP-Link ID that you use in the Tapo phone app. Your cameras then show up with the names you gave them there.</p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>The email address and password of your TP-Link ID.</li>
+    <li>Access to your two-step verification method, if your account uses one.</li>
+    <li>You do <em>not</em> need a &ldquo;Camera account&rdquo; or any RTSP set-up for this.</li>
+  </ul>
+
+  <h2>Sign in</h2>
+  <ol>
+    <li>Start Tepo Desktop. If no account is saved, the sign-in window opens by itself. Otherwise open the account button in the top bar, find the <em>Tapo</em> section and choose <em>Sign in&hellip;</em>.</li>
+    <li>Enter your email and password.</li>
+    <li>Leave <em>Keep me signed in</em> ticked if you want the app to sign in by itself at the next start. Untick it and nothing is saved.</li>
+    <li>Press <em>Sign in</em>.</li>
+  </ol>
+  <p>Press <em>Use without account</em> if you want to skip this. The app remembers the choice and does not ask again at every start. You can still add cameras by IP address (see below) and sign in later from the account button.</p>
+
+  <h2>Two-step verification</h2>
+  <p>If your account uses two-step verification, the window shows an extra section. Pick one of the methods your account offers:</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Method</th><th>What to do</th></tr></thead>
+      <tbody>
+        <tr><td>Email code</td><td>Press <em>Send code</em>, then type the code from the email.</td></tr>
+        <tr><td>SMS code</td><td>Press <em>Send code</em>, then type the code from the text message.</td></tr>
+        <tr><td>Authenticator app</td><td>Type the current code from your authenticator app.</td></tr>
+        <tr><td>Tapo app notification</td><td>Approve the sign-in in the Tapo app, then type the code shown there.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Then press <em>Verify</em>. A code can take a minute to arrive. The code is 4 to 8 digits.</p>
+
+  <h2>Your cameras</h2>
+  <p>After sign-in the status bar says how many cameras are in your account and how many were found on your network. The list on the left may add a note after a camera name:</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Note</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>(no note)</td><td>The camera is online and was found on your home network. Video comes straight from the camera.</td></tr>
+        <tr><td>(Remote)</td><td>The camera is online but not on this network. Video, controls and recordings go through the TP-Link cloud.</td></tr>
+        <tr><td>(Not on this network)</td><td>The camera is online, but the app found it neither on this network nor through the cloud. Try <em>Refresh cameras</em>.</td></tr>
+        <tr><td>(Offline)</td><td>The TP-Link cloud says the camera is offline.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li><strong>At home:</strong> cameras are found automatically on the local network. You do not enter an IP address.</li>
+    <li><strong>Away from home:</strong> live view, camera controls and recordings use the TP-Link cloud. Video may be slower than at home, especially when many remote cameras play at once.</li>
+    <li><strong>Shared cameras</strong> (cameras another person shared with you) always use the cloud. The app never tries to log in to them directly. Renaming a shared camera changes the name only inside this app.</li>
+  </ul>
+  <p>Use <em>Refresh cameras</em> in the account menu to reload the list and look for cameras on the network again.</p>
+
+  <h2>Good to know</h2>
+  <ul>
+    <li><strong>A wrong password is not retried.</strong> Every failed login counts toward a camera&rsquo;s lockout. After a wrong password the app waits two minutes before it tries again.</li>
+    <li>Some cameras are set up so that your TP-Link ID password is not accepted for local access. The app then gets a local access token from your account on its own. You do not need to do anything.</li>
+    <li>Your password is stored with Windows data protection, in the data folder, and is readable only by your Windows user. The app does not write it to its log.</li>
+  </ul>
+
+  <h2>Add a camera by IP address</h2>
+  <p>You can add a Tapo camera without an account. In the camera list press <em>Add</em> and fill in:</p>
+  <ul>
+    <li><strong>Name</strong>: any name. If you leave it empty the IP address is used.</li>
+    <li><strong>IP address / host</strong>: for example <code>192.168.1.50</code>. In the Tapo app look under <em>Camera settings &gt; Device info</em>.</li>
+    <li><strong>Cloud password</strong>: your TP-Link account password.</li>
+    <li><strong>Camera account user</strong> and <strong>password</strong>: the account you set in the Tapo app under <em>Advanced settings &gt; Camera account</em>.</li>
+    <li><strong>Dual-lens camera</strong>: tick it if the camera has a second lens.</li>
+  </ul>
+  <p>Select a camera and press <em>Edit</em> to change these values. <em>Remove</em> deletes the camera and forgets its passwords.</p>
+
+  <h2>Sign out</h2>
+  <p>Open the account button and choose <em>Sign out</em> in the Tapo section. The app forgets your password, stops the cloud cameras and removes them from the list. Cameras you added by IP address stay.</p>
+
+  <h2>If something does not work</h2>
+  <ul>
+    <li>Video or downloads fail on your home network: exclude <code>TepoDesktop.exe</code> and <code>ffmpeg.exe</code> in your web filter or ad blocker (for example AdGuard). See <a href="index.html">the home page</a>.</li>
+    <li>The sign-in window shows an error: read it, check email and password, and wait two minutes before the next try.</li>
+    <li>A camera shows <em>Offline</em>: check that it is powered and connected in the Tapo app, then use <em>Refresh cameras</em>.</li>
+  </ul>
+
+  <p>Next: <a href="usage.html">Using the app</a>.</p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop is unofficial and not affiliated with TP-Link, Kami or iMou. All product names and trademarks belong to their owners.</p>
+  </div>
+</footer>
+</body>
+</html>

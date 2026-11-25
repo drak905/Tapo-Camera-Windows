@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect iMou cameras (Open Platform) - Tepo Desktop</title>
+<meta name="description" content="How to connect iMou cameras to Tepo Desktop through the iMou Open Platform: developer account, App ID and secret, data center, Test button, free quota and daily minutes.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="tapo.html">Tapo sign-in</a>
+      <a href="kami.html">Kami sign-in</a>
+      <a href="imou.html" aria-current="page">iMou sign-in</a>
+      <a href="usage.html">Using the app</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Connect iMou cameras</h1>
+  <p class="lead">Tepo Desktop shows iMou cameras through the iMou Open Platform. You use your own free developer app, so there is no password of your iMou account in this app. The connection is <strong>watch only</strong>.</p>
+
+  <div class="note">
+    <p><strong>The free quota is small.</strong> The free tier of the Open Platform gives a developer account 2&nbsp;GB of video flow and 30,000 requests per month. Every minute of live view or playback uses it. Before you rely on this, look at the real numbers under <em>My Resources</em> in the Open Platform console, run a one-minute test, and look again. Do not add funds until you know what a minute costs.</p>
+    <p>This feature is unofficial and not affiliated with iMou. iMou and its logos are trademarks of their owners.</p>
+  </div>
+
+  <h2>What you need</h2>
+  <ol>
+    <li>A free developer account on the iMou Open Platform at <a href="https://open.imoulife.com">open.imoulife.com</a>. Make it with <strong>the same iMou account that holds your cameras</strong>. Your cameras must appear in the portal&rsquo;s device list. If a camera is missing there, this app cannot see it.</li>
+    <li>In the portal&rsquo;s console, create an app. Copy its <strong>App ID</strong> and its <strong>App secret</strong>.</li>
+    <li>Note the <strong>data center</strong> that the console shows under <em>My information</em>: Singapore (<code>sg</code>), Frankfurt (<code>fk</code>) or Oregon (<code>or</code>).</li>
+  </ol>
+
+  <h2>Connect</h2>
+  <ol>
+    <li>In Tepo Desktop open the account button in the top bar. Find the <em>iMou (Open Platform)</em> section and choose <em>iMou connection&hellip;</em>.</li>
+    <li>Enter the <strong>App ID</strong> and the <strong>App secret</strong>.</li>
+    <li>Pick the <strong>Data center</strong> from the list. You can only choose one of the three listed. The app does not try the others for you.</li>
+    <li>Check the two limits (see below). Press <strong>Test</strong>.</li>
+  </ol>
+  <p>The <em>Test</em> button makes one token call and one device-list call. When it works, the window closes and your iMou cameras appear in the camera list. If it fails, the window shows why and clears the secret field. After a refused App ID or secret the button waits before it can be used again, so check both values first.</p>
+  <p>The App ID and the App secret are kept only in the Windows-protected vault. They are not written to the settings file or to the log.</p>
+
+  <h2>The two limits</h2>
+  <p>The connection window has two numbers. Both protect your free quota:</p>
+  <ul>
+    <li><strong>Live and playback minutes per camera and day.</strong> The default is <strong>20 minutes</strong>. It is an estimate counted by this app, from 00:00 UTC to 00:00 UTC. When a camera has used its minutes, its tile says so and waits for a click. Nothing starts again by itself at midnight.</li>
+    <li><strong>Live streams at once.</strong> The default is <strong>2</strong>. A tile over this number says so and starts when you click it.</li>
+  </ul>
+  <p>A failed start still counts the seconds it ran. The connection window also shows today&rsquo;s estimate. The real numbers are in the console.</p>
+
+  <h2>Watching</h2>
+  <ul>
+    <li><strong>Live view</strong> starts by itself for every iMou tile you can see. It can take up to about 30 seconds to start. A tile that is hidden, or a window that is minimized or hidden to the tray, stops the iMou streams, so no quota is used while you are away.</li>
+    <li>In the grid an iMou tile plays the smaller stream. Full screen uses the larger stream, which costs more flow for the same minutes.</li>
+    <li><strong>Recordings from the memory card:</strong> open the <em>Playback</em> tab, pick a day and press <em>Refresh</em>. The app reads the list from the camera only when you press it. Press <em>Play</em> to open the player window. You can pause and click the timeline to jump. Playback is at normal speed only, counts in the same daily minutes, and one run stops after 10 minutes (press <em>Play</em> to go on).</li>
+    <li>If a stream drops, the app tries again a few times, 30 seconds apart. If the vendor refuses (quota used, camera offline, rate limit), the tile shows the text and waits for your click. It does not keep retrying.</li>
+  </ul>
+
+  <h2>Menu</h2>
+  <ul>
+    <li><em>iMou connection&hellip;</em>: open the connection window again, for example to change a limit. After a second <strong>Test</strong> a tile that said &ldquo;not connected&rdquo; needs one click.</li>
+    <li><em>Refresh iMou cameras</em>: read the camera list and the online state again. This is one call. Nothing is read in the background.</li>
+    <li><em>Disconnect iMou</em>: remove the iMou cameras and the saved App ID and secret.</li>
+  </ul>
+
+  <h2>What it does not do</h2>
+  <ul>
+    <li>No downloads of recordings, no faster playback speeds, no cloud clips.</li>
+    <li>No camera controls: no pan/tilt, no privacy mode, no siren, no motion notifications. Other actions say &ldquo;Not supported for iMou cameras yet&rdquo;.</li>
+    <li>Nothing is changed on your cameras or in your iMou account. Renaming a camera only changes the name inside this app.</li>
+    <li>Cameras that belong to another person&rsquo;s iMou account are not shown.</li>
+  </ul>
+
+  <p>Next: <a href="usage.html">Using the app</a>.</p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop is unofficial and not affiliated with TP-Link, Kami or iMou. All product names and trademarks belong to their owners.</p>
+  </div>
+</footer>
+</body>
+</html>
