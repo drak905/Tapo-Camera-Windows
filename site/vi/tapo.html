@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng nhập tài khoản Tapo - Tepo Desktop</title>
+<meta name="description" content="Cách đăng nhập Tepo Desktop bằng TP-Link ID, xác minh hai bước và thêm camera Tapo theo địa chỉ IP.">
+<link rel="icon" href="data:,">
+<link rel="alternate" hreflang="en" href="../tapo.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Điều hướng chính">
+      <a href="index.html">Trang chủ</a>
+      <a href="tapo.html" aria-current="page">Đăng nhập Tapo</a>
+      <a href="kami.html">Đăng nhập Kami</a>
+      <a href="imou.html">Đăng nhập iMou</a>
+      <a href="usage.html">Hướng dẫn sử dụng</a>
+    </nav>
+    <div class="lang-switch" aria-label="Ngôn ngữ">
+      <a href="../tapo.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true">/</span>
+      <span class="active" lang="vi">VI</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Đăng nhập tài khoản Tapo</h1>
+  <p class="lead">Sử dụng chính TP-Link ID mà bạn dùng trong ứng dụng Tapo trên điện thoại. Camera của bạn sẽ tự hiện lên đúng tên đã đặt.</p>
+
+  <h2>Những gì bạn cần</h2>
+  <ul>
+    <li>Địa chỉ email và mật khẩu TP-Link ID của bạn.</li>
+    <li>Phương thức xác minh hai bước nếu tài khoản có bật bảo mật 2 lớp.</li>
+    <li>Bạn <em>không</em> cần tạo &ldquo;Camera account&rdquo; hay cấu hình RTSP cho bước này.</li>
+  </ul>
+
+  <h2>Các bước đăng nhập</h2>
+  <ol>
+    <li>Khởi động Tepo Desktop. Nếu chưa lưu tài khoản nào, cửa sổ đăng nhập sẽ tự mở. Nếu đã vào màn hình chính, bấm nút tài khoản ở thanh công cụ phía trên, tìm mục <em>Tapo</em> và chọn <em>Sign in&hellip;</em>.</li>
+    <li>Nhập email và mật khẩu.</li>
+    <li>Giữ tùy chọn <em>Keep me signed in</em> (Duy trì đăng nhập) nếu muốn ứng dụng tự động đăng nhập trong lần mở sau. Bỏ tích nếu không muốn lưu.</li>
+    <li>Bấm <em>Sign in</em>.</li>
+  </ol>
+  <p>Bấm <em>Use without account</em> (Dùng không cần tài khoản) nếu muốn bỏ qua bước này. Ứng dụng sẽ ghi nhớ lựa chọn và không hỏi lại ở mỗi lần mở. Bạn vẫn có thể thêm camera theo IP (xem bên dưới) hoặc đăng nhập lại từ nút tài khoản.</p>
+
+  <h2>Xác minh hai bước (MFA)</h2>
+  <p>Nếu tài khoản bật xác minh hai bước, cửa sổ sẽ mở thêm phần xác nhận. Chọn một trong các phương thức tài khoản cung cấp:</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Phương thức</th><th>Cách thực hiện</th></tr></thead>
+      <tbody>
+        <tr><td>Mã qua email (Email code)</td><td>Bấm <em>Send code</em>, sau đó nhập mã nhận được trong email.</td></tr>
+        <tr><td>Mã qua SMS (SMS code)</td><td>Bấm <em>Send code</em>, sau đó nhập mã trong tin nhắn.</td></tr>
+        <tr><td>Ứng dụng xác thực (Authenticator app)</td><td>Nhập mã hiện tại từ ứng dụng xác thực của bạn.</td></tr>
+        <tr><td>Thông báo ứng dụng Tapo</td><td>Phê duyệt yêu cầu đăng nhập trên app Tapo, rồi nhập mã hiển thị trên đó.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Sau đó bấm <em>Verify</em>. Mã có thể mất khoảng một phút để gửi tới và gồm 4 đến 8 chữ số.</p>
+
+  <h2>Camera của bạn</h2>
+  <p>Sau khi đăng nhập, thanh trạng thái cho biết có bao nhiêu camera trong tài khoản và bao nhiêu camera được tìm thấy trong mạng nội bộ. Danh sách bên trái có thể hiển thị chú thích sau tên camera:</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Chú thích</th><th>Ý nghĩa</th></tr></thead>
+      <tbody>
+        <tr><td>(không có chú thích)</td><td>Camera đang online và được tìm thấy trong mạng nhà bạn. Video lấy trực tiếp từ camera.</td></tr>
+        <tr><td>(Remote)</td><td>Camera đang online nhưng không nằm cùng mạng hiện tại. Video, điều khiển và bản ghi đi qua cloud TP-Link.</td></tr>
+        <tr><td>(Not on this network)</td><td>Camera đang online, nhưng ứng dụng không tìm thấy trong mạng nội bộ lẫn qua cloud. Hãy thử <em>Refresh cameras</em>.</td></tr>
+        <tr><td>(Offline)</td><td>Cloud TP-Link báo camera đang ngoại tuyến.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li><strong>Khi ở nhà:</strong> camera tự động được tìm thấy trong mạng LAN. Bạn không cần nhập địa chỉ IP.</li>
+    <li><strong>Khi ở xa nhà:</strong> xem trực tiếp, điều khiển và xem lại bản ghi đi qua cloud TP-Link. Tốc độ có thể chậm hơn ở nhà, đặc biệt khi phát đồng thời nhiều camera từ xa.</li>
+    <li><strong>Camera được chia sẻ</strong> (do người khác chia sẻ với bạn) luôn đi qua cloud. Ứng dụng không bao giờ thử đăng nhập trực tiếp vào camera đó. Khi đổi tên camera chia sẻ, tên mới chỉ lưu trong ứng dụng này.</li>
+  </ul>
+  <p>Dùng mục <em>Refresh cameras</em> trong trình đơn tài khoản để tải lại danh sách và quét lại camera trong mạng nội bộ.</p>
+
+  <h2>Thông tin hữu ích</h2>
+  <ul>
+    <li><strong>Mật khẩu sai không bị thử lại tự động.</strong> Mỗi lần đăng nhập sai đều tính vào bộ đếm khóa của camera. Sau một lần sai mật khẩu, ứng dụng đợi hai phút trước khi cho phép thử lại.</li>
+    <li>Một số camera được cấu hình không chấp nhận mật khẩu TP-Link ID cho truy cập nội bộ. Khi đó ứng dụng sẽ tự động lấy local access token từ tài khoản của bạn mà bạn không cần thao tác thêm.</li>
+    <li>Mật khẩu của bạn được lưu bằng cơ chế bảo vệ dữ liệu Windows trong thư mục dữ liệu, chỉ tài khoản Windows của bạn đọc được và không bao giờ bị ghi vào file log.</li>
+  </ul>
+
+  <h2>Thêm camera theo địa chỉ IP</h2>
+  <p>Bạn có thể thêm camera Tapo mà không cần đăng nhập tài khoản. Trong danh sách camera bấm <em>Add</em> và điền:</p>
+  <ul>
+    <li><strong>Name</strong>: tên tùy chọn; nếu để trống sẽ dùng địa chỉ IP.</li>
+    <li><strong>IP address / host</strong>: ví dụ <code>192.168.1.50</code>. Trong app Tapo, xem tại <em>Cài đặt camera &gt; Thông tin thiết bị</em>.</li>
+    <li><strong>Cloud password</strong>: mật khẩu tài khoản TP-Link của bạn.</li>
+    <li><strong>Camera account user</strong> và <strong>password</strong>: tài khoản camera bạn thiết lập trong app Tapo tại <em>Cài đặt nâng cao &gt; Tài khoản camera</em>.</li>
+    <li><strong>Dual-lens camera</strong>: tích chọn nếu camera có hai ống kính.</li>
+  </ul>
+  <p>Chọn camera và bấm <em>Edit</em> để sửa các thông tin này. <em>Remove</em> sẽ xóa camera và quên các mật khẩu đã lưu của nó.</p>
+
+  <h2>Đăng xuất</h2>
+  <p>Mở nút tài khoản và chọn <em>Sign out</em> trong mục Tapo. Ứng dụng sẽ xóa mật khẩu đã lưu, dừng các camera cloud và gỡ chúng khỏi danh sách. Các camera bạn tự thêm theo địa chỉ IP vẫn được giữ lại.</p>
+
+  <h2>Nếu gặp sự cố</h2>
+  <ul>
+    <li>Xem video hoặc tải clip bị lỗi trong mạng nhà: thêm ngoại lệ cho <code>TepoDesktop.exe</code> và <code>ffmpeg.exe</code> trong trình lọc web hoặc chặn quảng cáo (ví dụ AdGuard). Xem <a href="index.html">trang chủ</a>.</li>
+    <li>Cửa sổ đăng nhập báo lỗi: đọc thông báo, kiểm tra lại email/mật khẩu và đợi hai phút trước lần thử kế tiếp.</li>
+    <li>Camera báo <em>Offline</em>: kiểm tra nguồn điện và kết nối mạng trong app Tapo, rồi dùng <em>Refresh cameras</em>.</li>
+  </ul>
+
+  <p>Tiếp theo: <a href="usage.html">Hướng dẫn sử dụng</a>.</p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop là ứng dụng không chính thức và không liên kết với TP-Link, Kami hay iMou. Mọi tên sản phẩm và nhãn hiệu thuộc về chủ sở hữu tương ứng.</p>
+  </div>
+</footer>
+</body>
+</html>

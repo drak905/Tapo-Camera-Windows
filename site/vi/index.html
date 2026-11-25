@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tepo Desktop: xem camera trên Windows</title>
+<meta name="description" content="Tepo Desktop là ứng dụng desktop Windows không chính thức giúp xem camera Tapo, Kami và iMou trên cùng một lưới.">
+<link rel="icon" href="data:,">
+<link rel="alternate" hreflang="en" href="../index.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Điều hướng chính">
+      <a href="index.html" aria-current="page">Trang chủ</a>
+      <a href="tapo.html">Đăng nhập Tapo</a>
+      <a href="kami.html">Đăng nhập Kami</a>
+      <a href="imou.html">Đăng nhập iMou</a>
+      <a href="usage.html">Hướng dẫn sử dụng</a>
+    </nav>
+    <div class="lang-switch" aria-label="Ngôn ngữ">
+      <a href="../index.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true">/</span>
+      <span class="active" lang="vi">VI</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Tepo Desktop</h1>
+  <p class="lead">Ứng dụng Windows không chính thức giúp hiển thị các camera an ninh của bạn trong một cửa sổ duy nhất: lưới từ 1&times;1 đến 5&times;5, xem toàn màn hình và trình phát bản ghi trên thẻ nhớ.</p>
+
+  <div class="note">
+    <p><strong>Không chính thức.</strong> Tepo Desktop là dự án độc lập, không do TP-Link, Kami hay iMou phát triển, phê duyệt hay hỗ trợ. Tapo, TP-Link, Kami và iMou là nhãn hiệu của chủ sở hữu tương ứng, chỉ được nhắc đến nhằm mô tả các camera và tài khoản mà ứng dụng có thể làm việc cùng.</p>
+  </div>
+
+  <h2>Khả năng hỗ trợ theo từng tài khoản</h2>
+  <figure class="diagram">
+    <a href="../images/multi-provider-overview.png" target="_blank" rel="noopener">
+      <img src="../images/multi-provider-overview.png" alt="Tổng quan đa hãng camera của Tepo Desktop với lưới 2x2 gồm Tapo LAN, Tapo Cloud Relay, iMou Open Platform và trạng thái Kami Home kèm bảng so sánh tính năng.">
+    </a>
+    <figcaption>Không gian làm việc hợp nhất đa hãng (lưới 2&times;2, bảng Controls &amp; Playback tự thích ứng) và bảng so sánh tính năng giữa Tapo, iMou và Kami (nhấp để xem kích thước đầy đủ).</figcaption>
+  </figure>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Tài khoản</th><th>Tính năng hỗ trợ</th><th>Hướng dẫn</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TP-Link Tapo (LAN &amp; Cloud)</td>
+          <td>Hỗ trợ đầy đủ: xem trực tiếp tại nhà (LAN) và từ xa / camera chia sẻ (Cloud Relay), điều khiển PTZ &amp; thiết bị, xem lại thẻ nhớ 24 giờ (<code>1x</code>&ndash;<code>8x</code> và tải MP4), chụp ảnh nhanh, thông báo chuyển động và đổi tên.</td>
+          <td><a href="tapo.html">Đăng nhập Tapo</a></td>
+        </tr>
+        <tr>
+          <td>iMou (Open Platform)</td>
+          <td>Chỉ xem: xem trực tiếp (<code>RTSP</code> / <code>HLS</code>) và phát lại thẻ nhớ tốc độ <code>1x</code>, có giới hạn phút mỗi ngày &amp; giới hạn luồng chạy đồng thời; chỉ đổi tên cục bộ. Không tải video và không điều khiển camera.</td>
+          <td><a href="imou.html">Đăng nhập iMou</a></td>
+        </tr>
+        <tr>
+          <td>Kami Home</td>
+          <td>Chỉ đăng nhập tài khoản, hiển thị danh sách camera, trạng thái online/offline, sắp xếp và đổi tên cục bộ. Không hỗ trợ xem trực tiếp, bản ghi hay điều khiển.</td>
+          <td><a href="kami.html">Đăng nhập Kami</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Cách hoạt động giữa các hãng</h2>
+  <figure class="diagram">
+    <a href="../images/multi-provider-architecture.png" target="_blank" rel="noopener">
+      <img src="../images/multi-provider-architecture.png" alt="Sơ đồ kiến trúc đa hãng của Tepo Desktop minh họa giao diện PyQt6, AppController, nhóm giải mã FFmpeg và kho DPAPI Windows định tuyến tới các nhánh Tapo, iMou và Kami tách biệt.">
+    </a>
+    <figcaption>Các nhánh xác thực, luồng media và điều khiển tách biệt cho từng hãng, dùng chung giao diện PyQt6, nhóm giải mã FFmpeg và kho lưu trữ bảo mật Windows DPAPI (nhấp để xem kích thước đầy đủ).</figcaption>
+  </figure>
+  <ul>
+    <li><strong>TP-Link Tapo:</strong> Tự động tìm camera trong mạng nội bộ (<code>TDP</code> UDP <code>20002</code>/<code>20004</code>), điều khiển qua <code>HTTPS :443</code> nội bộ (<code>TPAP / SPAKE2+</code> hoặc Secure v3, tự động lấy Local Access Token khi cần), và phát trực tiếp / xem lại qua cổng <code>:8800</code> (<code>HKDF</code>/<code>AES</code>) hoặc <code>RTSP :554</code> kèm cảnh báo chuyển động <code>ONVIF :2020</code>. Camera ở xa và camera được chia sẻ tự động đi qua <strong>TP-Link Cloud Relay</strong> và <strong>Cloud Passthrough</strong>.</li>
+    <li><strong>iMou (Open Platform):</strong> Kết nối tới <code>open.imoulife.com</code> (<code>sg</code>, <code>fk</code> hoặc <code>or</code>) bằng <strong>App ID</strong> và <strong>App Secret</strong> từ tài khoản nhà phát triển miễn phí của chính bạn mà không lưu mật khẩu iMou. Xem trực tiếp dùng <code>RTSP</code> tạm thời (hoặc cloud <code>HLS</code> dự phòng, tự hủy khi dừng) và xem lại thẻ nhớ theo yêu cầu ở tốc độ <code>1x</code> (<code>record.file.list</code>, giới hạn 10 phút mỗi lượt; tạm dừng sẽ ngắt luồng), được bảo vệ bằng định mức phút hằng ngày (mặc định 20 phút/camera/ngày UTC), giới hạn 2 luồng đồng thời, tự dừng khi ẩn hoặc thu nhỏ và danh sách API chỉ-đọc nghiêm ngặt.</li>
+    <li><strong>Kami Home:</strong> Đăng nhập qua cổng cloud khu vực của Kami (<code>v4/users/login</code>, <code>v5/devices/list</code>) bằng tệp khóa do người dùng tự cung cấp, gửi 1 lần duy nhất mỗi lượt bấm (khóa 120 giây nếu sai) và chỉ lưu session token trong DPAPI để hiển thị danh sách camera cùng trạng thái online/offline với tùy chọn đổi tên cục bộ.</li>
+  </ul>
+
+  <h2>Cài đặt</h2>
+  <p>Cần Windows 10 hoặc 11 (64-bit). Tải một trong hai tệp sau tại <a href="https://github.com/drak905/Tepo-Camera-Desktop/releases">trang Releases trên GitHub của dự án</a>:</p>
+  <ul>
+    <li><code>TepoDesktop-0.1.0-setup.exe</code>: bộ cài đặt cho riêng tài khoản Windows hiện tại, không cần quyền quản trị viên. Hỗ trợ tạo lối tắt Desktop và tự khởi động cùng Windows.</li>
+    <li><code>TepoDesktop-0.1.0-win64.zip</code>: giải nén ở bất kỳ đâu và chạy <code>TepoDesktop\TepoDesktop.exe</code>, không cần cài đặt.</li>
+  </ul>
+  <p>Bộ giải mã video (FFmpeg) đã được đóng gói sẵn. Bản phát hành chưa có chữ ký số (code signing), vì vậy Windows SmartScreen có thể hiện cảnh báo trong lần chạy đầu tiên.</p>
+
+  <div class="note">
+    <p><strong>Trình lọc web và chặn quảng cáo.</strong> Các phần mềm như AdGuard có thể chặn hoặc can thiệp lưu lượng HTTP thuần từ máy tính của bạn, kể cả kết nối tới chính camera trong nhà. Điều này có thể làm lỗi xem trực tiếp và tải video từ camera Tapo nội bộ. Hãy thêm ngoại lệ cho <code>TepoDesktop.exe</code> và <code>ffmpeg.exe</code> trong phần cài đặt của trình lọc web (ngoại lệ cho tên chương trình cũ sẽ không tự áp dụng sang tên mới).</p>
+  </div>
+
+  <h2>Lần chạy đầu tiên</h2>
+  <ol>
+    <li>Khởi động ứng dụng. Cửa sổ sẽ hỏi đăng nhập TP-Link ID. Chọn <em>Use without account</em> (Dùng không cần tài khoản) nếu bạn chỉ muốn thêm camera theo IP hoặc chỉ dùng Kami / iMou.</li>
+    <li>Camera Tapo xuất hiện với tên bạn đã đặt trong ứng dụng Tapo. Các camera đang hiển thị trên mạng nội bộ phát trực tiếp qua LAN, còn camera ở xa hoặc camera được chia sẻ phát qua TP-Link cloud relay.</li>
+    <li>Với Kami hoặc iMou, mở nút tài khoản ở thanh công cụ phía trên và làm theo trang hướng dẫn tương ứng.</li>
+    <li>Xem <a href="usage.html">Hướng dẫn sử dụng</a> để biết cách dùng lưới camera, toàn màn hình, bản ghi, đổi tên, khay hệ thống và thông báo.</li>
+  </ol>
+
+  <h2>Dữ liệu của bạn</h2>
+  <p>Mật khẩu và khóa truy cập được lưu bằng cơ chế bảo vệ dữ liệu của Windows (DPAPI), nên chỉ tài khoản Windows của bạn mới đọc được. Cấu hình và nhật ký nằm trong <code>%APPDATA%\TapoDesktop</code>. Tên thư mục này được giữ nguyên từ các phiên bản cũ để không làm mất cấu hình và tài khoản đã đăng nhập. Xem <a href="usage.html#data-folder">thư mục dữ liệu</a>.</p>
+
+  <h2>Những tính năng chưa hỗ trợ</h2>
+  <ul>
+    <li>Đàm thoại hai chiều và âm thanh khi xem trực tiếp chưa được xây dựng.</li>
+    <li>Không hỗ trợ xem video trực tiếp và xem bản ghi với camera Kami.</li>
+    <li>Không hỗ trợ tải bản ghi, tua nhanh và điều khiển camera với iMou.</li>
+  </ul>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop là ứng dụng không chính thức và không liên kết với TP-Link, Kami hay iMou. Mọi tên sản phẩm và nhãn hiệu thuộc về chủ sở hữu tương ứng.</p>
+    <p>Trang này mô tả phiên bản 0.1.0.</p>
+  </div>
+</footer>
+</body>
+</html>

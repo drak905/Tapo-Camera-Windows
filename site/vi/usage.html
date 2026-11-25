@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hướng dẫn sử dụng Tepo Desktop</title>
+<meta name="description" content="Hướng dẫn sử dụng Tepo Desktop: lưới camera, chọn vị trí ô, toàn màn hình, trình phát và dòng thời gian, sắp xếp, đổi tên, khay hệ thống, thông báo, phím tắt, thư mục dữ liệu và đăng xuất.">
+<link rel="icon" href="data:,">
+<link rel="alternate" hreflang="en" href="../usage.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Điều hướng chính">
+      <a href="index.html">Trang chủ</a>
+      <a href="tapo.html">Đăng nhập Tapo</a>
+      <a href="kami.html">Đăng nhập Kami</a>
+      <a href="imou.html">Đăng nhập iMou</a>
+      <a href="usage.html" aria-current="page">Hướng dẫn sử dụng</a>
+    </nav>
+    <div class="lang-switch" aria-label="Ngôn ngữ">
+      <a href="../usage.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true">/</span>
+      <span class="active" lang="vi">VI</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Hướng dẫn sử dụng</h1>
+  <p class="lead">Giới thiệu nhanh cửa sổ chính. Trước tiên hãy đăng nhập theo hướng dẫn cho <a href="tapo.html">Tapo</a>, <a href="kami.html">Kami</a> và <a href="imou.html">iMou</a>.</p>
+
+  <h2>Mục lục trang này</h2>
+  <ul>
+    <li><a href="#grid">Lưới camera</a></li>
+    <li><a href="#slots">Chọn vị trí từng camera</a></li>
+    <li><a href="#fullscreen">Toàn màn hình</a></li>
+    <li><a href="#panels">Bảng hai bên và phím tắt</a></li>
+    <li><a href="#recordings">Bản ghi: trình phát và dòng thời gian</a></li>
+    <li><a href="#sort-rename">Sắp xếp và đổi tên</a></li>
+    <li><a href="#tray">Khay hệ thống và thông báo</a></li>
+    <li><a href="#data-folder">Thư mục dữ liệu</a></li>
+    <li><a href="#sign-out">Đăng xuất</a></li>
+    <li><a href="#trouble">Khắc phục khi xem video hoặc tải về bị lỗi</a></li>
+  </ul>
+
+  <h2 id="grid">Lưới camera</h2>
+  <figure class="diagram">
+    <a href="../images/multi-provider-overview.png" target="_blank" rel="noopener">
+      <img src="../images/multi-provider-overview.png" alt="Giao diện cửa sổ chính Tepo Desktop với danh sách camera bên trái, lưới 2x2 hỗn hợp ở giữa và bảng Controls / Playback bên phải.">
+    </a>
+    <figcaption>Bố cục cửa sổ chính với lưới 2&times;2 kết hợp Tapo, iMou và Kami, thanh danh sách camera và bảng Controls / Playback tự thích ứng (nhấp để xem kích thước đầy đủ).</figcaption>
+  </figure>
+  <p>Các nút phía trên (<strong>1&times;1</strong> đến <strong>5&times;5</strong>) quyết định số ô hiển thị: 1, 4, 9, 16 hoặc 25 ô. Ứng dụng tự nhớ lựa chọn này (mặc định ban đầu là 2&times;2).</p>
+  <p>Mọi camera đang hiển thị trên lưới sẽ tự động phát đồng thời; camera ẩn khỏi khung nhìn sẽ ngừng phát. Khi chưa có hình, ô hiện trạng thái <em>Connecting&hellip;</em>, <em>Reconnecting&hellip;</em> hoặc <em>Offline</em>. Chế độ lưới sử dụng luồng độ phân giải nhỏ để chạy mượt nhiều camera cùng lúc.</p>
+  <p>Nhấp vào một ô để chọn camera đó; các bảng bên phải sẽ cập nhật theo camera đang chọn.</p>
+
+  <h2 id="slots">Chọn vị trí từng camera</h2>
+  <p>Lưới có tối đa 25 vị trí (slot); ví dụ lưới 3&times;3 hiển thị 9 vị trí đầu tiên. Ô trống hiển thị chữ <em>Empty</em> cùng gợi ý &ldquo;Right-click or drag a camera here&rdquo; và không chạy bất kỳ luồng nào.</p>
+  <ul>
+    <li><strong>Kéo và thả:</strong> kéo camera từ danh sách thả vào ô mong muốn, hoặc kéo trực tiếp giữa hai ô trên lưới (nếu đã có mặt trên lưới, hai vị trí sẽ hoán đổi cho nhau).</li>
+    <li><strong>Menu chuột phải trên ô:</strong> <em>Remove from view</em> (gỡ khỏi lưới), <em>Show camera</em> (chọn camera bất kỳ đặt vào ô này), <em>Full screen</em> và <em>Rename&hellip;</em>.</li>
+    <li><strong>Menu chuột phải trong danh sách:</strong> <em>Add to view</em>, <em>Remove from view</em>, <em>Rename&hellip;</em> và <em>Reset to camera name</em>.</li>
+  </ul>
+  <p>Camera không nằm trong lưới hiện tại được hiển thị chữ nghiêng màu xám. Camera mới tự động vào ô trống đầu tiên; camera đã gỡ khỏi lưới sẽ giữ nguyên trạng thái ẩn cho đến khi bạn thêm lại. Vị trí các ô được ghi nhớ qua các lần mở ứng dụng.</p>
+
+  <h2 id="fullscreen">Toàn màn hình</h2>
+  <p>Nhấp đúp vào một ô hoặc chọn <em>Full screen</em> trong menu của ô. Chỉ riêng camera đó tiếp tục phát ở luồng nét hơn (HD). Nhấp đúp lần nữa để quay về chế độ lưới.</p>
+
+  <h2 id="panels">Bảng hai bên và phím tắt</h2>
+  <p>Bảng <strong>Cameras</strong> bên trái liệt kê các camera. Bảng <strong>Camera</strong> bên phải có hai thẻ: <em>Controls</em> và <em>Playback</em>.</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Phím tắt</th><th>Chức năng</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>Ẩn hoặc hiện danh sách camera (cũng có trong menu <em>View</em>).</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Ẩn hoặc hiện bảng Controls / Playback (cũng có trong menu <em>View</em>).</td></tr>
+        <tr><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> hoặc phím mũi tên</td><td>Xoay/nghiêng camera đang chọn theo hướng tương ứng khi giữ phím (chỉ áp dụng cho camera Tapo hỗ trợ PTZ).</td></tr>
+        <tr><td><kbd>F2</kbd></td><td>Đổi tên camera đang chọn.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Ẩn bảng phụ sẽ nhường thêm không gian cho lưới video mà không làm dừng hoặc chạy lại luồng phát. Ứng dụng ghi nhớ trạng thái ẩn/hiện của hai bảng.</p>
+  <p>Thẻ <em>Controls</em> dùng cho camera Tapo: chế độ riêng tư, đèn LED trạng thái, còi hú, phát hiện chuyển động, hồng ngoại ban đêm (tự động / bật IR / tắt IR), bàn xoay PTZ, vị trí lưu sẵn (presets) và nút <em>Snapshot</em> (lưu ảnh PNG vào thư mục con trong Pictures, đường dẫn cụ thể hiện trên thanh trạng thái). Camera Kami và iMou không có phần điều khiển.</p>
+
+  <h2 id="recordings">Bản ghi: trình phát và dòng thời gian</h2>
+  <p>Mở thẻ <em>Playback</em> và chọn ngày. Với camera Tapo, ứng dụng đọc danh sách đoạn video từ thẻ nhớ và hiển thị giờ bắt đầu/kết thúc theo múi giờ máy của bạn. Bấm <em>Play</em> (hoặc nhấp đúp một clip) để mở cửa sổ trình phát; bấm <em>Download clip&hellip;</em> để lưu thành tệp MP4.</p>
+  <p><strong>Cửa sổ trình phát</strong> mở riêng cho từng camera (đóng cửa sổ sẽ dừng phát lại) và gồm có:</p>
+  <ul>
+    <li><strong>Dòng thời gian 24 giờ</strong> đánh dấu các khoảng có video và con trỏ chạy theo thời gian thực; nhấp hoặc kéo để nhảy tới thời điểm bất kỳ.</li>
+    <li>Các nút <em>Play</em> / tạm dừng, <em>Previous clip</em> và <em>Next clip</em>.</li>
+    <li>Hộp chọn tốc độ: 1x, 2x, 4x và 8x cho camera Tapo (các tốc độ nhanh chưa được thử nghiệm kỹ bằng 1x). Bản ghi iMou chỉ hỗ trợ 1x.</li>
+    <li>Ô chọn ngày: đổi ngày sẽ dừng phát hiện tại và tải dữ liệu ngày mới.</li>
+    <li>Nút <em>Snapshot</em> và <em>Download clip&hellip;</em>.</li>
+  </ul>
+  <p>Xem lại hoạt động với camera Tapo (cả mạng nhà lẫn từ xa) và ở chế độ chỉ-xem đối với camera iMou (xem <a href="imou.html">hướng dẫn iMou</a>). Camera Kami hiển thị thông báo &ldquo;Recordings are not supported for this Kami camera&rdquo;.</p>
+
+  <h2 id="sort-rename">Sắp xếp và đổi tên</h2>
+  <p><strong>Sắp xếp.</strong> Nút <em>Sort</em> phía trên danh sách camera có 3 lựa chọn: <em>Name A&ndash;Z</em> (mặc định), <em>Name Z&ndash;A</em> và <em>Account order</em>. Số được sắp xếp tự nhiên nên &ldquo;Cam 2&rdquo; đứng trước &ldquo;Cam 10&rdquo;. Sắp xếp chỉ đổi thứ tự danh sách, không xáo trộn bố cục lưới.</p>
+  <p><strong>Đổi tên.</strong> Chọn camera rồi bấm <kbd>F2</kbd> hoặc chọn <em>Rename&hellip;</em> trong menu. Tên dài từ 1 đến 32 byte (ký tự có dấu tiếng Việt tốn 2–3 byte). Hộp thoại sẽ báo rõ tên mới được lưu ở đâu:</p>
+  <ul>
+    <li><strong>Camera Tapo của chính bạn:</strong> tên mới được ghi trực tiếp lên camera, đồng thời cập nhật sang ứng dụng Tapo và cho những người được chia sẻ (cloud có thể mất một lúc để cập nhật).</li>
+    <li><strong>Camera Tapo được chia sẻ, camera thêm theo IP, camera Kami hoặc iMou:</strong> tên mới chỉ dùng nội bộ trong ứng dụng này. Với camera Tapo được chia sẻ, <em>Reset to camera name</em> sẽ khôi phục lại tên gốc từ cloud.</li>
+  </ul>
+
+  <h2 id="tray">Khay hệ thống và thông báo</h2>
+  <ul>
+    <li><strong>Đóng cửa sổ:</strong> mặc định ứng dụng thu gọn xuống khay hệ thống (system tray), camera Tapo vẫn tiếp tục chạy nền còn các ô iMou sẽ tự dừng khi cửa sổ ẩn hoặc thu nhỏ để tiết kiệm hạn mức. Nhấp hoặc nhấp đúp biểu tượng khay (hoặc chọn <em>Show</em>) để mở lại cửa sổ.</li>
+    <li><strong>Thoát hoàn toàn:</strong> nhấp chuột phải biểu tượng khay hệ thống và chọn <em>Quit</em> để dừng toàn bộ luồng. Nếu hệ thống không có khay, đóng cửa sổ sẽ thoát app.</li>
+    <li><strong>Mở ứng dụng lần thứ hai:</strong> không mở thêm bản sao mới mà đưa cửa sổ đang chạy lên phía trước.</li>
+    <li><strong>Thông báo chuyển động:</strong> khi camera Tapo báo có chuyển động, Windows hiện thông báo kèm tên camera và thời điểm (tối đa 1 thông báo mỗi 10 giây cho mỗi camera; cần bật công tắc <em>Motion detection</em>). Camera Kami và iMou không gửi thông báo chuyển động.</li>
+  </ul>
+  <p>Thu gọn xuống khay và thông báo mặc định đều bật (có thể chỉnh hai khóa <code>minimize_to_tray</code> và <code>notifications</code> trong <code>config.json</code> ở thư mục dữ liệu sau khi thoát hẳn ứng dụng).</p>
+
+  <h2 id="data-folder">Thư mục dữ liệu</h2>
+  <p>Ứng dụng lưu tệp trong <code>%APPDATA%\TapoDesktop</code> (giữ nguyên tên thư mục từ các bản trước để giữ nguyên cài đặt và tài khoản đã đăng nhập). Bạn có thể dán đường dẫn này vào thanh địa chỉ Windows Explorer để mở.</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Tệp</th><th>Nội dung</th></tr></thead>
+      <tbody>
+        <tr><td><code>config.json</code></td><td>Cài đặt, danh sách camera và bố cục vị trí lưới. Không chứa mật khẩu.</td></tr>
+        <tr><td><code>vault.json</code></td><td>Mật khẩu, phiên đăng nhập và khóa API đã mã hóa theo tài khoản Windows của bạn.</td></tr>
+        <tr><td><code>pins.json</code></td><td>Chứng chỉ bảo mật đã ghi nhớ của các camera.</td></tr>
+        <tr><td><code>tapo-desktop.log</code></td><td>Nhật ký hoạt động (không ghi mật khẩu hay token).</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Không sao chép <code>vault.json</code> sang máy khác hay tài khoản Windows khác vì tệp sẽ không giải mã được.</p>
+
+  <h2 id="sign-out">Đăng xuất</h2>
+  <p>Mở nút tài khoản ở thanh công cụ phía trên. Mỗi hãng có mục đăng xuất riêng và không ảnh hưởng tới các hãng khác:</p>
+  <ul>
+    <li><em>Tapo</em>: <em>Sign out</em>. Xóa camera cloud Tapo và quên mật khẩu TP-Link ID; camera thêm bằng IP vẫn giữ lại.</li>
+    <li><em>Kami</em>: <em>Sign out of Kami</em>. Xóa các camera Kami và phiên đăng nhập đã lưu.</li>
+    <li><em>iMou (Open Platform)</em>: <em>Disconnect iMou</em>. Xóa các camera iMou cùng App ID và secret đã lưu.</li>
+  </ul>
+  <p>Để xóa sạch toàn bộ dữ liệu, hãy thoát hẳn ứng dụng từ khay hệ thống rồi xóa thư mục dữ liệu (thao tác này không thể hoàn tác).</p>
+
+  <h2 id="trouble">Khắc phục khi xem video hoặc tải về bị lỗi</h2>
+  <ul>
+    <li>Các trình lọc web như AdGuard có thể chặn hoặc sửa lưu lượng HTTP thuần từ máy tính, kể cả tới camera nội bộ. Hãy thêm ngoại lệ cho <code>TepoDesktop.exe</code> và <code>ffmpeg.exe</code>.</li>
+    <li>Camera Tapo dùng cổng media giao tiếp bằng HTTP thuần; bộ lọc chặn cổng này sẽ làm hỏng xem trực tiếp và tải clip.</li>
+    <li>Nếu ô báo <em>Offline</em>, hãy dùng <em>Refresh cameras</em> trong menu tài khoản và kiểm tra lại camera trong ứng dụng gốc trên điện thoại.</li>
+  </ul>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop là ứng dụng không chính thức và không liên kết với TP-Link, Kami hay iMou. Mọi tên sản phẩm và nhãn hiệu thuộc về chủ sở hữu tương ứng.</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng nhập tài khoản Kami Home - Tepo Desktop</title>
+<meta name="description" content="Tính năng hỗ trợ cho tài khoản Kami Home trong Tepo Desktop: đăng nhập, danh sách camera và trạng thái online. Không hỗ trợ xem trực tiếp.">
+<link rel="icon" href="data:,">
+<link rel="alternate" hreflang="en" href="../kami.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Điều hướng chính">
+      <a href="index.html">Trang chủ</a>
+      <a href="tapo.html">Đăng nhập Tapo</a>
+      <a href="kami.html" aria-current="page">Đăng nhập Kami</a>
+      <a href="imou.html">Đăng nhập iMou</a>
+      <a href="usage.html">Hướng dẫn sử dụng</a>
+    </nav>
+    <div class="lang-switch" aria-label="Ngôn ngữ">
+      <a href="../kami.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true">/</span>
+      <span class="active" lang="vi">VI</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Đăng nhập tài khoản Kami Home</h1>
+  <p class="lead">Tepo Desktop có thể đăng nhập tài khoản Kami Home và hiển thị danh sách camera Kami cùng trạng thái online/offline của chúng. Đây là toàn bộ phần hỗ trợ hiện có cho Kami.</p>
+
+  <div class="note">
+    <p><strong>Không hỗ trợ xem trực tiếp đối với camera Kami.</strong> Ô camera Kami hiển thị dòng chữ &ldquo;Live view is not supported for this Kami camera&rdquo;. Bản ghi, điều khiển camera và thông báo chuyển động cũng chưa được hỗ trợ.</p>
+    <p>Tính năng này không chính thức và không liên kết với Kami. Kami và các logo liên quan thuộc về chủ sở hữu tương ứng.</p>
+  </div>
+
+  <h2>Những gì bạn cần</h2>
+  <ul>
+    <li>Tài khoản Kami Home của bạn: email, mật khẩu và quốc gia (Country) bạn đã chọn khi tạo tài khoản.</li>
+    <li>Một tệp khóa (key file) mà dự án này không cung cấp sẵn. Nếu thiếu tệp này, cửa sổ đăng nhập sẽ báo &ldquo;The Kami password key is missing&rdquo; và chỉ rõ vị trí thư mục mà ứng dụng đang tìm.</li>
+  </ul>
+
+  <h2>Các bước đăng nhập</h2>
+  <ol>
+    <li>Mở nút tài khoản ở thanh công cụ phía trên. Tìm mục <em>Kami</em> và chọn <em>Kami account&hellip;</em>.</li>
+    <li>Nhập email và mật khẩu.</li>
+    <li>Chọn <em>Country</em> từ danh sách (có thể gõ để tìm). Ứng dụng sẽ nhớ quốc gia bạn dùng lần gần nhất.</li>
+    <li>Bấm <em>Sign in</em>.</li>
+  </ol>
+  <p>Mỗi lần bấm chỉ gửi đúng một yêu cầu đăng nhập. Nút bấm sẽ bị vô hiệu hóa trong lúc chờ phản hồi và ứng dụng không bao giờ tự thử lại lần thứ hai.</p>
+
+  <h2>Lưu ý trước khi đăng nhập</h2>
+  <ul>
+    <li><strong>Điện thoại có thể bị đăng xuất.</strong> Việc đăng nhập tại đây có thể làm tài khoản trên ứng dụng Kami ở điện thoại bị đăng xuất.</li>
+    <li><strong>Không hỗ trợ đăng nhập Google hoặc Apple trực tiếp.</strong> Nếu trước đây bạn vào Kami bằng Google hoặc Apple, hãy đặt mật khẩu cho tài khoản trong ứng dụng Kami trước rồi dùng mật khẩu đó tại đây.</li>
+    <li><strong>Không xử lý xác minh bổ sung.</strong> Nếu máy chủ Kami yêu cầu bước xác minh thêm, ứng dụng chưa hỗ trợ và sẽ thông báo rõ.</li>
+    <li><strong>Đăng nhập sai sẽ khóa nút trong 2 phút.</strong> Nút bấm sẽ hiển thị đồng hồ đếm ngược. Kiểm tra kỹ email, mật khẩu và quốc gia trước khi thử lại.</li>
+  </ul>
+
+  <h2>Sau khi đăng nhập</h2>
+  <ul>
+    <li>Camera Kami xuất hiện trong danh sách camera. Nếu Kami báo camera đang ngoại tuyến, danh sách hiển thị <em>(Offline)</em> sau tên camera. Tooltip khi rê chuột hiện &ldquo;Kami (unofficial)&rdquo; và trạng thái online.</li>
+    <li>Danh sách được tải khi bạn đăng nhập và khi khởi động ứng dụng.</li>
+    <li>Mật khẩu không được lưu. Chỉ phiên làm việc (session) được bảo vệ bằng Windows DPAPI, nên lần mở sau ứng dụng dùng phiên đã lưu đó mà không gửi mật khẩu. Nếu phiên hết hạn, ứng dụng sẽ nhắc bạn đăng nhập lại.</li>
+    <li>Bạn có thể đặt tên mới cho camera Kami; tên này chỉ lưu cục bộ trong Tepo Desktop.</li>
+  </ul>
+
+  <h2>Đăng xuất</h2>
+  <p>Mở nút tài khoản và chọn <em>Sign out of Kami</em>. Ứng dụng sẽ xóa phiên đăng nhập và gỡ các camera Kami khỏi danh sách. Camera Tapo và iMou của bạn không bị ảnh hưởng.</p>
+
+  <p>Tiếp theo: <a href="usage.html">Hướng dẫn sử dụng</a>.</p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop là ứng dụng không chính thức và không liên kết với TP-Link, Kami hay iMou. Mọi tên sản phẩm và nhãn hiệu thuộc về chủ sở hữu tương ứng.</p>
+  </div>
+</footer>
+</body>
+</html>

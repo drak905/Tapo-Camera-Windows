@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kết nối camera iMou (Open Platform) - Tepo Desktop</title>
+<meta name="description" content="Cách kết nối camera iMou vào Tepo Desktop qua iMou Open Platform: tài khoản nhà phát triển, App ID và App secret, trung tâm dữ liệu, nút Test, hạn mức miễn phí và phút xem mỗi ngày.">
+<link rel="icon" href="data:,">
+<link rel="alternate" hreflang="en" href="../imou.html">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="index.html">Tepo Desktop</a>
+    <nav aria-label="Điều hướng chính">
+      <a href="index.html">Trang chủ</a>
+      <a href="tapo.html">Đăng nhập Tapo</a>
+      <a href="kami.html">Đăng nhập Kami</a>
+      <a href="imou.html" aria-current="page">Đăng nhập iMou</a>
+      <a href="usage.html">Hướng dẫn sử dụng</a>
+    </nav>
+    <div class="lang-switch" aria-label="Ngôn ngữ">
+      <a href="../imou.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true">/</span>
+      <span class="active" lang="vi">VI</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Kết nối camera iMou</h1>
+  <p class="lead">Tepo Desktop hiển thị camera iMou thông qua iMou Open Platform. Bạn dùng chính ứng dụng nhà phát triển miễn phí của mình, nên không phải nhập mật khẩu tài khoản iMou vào đây. Kết nối này ở chế độ <strong>chỉ xem (watch only)</strong>.</p>
+
+  <div class="note">
+    <p><strong>Hạn mức miễn phí rất nhỏ.</strong> Gói miễn phí của Open Platform cấp cho tài khoản nhà phát triển 2&nbsp;GB lưu lượng video và 30.000 lượt gọi API mỗi tháng. Mỗi phút xem trực tiếp hay xem lại đều tiêu tốn lưu lượng này. Trước khi sử dụng thường xuyên, hãy kiểm tra số liệu thực tế tại mục <em>My Resources</em> trên console Open Platform trước và sau khi thử xem 1 phút. Không nạp tiền khi bạn chưa nắm rõ chi phí mỗi phút.</p>
+    <p>Tính năng này không chính thức và không liên kết với iMou. iMou và các logo liên quan thuộc về chủ sở hữu tương ứng.</p>
+  </div>
+
+  <h2>Những gì bạn cần</h2>
+  <ol>
+    <li>Tài khoản nhà phát triển miễn phí tại <a href="https://open.imoulife.com">open.imoulife.com</a>, đăng ký bằng <strong>chính tài khoản iMou đang quản lý các camera của bạn</strong>. Camera phải xuất hiện trong danh sách thiết bị của cổng thông tin; nếu thiếu ở đó, ứng dụng sẽ không nhìn thấy.</li>
+    <li>Trong bảng điều khiển (console), tạo một ứng dụng và sao chép <strong>App ID</strong> cùng <strong>App secret</strong> của nó.</li>
+    <li>Ghi lại <strong>trung tâm dữ liệu (data center)</strong> hiển thị trong mục <em>My information</em>: Singapore (<code>sg</code>), Frankfurt (<code>fk</code>) hoặc Oregon (<code>or</code>).</li>
+  </ol>
+
+  <h2>Kết nối</h2>
+  <ol>
+    <li>Trong Tepo Desktop, mở nút tài khoản trên thanh công cụ, tìm mục <em>iMou (Open Platform)</em> và chọn <em>iMou connection&hellip;</em>.</li>
+    <li>Nhập <strong>App ID</strong> và <strong>App secret</strong>.</li>
+    <li>Chọn đúng <strong>Data center</strong> trong danh sách (chỉ chọn được 1 trong 3 khu vực liệt kê; ứng dụng không tự thử vùng khác).</li>
+    <li>Kiểm tra hai giới hạn bảo vệ hạn mức (xem bên dưới), sau đó bấm <strong>Test</strong>.</li>
+  </ol>
+  <p>Nút <em>Test</em> chỉ gửi một lệnh lấy token và một lệnh đọc danh sách thiết bị. Nếu thành công, cửa sổ đóng lại và camera iMou hiện trong danh sách. Nếu thất bại, cửa sổ hiển thị nguyên nhân và xóa trường secret; sau một lần sai App ID hoặc secret, nút sẽ tạm khóa chờ một lúc trước khi cho thử lại.</p>
+  <p>App ID và App secret chỉ được lưu trong kho bảo vệ Windows (DPAPI), không ghi ra file cấu hình hay log.</p>
+
+  <h2>Hai giới hạn bảo vệ hạn mức</h2>
+  <p>Cửa sổ kết nối có hai con số giúp bảo vệ hạn mức miễn phí của bạn:</p>
+  <ul>
+    <li><strong>Số phút xem trực tiếp và xem lại mỗi camera mỗi ngày (Live and playback minutes per camera and day).</strong> Mặc định là <strong>20 phút</strong>, tính ước lượng cục bộ từ 00:00 UTC đến 00:00 UTC. Khi dùng hết số phút, ô camera sẽ báo và dừng chờ bạn nhấp chuột (không tự chạy lại khi sang ngày mới).</li>
+    <li><strong>Số luồng xem trực tiếp cùng lúc (Live streams at once).</strong> Mặc định là <strong>2</strong>. Các ô vượt ngưỡng sẽ thông báo và chỉ phát khi bạn chủ động nhấp vào.</li>
+  </ul>
+  <p>Lần khởi chạy bị lỗi vẫn tính số giây đã chạy vào định mức. Cửa sổ kết nối hiển thị mức ước lượng hôm nay; số liệu chính xác luôn xem trong console của iMou.</p>
+
+  <h2>Cách xem camera iMou</h2>
+  <ul>
+    <li><strong>Xem trực tiếp (Live view)</strong> tự động chạy cho các ô iMou đang hiển thị trên màn hình (có thể mất tối đa khoảng 30 giây để lên hình). Nếu ô bị ẩn khỏi lưới hoặc cửa sổ bị thu nhỏ / ẩn xuống khay hệ thống, toàn bộ luồng iMou sẽ tự dừng để không tốn lưu lượng khi bạn không xem.</li>
+    <li>Trên lưới, ô iMou phát luồng nhỏ (SD); chế độ toàn màn hình phát luồng lớn (HD) nên tốn nhiều lưu lượng hơn cho cùng thời gian xem.</li>
+    <li><strong>Bản ghi trên thẻ nhớ:</strong> mở tab <em>Playback</em>, chọn ngày và bấm <em>Refresh</em>. Ứng dụng chỉ đọc danh sách khi bạn bấm nút. Bấm <em>Play</em> để mở cửa sổ trình phát; bạn có thể tạm dừng hoặc nhấp lên dòng thời gian để tua. Phát lại chỉ chạy ở tốc độ thường 1x, tính chung vào số phút hằng ngày và tự dừng sau mỗi 10 phút (bấm <em>Play</em> để xem tiếp).</li>
+    <li>Nếu luồng bị rớt, ứng dụng tự thử lại vài lần, cách nhau 30 giây. Nếu nhà cung cấp từ chối (hết quota, camera offline, giới hạn tốc độ), ô sẽ hiển thị thông báo và dừng chờ bạn nhấp chuột, không tự thử lại liên tục.</li>
+  </ul>
+
+  <h2>Trình đơn iMou</h2>
+  <ul>
+    <li><em>iMou connection&hellip;</em>: mở lại cửa sổ kết nối (ví dụ để chỉnh giới hạn). Sau lần bấm <strong>Test</strong> thứ hai, các ô từng báo &ldquo;not connected&rdquo; cần nhấp chuột 1 lần để chạy lại.</li>
+    <li><em>Refresh iMou cameras</em>: tải lại danh sách camera và trạng thái online/offline (chỉ 1 lần gọi, không chạy ngầm tự động).</li>
+    <li><em>Disconnect iMou</em>: xóa toàn bộ camera iMou cùng App ID và secret đã lưu.</li>
+  </ul>
+
+  <h2>Những gì chưa hỗ trợ</h2>
+  <ul>
+    <li>Không tải video bản ghi, không tua nhanh 2x/4x/8x, không xem clip lưu trên cloud.</li>
+    <li>Không điều khiển camera: không xoay/nghiêng PTZ, không chế độ riêng tư, không còi hú hay thông báo chuyển động. Các thao tác khác sẽ báo &ldquo;Not supported for iMou cameras yet&rdquo;.</li>
+    <li>Ứng dụng không thay đổi bất kỳ thiết lập nào trên camera hay tài khoản iMou của bạn. Đổi tên camera chỉ áp dụng cục bộ trong Tepo Desktop.</li>
+    <li>Không hỗ trợ camera thuộc tài khoản iMou của người khác chia sẻ sang.</li>
+  </ul>
+
+  <p>Tiếp theo: <a href="usage.html">Hướng dẫn sử dụng</a>.</p>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Tepo Desktop là ứng dụng không chính thức và không liên kết với TP-Link, Kami hay iMou. Mọi tên sản phẩm và nhãn hiệu thuộc về chủ sở hữu tương ứng.</p>
+  </div>
+</footer>
+</body>
+</html>

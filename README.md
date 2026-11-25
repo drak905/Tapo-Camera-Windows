@@ -1,5 +1,7 @@
 # Tepo Desktop for Windows
 
+**English** | [Tiếng Việt](README.vi.md)
+
 Unofficial native Windows desktop client for **TP-Link Tapo**, **iMou (Open Platform)**, and **Kami Home** cameras. Not affiliated with TP-Link, iMou, or Kami; all product names and trademarks belong to their respective owners.
 
 Sign in with your accounts in one app to monitor cameras in a unified `1x1` to `5x5` grid, full-screen HD view, and 24-hour recordings player. Step-by-step setup guides are published on the [Tepo Desktop website](https://drak905.github.io/Tepo-Camera-Desktop/).
