@@ -1,16 +1,16 @@
 # iMou cameras (Open Platform), watch only, live view and memory-card playback
 
-Unofficial. Tapo Desktop can show cameras from an iMou (Imou Life) account through the **official iMou Open Platform
+Unofficial. Tepo Desktop can show cameras from an iMou (Imou Life) account through the **official iMou Open Platform
 API**. It uses only public, documented calls. It does not use the Imou Life app, its protocol or its keys.
 
 ## What you need
 
 1. A free developer account on the [iMou Open Platform](https://open.imoulife.com) (international portal), made with
    **the same iMou account that holds your cameras**. The cameras must show up in the portal's device list. Nothing is
-   bound, unbound or changed by Tapo Desktop; if a camera is missing there, it is not visible to this client.
+   bound, unbound or changed by Tepo Desktop; if a camera is missing there, it is not visible to this client.
 2. In the console, create an app and copy its **App ID** and **App secret**. Note the **data center** shown under
    "My information" (Singapore `sg`, Frankfurt `fk` or Oregon `or`).
-3. In Tapo Desktop: account button, **iMou connection...**. Enter App ID, App secret, pick the data center, click
+3. In Tepo Desktop: account button, **iMou connection...**. Enter App ID, App secret, pick the data center, click
    **Test**. The test makes one token call and one device-list call. When it works, the cameras appear in the list.
 
 The App ID and App secret are stored only in the Windows-protected vault (`vault.json`, readable by your Windows user).
@@ -57,7 +57,7 @@ The iMou free tier is small: 2 GB of video flow and 30,000 requests per month fo
 playback use it. Read the real numbers under "My Resources" in the console before and after a one-minute test. Do not add funds
 until you know what a minute costs.
 
-When the vendor says the quota is used (FL1002, FL1004, FL1005, OP1013, OP1014, OP1040), Tapo Desktop stops **all** iMou calls
+When the vendor says the quota is used (FL1002, FL1004, FL1005, OP1013, OP1014, OP1040), Tepo Desktop stops **all** iMou calls
 until the next UTC day and shows "free quota used". After a refused key (SN1001) nothing is sent for 2 minutes and
 there is no silent retry; check the App ID and App secret. OP1039 ("too many requests this minute") stops calls until the next
 minute only.

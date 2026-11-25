@@ -1,6 +1,6 @@
-# Tapo Desktop for Windows
+# Tepo Desktop for Windows
 
-Unofficial native Windows client for TP-Link Tapo cameras. Sign in with your TP-Link ID like in the
+Unofficial native Windows client for TP-Link Tapo cameras. Not affiliated with TP-Link. Sign in with your TP-Link ID like in the
 phone app. Video and control go directly to the camera on your network.
 
 | Feature | Camera interface |
@@ -13,11 +13,14 @@ phone app. Video and control go directly to the camera on your network.
 | Runs in the system tray, auto-reconnects after Wi-Fi drops | |
 
 ## Install
-Run `dist\TapoDesktop-0.1.0-setup.exe` (per-user install, no admin rights), or unzip
-`dist\TapoDesktop-0.1.0-win64.zip` and run `TapoDesktop\TapoDesktop.exe`. FFmpeg is bundled.
+Run the setup file `TepoDesktop-<version>-setup.exe` (per-user install, no admin rights), or unzip
+`TepoDesktop-<version>-win64.zip` and run `TepoDesktop\TepoDesktop.exe`. FFmpeg is bundled.
+The app was called "Tapo Desktop" before. The setup upgrades an old install and keeps your saved sign-ins and
+settings (they stay in `%APPDATA%\TapoDesktop`). Pictures are now saved in `Pictures\Tepo Desktop`; old pictures stay
+where they are. Web filter or firewall exceptions for `TapoDesktop.exe` must be made again for `TepoDesktop.exe`.
 
 ## Getting started (same as the Tapo phone app)
-1. Start Tapo Desktop and **sign in with your TP-Link ID** (the email and password you use in the Tapo app).
+1. Start Tepo Desktop and **sign in with your TP-Link ID** (the email and password you use in the Tapo app).
    If your account has 2-step verification, enter the code the dialog asks for.
 2. Your cameras appear with the names from the Tapo app. The app finds them on your home network
    automatically and starts live video in the grid. You don't need a "Camera account" or RTSP setup.
@@ -35,7 +38,7 @@ Notes
 - Your password is stored with Windows DPAPI (%APPDATA%\TapoDesktop\vault.json), readable only by your
   Windows account. **Add** (by IP) is still available for cameras that aren't in your account.
 - If live view or SD downloads fail, check that no local web filter (for example AdGuard) intercepts
-  traffic from TapoDesktop.exe / fmpeg.exe. The camera media port 8800 uses plain HTTP.
+  traffic from TepoDesktop.exe / ffmpeg.exe. The camera media port 8800 uses plain HTTP.
 ## Development
 Agents and new contributors: start with [AGENTS.md](AGENTS.md) (handover: state, rules, protocol facts, open items).
 
