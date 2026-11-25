@@ -573,9 +573,13 @@ def test_protected_tapo_files_are_byte_identical_to_the_baseline():
         have = False
     if not have:
         pytest.skip("baseline commit not available")
-    diff = subprocess.run(["git", "diff", "--stat", BASELINE, "--", *PROTECTED], cwd=REPO,
+    diff = subprocess.run(["git", "diff", "-U0", BASELINE, "--", *PROTECTED], cwd=REPO,
                           capture_output=True, text=True)
-    assert diff.stdout.strip() == "", diff.stdout
+    # requirement change: terminal name. The one allowed difference is the product name TP-Link sees at login.
+    changed = [line for line in diff.stdout.splitlines()
+               if line[:1] in "+-" and not line.startswith(("+++", "---"))]
+    assert changed == ['-TERMINAL_NAME = "Tapo Desktop (Windows PC)"',
+                       '+TERMINAL_NAME = "Tepo Desktop (Windows PC)"'] or changed == [], diff.stdout
 
 
 def test_new_text_files_are_lf_and_have_no_bom():

@@ -1,4 +1,4 @@
-"""Kami Home account for Tapo Desktop (lane A): sign-in, camera list and online state. No UI, no live view.
+"""Kami Home account for Tepo Desktop (lane A): sign-in, camera list and online state. No UI, no live view.
 
 Sits next to :class:`~tapo_desktop.services.account.AccountManager` but shares nothing with it. It only touches
 cameras with ``source == "kami"`` (id ``kami:<uid>``, ``host=""``) and the vault entry ``KAMI_ACCOUNT_VAULT_ID`` /

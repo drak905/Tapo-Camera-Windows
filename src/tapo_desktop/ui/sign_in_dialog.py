@@ -45,7 +45,7 @@ class SignInDialog(QDialog):
     def __init__(self, accounts, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("signInDialog")
-        self.setWindowTitle("Sign in - Tapo Desktop")
+        self.setWindowTitle("Sign in - Tepo Desktop")
         self.setModal(True)
         self.setMinimumWidth(380)
         self._accounts = accounts

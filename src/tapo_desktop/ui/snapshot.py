@@ -1,4 +1,4 @@
-"""Save a camera frame as PNG under ``%USERPROFILE%\\Pictures\\Tapo Desktop`` (contract:
+"""Save a camera frame as PNG under ``%USERPROFILE%\\Pictures\\Tepo Desktop`` (contract:
 docs/CONTRACT_PHASE2.md, lane P2-app)."""
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from datetime import datetime
 
 from PyQt6.QtGui import QImage
 
-_FOLDER = "Tapo Desktop"
+_FOLDER = "Tepo Desktop"
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
 def snapshot_dir() -> pathlib.Path:
-    """``%USERPROFILE%\\Pictures\\Tapo Desktop`` (home directory if USERPROFILE is unset)."""
+    """``%USERPROFILE%\\Pictures\\Tepo Desktop`` (home directory if USERPROFILE is unset)."""
     profile = os.environ.get("USERPROFILE", "").strip()
     base = pathlib.Path(profile) if profile else pathlib.Path.home()
     return base / "Pictures" / _FOLDER

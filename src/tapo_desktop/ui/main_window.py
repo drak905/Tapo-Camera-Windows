@@ -167,7 +167,7 @@ class MainWindow(QMainWindow):
         self._quitting = False
         self._sign_in_dialog = None
         self._sort = camera_names.sort_mode(self._store.get_setting(camera_names.SETTING_CAMERA_SORT, None))
-        self.setWindowTitle("Tapo Desktop")
+        self.setWindowTitle("Tepo Desktop")
         self.setWindowIcon(_theme.app_icon())
         self.resize(1280, 800)
 

@@ -4,7 +4,7 @@ Fails if the release directory contains dev-time reverse-engineering material:
 REA, JADX, Apktool, Ghidra, the Tapo APK/XAPK, decompiled sources, smali, dex, or the
 spec/evidence files. Scans file names and (for text-like/small files) contents.
 
-Usage: python tools/audit_release.py dist/TapoDesktop [--json report.json]
+Usage: python tools/audit_release.py dist/TepoDesktop [--json report.json]
 """
 from __future__ import annotations
 

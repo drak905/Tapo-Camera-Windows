@@ -158,7 +158,7 @@ def test_snapshot_saves_png_of_current_frame(app_env, qtbot, tmp_path, monkeypat
     button = w.findChild(QAbstractButton, "snapshotButton")
     assert button is not None and button.isEnabled()
     button.click()
-    folder = pathlib.Path(tmp_path / "profile" / "Pictures" / "Tapo Desktop")
+    folder = pathlib.Path(tmp_path / "profile" / "Pictures" / "Tepo Desktop")
     files = list(folder.glob("*.png"))
     assert len(files) == 1 and files[0].name.startswith("Cam 0_")
     image = QImage(str(files[0]))
@@ -179,8 +179,8 @@ def test_snapshot_without_frame_reports_and_writes_nothing(app_env, qtbot, tmp_p
     sign_in(env, qtbot, EMAIL, PASSWORD)
     w.findChild(QWidget, "cameraGrid").select_camera(dev.device_id)
     w.findChild(QAbstractButton, "snapshotButton").click()
-    assert not (tmp_path / "profile" / "Pictures" / "Tapo Desktop").exists() or \
-        not list((tmp_path / "profile" / "Pictures" / "Tapo Desktop").glob("*.png"))
+    assert not (tmp_path / "profile" / "Pictures" / "Tepo Desktop").exists() or \
+        not list((tmp_path / "profile" / "Pictures" / "Tepo Desktop").glob("*.png"))
     assert "no video" in w.statusBar().currentMessage().lower()
 
 
@@ -193,6 +193,6 @@ def test_snapshot_filename_is_sanitised(tmp_path, monkeypatch, qapp):
     img = QImage(8, 4, QImage.Format.Format_RGB888)
     img.fill(Qt.GlobalColor.blue)
     path = save_snapshot(img, 'Front: door/"1"?', now=datetime(2026, 1, 2, 3, 4, 5))
-    assert path.parent == snapshot_dir() == tmp_path / "Pictures" / "Tapo Desktop"
+    assert path.parent == snapshot_dir() == tmp_path / "Pictures" / "Tepo Desktop"
     assert path.name == "Front_ door__1_20260102_030405.png"
     assert QImage(str(path)).width() == 8

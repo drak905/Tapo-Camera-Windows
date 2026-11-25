@@ -4,6 +4,8 @@ Read this file first. It is the single source of truth for the project's state, 
 safely, and what real hardware taught us. `CLAUDE.md` and `GEMINI.md` only point here.
 
 ## 1. What this is
+The product is called **Tepo Desktop** (it was "Tapo Desktop"). Only names the user sees changed. The data folder `%APPDATA%\TapoDesktop`, `TAPO_DESKTOP_HOME`, the package `tapo_desktop`, the instance prefix `TapoDesktop-` and the installer AppId keep the old name on purpose: they hold saved sign-ins and settings, so do not "fix" them.
+
 An unofficial native Windows desktop client for TP-Link Tapo cameras that behaves like the Tapo phone app:
 - sign in with a TP-Link ID (with MFA), and the cameras appear with their cloud names
 - **cameras on the LAN:** found by TDP broadcast and controlled over local HTTPS :443 (secure v3, legacy MD5
@@ -38,7 +40,7 @@ The setup script installs everything else.
 | 30-min soak | `powershell -File tools/run.ps1 test-soak` (`TAPO_SOAK_SECONDS` overrides the length) |
 | Live camera tests | set `TAPO_HW_IP`, `TAPO_HW_CLOUD_PASSWORD`, `TAPO_HW_CAM_USER`, `TAPO_HW_CAM_PASSWORD`, then `tools/run.ps1 test-hardware` |
 | Smoke vs mocks (with screenshot) | `.venv\Scripts\python tools\smoke_mobile_flow.py` |
-| Build the release | `.venv\Scripts\python tools\build_windows.py` -> `release\<timestamp>\TapoDesktop\TapoDesktop.exe` + `TapoDesktop-<ver>-setup.exe` + zip; runs the clean-room audit and a packaged `--selftest` |
+| Build the release | `.venv\Scripts\python tools\build_windows.py` -> `release\<timestamp>\TepoDesktop\TepoDesktop.exe` + `TepoDesktop-<ver>-setup.exe` + zip; runs the clean-room audit and a packaged `--selftest` |
 
 Pytest markers: `unit integration chaos soak hardware ui`. UI tests need `QT_QPA_PLATFORM=offscreen`.
 

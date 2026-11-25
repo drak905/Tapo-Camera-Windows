@@ -57,7 +57,7 @@ DEFAULT_BASE_URL = "https://n-wap.i.tplinkcloud.com"
 # [spec unresolved: terminalName on desktop]; "platform" mimics the app, "terminalName" is what the
 # user sees in the TP-Link ID "trusted devices" list.
 PLATFORM = "Android 14"
-TERMINAL_NAME = "Tapo Desktop (Windows PC)"
+TERMINAL_NAME = "Tepo Desktop (Windows PC)"
 PAGE_LIMIT = 20
 _MAX_PAGES = 500
 _MAX_RESPONSE_BYTES = 16 * 1024 * 1024

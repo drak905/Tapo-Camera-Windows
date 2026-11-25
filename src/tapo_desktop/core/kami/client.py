@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 #: Version of the Kami Home app whose protocol this follows (header ``x-xiaoyi-appVersion``) [spec:kami.auth.required_headers].
 APP_VERSION = "5.0.2"
-USER_AGENT = "TapoDesktop-Kami/0.1"
+USER_AGENT = "TepoDesktop-Kami/0.1"
 _MAX_BODY = 4 * 1024 * 1024
 
 
@@ -67,7 +67,7 @@ class KamiClient:
         else:
             who = ("account", email)
         return [("seq", "1"), who, ("password", password_hash(password, self._app_key)),
-                ("dev_name", "Tapo Desktop"), ("dev_type", "Windows PC"), ("dev_os_version", "Windows")]
+                ("dev_name", "Tepo Desktop"), ("dev_type", "Windows PC"), ("dev_os_version", "Windows")]
 
     def list_devices(self, session: KamiSession) -> list[KamiDevice]:
         """One signed request for the account's cameras (owned and shared)."""

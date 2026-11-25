@@ -1,9 +1,9 @@
 """Gate 4 build: PyInstaller one-folder app + optional Inno Setup installer.
 
 Output:
-  dist/TapoDesktop/TapoDesktop.exe        (windowed app, ffmpeg.exe bundled next to it)
-  dist/TapoDesktop-<version>-win64.zip    (portable)
-  dist/TapoDesktop-<version>-setup.exe    (if Inno Setup's ISCC.exe is available)
+  dist/TepoDesktop/TepoDesktop.exe        (windowed app, ffmpeg.exe bundled next to it)
+  dist/TepoDesktop-<version>-win64.zip    (portable)
+  dist/TepoDesktop-<version>-setup.exe    (if Inno Setup's ISCC.exe is available)
 Then runs the clean-room audit and a packaged --selftest.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = Path(os.environ.get("TAPO_DIST", ROOT / "release" / time.strftime("%Y%m%d-%H%M%S")))
 BUILD = ROOT / "build"
-APP = "TapoDesktop"
+APP = "TepoDesktop"
 sys.path.insert(0, str(ROOT / "src"))
 from tapo_desktop import __version__  # noqa: E402
 

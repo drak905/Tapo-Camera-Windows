@@ -1,4 +1,4 @@
-"""iMou (Open Platform) connection of Tapo Desktop: connect (Test), camera list and online state, disconnect. No UI.
+"""iMou (Open Platform) connection of Tepo Desktop: connect (Test), camera list and online state, disconnect. No UI.
 
 Sits next to the Tapo account manager and shares nothing with it. It only touches cameras with ``source == "imou"``
 (id ``imou:<serial>``, ``host=""``) and the vault entry ``IMOU_APP_VAULT_ID`` / ``CredentialKind.IMOU_APP``, so a Tapo
