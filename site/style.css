@@ -76,9 +76,31 @@ header.site nav a[aria-current="page"] {
 }
 
 .wrap {
-  max-width: 46rem;
+  max-width: 56rem;
   margin: 0 auto;
   padding: 0 1rem;
+}
+
+figure.diagram {
+  margin: 1.25rem 0;
+}
+
+figure.diagram a {
+  display: block;
+}
+
+figure.diagram img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+figure.diagram figcaption {
+  margin-top: 0.45rem;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 main { padding-top: 1.5rem; padding-bottom: 2.5rem; }

@@ -31,6 +31,12 @@
   </div>
 
   <h2>What works with which account</h2>
+  <figure class="diagram">
+    <a href="images/multi-provider-overview.png" target="_blank" rel="noopener">
+      <img src="images/multi-provider-overview.png" alt="Tepo Desktop multi-provider overview showing a 2x2 grid with Tapo LAN, Tapo Cloud Relay, iMou Open Platform, and Kami Home status tiles alongside a capability comparison table.">
+    </a>
+    <figcaption>Unified multi-provider workspace (2&times;2 grid, adaptive Controls &amp; Playback panel) and capability comparison across Tapo, iMou, and Kami (click to open full size).</figcaption>
+  </figure>
   <div class="table-scroll">
     <table>
       <thead>
@@ -38,26 +44,39 @@
       </thead>
       <tbody>
         <tr>
-          <td>Tapo (TP-Link ID)</td>
-          <td>Live view at home and away, camera controls, memory-card recordings (watch and download), snapshots, motion notifications.</td>
+          <td>TP-Link Tapo (LAN &amp; Cloud)</td>
+          <td>Full support: live view at home and away/shared, PTZ and device controls, 24h memory-card recordings (<code>1x</code>&ndash;<code>8x</code> playback and MP4 download), snapshots, motion notifications, and renaming.</td>
           <td><a href="tapo.html">Tapo sign-in</a></td>
         </tr>
         <tr>
-          <td>Kami Home</td>
-          <td>Sign-in, the camera list and the online state only. Live view and recordings are not supported.</td>
-          <td><a href="kami.html">Kami sign-in</a></td>
+          <td>iMou (Open Platform)</td>
+          <td>Watch only: live view (<code>RTSP</code> / <code>HLS</code>) and <code>1x</code> memory-card playback with local daily minute budget &amp; concurrent stream cap; local rename only. No downloads and no camera controls.</td>
+          <td><a href="imou.html">iMou sign-in</a></td>
         </tr>
         <tr>
-          <td>iMou (Open Platform)</td>
-          <td>Watch only: live view and memory-card playback at normal speed. No downloads and no camera controls.</td>
-          <td><a href="imou.html">iMou sign-in</a></td>
+          <td>Kami Home</td>
+          <td>Account sign-in, the camera list, the online state, sorting, and local rename only. Live view, recordings, and controls are not supported.</td>
+          <td><a href="kami.html">Kami sign-in</a></td>
         </tr>
       </tbody>
     </table>
   </div>
 
+  <h2>How it works across providers</h2>
+  <figure class="diagram">
+    <a href="images/multi-provider-architecture.png" target="_blank" rel="noopener">
+      <img src="images/multi-provider-architecture.png" alt="Tepo Desktop multi-provider architecture diagram showing the shared PyQt6 UI, AppController, FFmpeg pool, and Windows DPAPI vault routing to isolated Tapo, iMou, and Kami pipelines.">
+    </a>
+    <figcaption>Isolated per-provider authentication, media, and control pipelines sharing one PyQt6 interface, FFmpeg decoding pool, and Windows DPAPI vault (click to open full size).</figcaption>
+  </figure>
+  <ul>
+    <li><strong>TP-Link Tapo:</strong> Auto-discovers cameras on your home network (<code>TDP</code> UDP <code>20002</code>/<code>20004</code>), controls them over local <code>HTTPS :443</code> (<code>TPAP / SPAKE2+</code> or Secure v3, using Local Access Tokens when required), and streams live view and recordings over <code>:8800</code> (<code>HKDF</code>/<code>AES</code>) or <code>RTSP :554</code> with <code>ONVIF :2020</code> motion events. Away and shared cameras route automatically through the <strong>TP-Link Cloud Relay</strong> and <strong>Cloud Passthrough</strong>.</li>
+    <li><strong>iMou (Open Platform):</strong> Connects to <code>open.imoulife.com</code> (<code>sg</code>, <code>fk</code>, or <code>or</code>) using your own free developer <strong>App ID</strong> and <strong>App Secret</strong> without storing your iMou password. Watch-only live view (temporary <code>RTSP</code> or fallback <code>HLS</code>, unbound on stop) and on-demand <code>1x</code> memory-card playback (<code>record.file.list</code>, 10-minute run cap; pause stops the stream) are guarded by a local daily minute budget (default 20 min/camera/UTC day), a 2-stream cap, auto-stop when hidden or minimized, and a strict read-only API allowlist.</li>
+    <li><strong>Kami Home:</strong> Signs in through Kami&rsquo;s regional gateway (<code>v4/users/login</code>, <code>v5/devices/list</code>) using a user-supplied key file, single-attempt login (120-second lockout guard), and DPAPI-saved session token to populate your camera list and online state with local app-only renaming.</li>
+  </ul>
+
   <h2>Install</h2>
-  <p>You need Windows 10 or 11 (64-bit). Get one of these files from the Releases page of the project&rsquo;s GitHub repository:</p>
+  <p>You need Windows 10 or 11 (64-bit). Get one of these files from the <a href="https://github.com/drak905/Tepo-Camera-Desktop/releases">Releases page of the project&rsquo;s GitHub repository</a>:</p>
   <ul>
     <li><code>TepoDesktop-0.1.0-setup.exe</code>: an installer. It installs for your Windows user only and needs no administrator rights. It can add a desktop shortcut and can start the app when you sign in to Windows.</li>
     <li><code>TepoDesktop-0.1.0-win64.zip</code>: unzip it anywhere and run <code>TepoDesktop\TepoDesktop.exe</code>. No install step.</li>
@@ -71,7 +90,7 @@
   <h2>First start</h2>
   <ol>
     <li>Start the app. It asks you to sign in with your TP-Link ID. Choose <em>Use without account</em> if you only want to add cameras by IP address, or if you use Kami or iMou only.</li>
-    <li>Your Tapo cameras appear with the names you gave them in the Tapo app. Cameras on your home network start playing by themselves.</li>
+    <li>Your Tapo cameras appear with the names you gave them in the Tapo app. Visible cameras on your home network stream directly over LAN, while away and shared Tapo cameras stream through the TP-Link cloud relay.</li>
     <li>For Kami or iMou, open the account button in the top bar and follow the matching guide.</li>
     <li>Read <a href="usage.html">Using the app</a> for the grid, full screen, recordings, renaming, the tray icon and notifications.</li>
   </ol>
